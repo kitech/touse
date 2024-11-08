@@ -71,7 +71,7 @@ pub fn call(s string) int {
 	if rc != tclok {
 		// emsg := posix_error()
 		emsg2 := get_errnomsg0()
-		vcp.info("called", rc, emsg2, s)
+		vcp.info("called", rc, emsg2, ":", s)
 	}
 	return rc
 }
@@ -146,6 +146,21 @@ pub interface Tkobjitf {
 	name() string
 }
 
+pub struct Labelframe {
+	Tkobject
+}
+pub fn Labelframe.new(txt string) Labelframe {
+	vn := nextvarname('lbf')
+	cmd := 'labelframe ${vn} -text "${txt}"'
+	call(cmd)
+	return Labelframe{varname:vn}
+}
+
+pub fn (me Labelframe) pack(tko Tkobjitf) {
+	cmd := 'pack ${me.varname} ${tko.name()} -fill x -padx 3p -pady 3p'
+	rc := call(cmd)
+}
+
 pub struct Button {
 	Tkobject
 }
@@ -169,17 +184,75 @@ pub fn (me Button) connect(fnx fn(voidptr, []string), cbval voidptr) {
 	call(cmd)
 }
 
-pub struct Labelframe {
-	Tkobject
-}
-pub fn Labelframe.new(txt string) Labelframe {
-	vn := nextvarname('lbf')
-	cmd := 'labelframe ${vn} -text "${txt}"'
-	call(cmd)
-	return Labelframe{varname:vn}
+pub enum ImageType {
+	bitmap
+	photo
+	nsimage
 }
 
-pub fn (me Labelframe) pack(tko Tkobjitf) {
-	cmd := 'pack ${me.varname} ${tko.name()} -fill x -padx 3p -pady 3p'
+pub struct Image {
+	Tkobject
+}
+
+pub fn Image.new(name string, data string) Image {
+	vn := nextvarname('img')
+	cmd := 'image create photo ${name} -data "${data}"'
+	rc := call(cmd)
+	return Image{varname:vn}
+}
+
+pub struct Systray {
+	Tkobject
+}
+
+pub fn Systray.new(txt string) Systray {
+	imgname := "styimg"
+	imgo := Image.new(imgname, "R0lGODlhCwAPAKIAAP//////AMDAwICAgAAA/wAAAAAAAAAAACwAAAAACwAPAAADMzi6CzAugiAgDGE68aB0RXgRJBFVX0SNpQlUWfahQOvSsgrX7eZJMlQMWBEYj8iQchlKAAA7")
+
+	vn := nextvarname('sty')
+	cmd := 'tk systray create -image ${imgname} -text "${txt}"'
+	rc := call(cmd)
+	return Systray{varname:vn}
+}
+
+pub fn (me Systray) connect(whichbtn int, fnx fn(voidptr, []string), cbval voidptr) {
+	slotname := "${me.name()[1..]}_oncmd"
+	create_command(gvars.tclirp, slotname,
+			fn[fnx](a0 voidptr, a1 voidptr, args []string) int {
+		// vcp.info(@FILE_LINE, a0, a1, args.str())
+		fnx(a0, args)
+		return 0
+	}, cbval)
+
+	assert whichbtn==1||whichbtn==3
+	cmd := '${me.name()} configure -command${whichbtn} ${slotname}'
+	call(cmd)
+}
+
+pub fn (me Systray) exists() bool {
+	return Systray.exists()
+}
+pub fn Systray.exists() bool {
+	cmd := 'tk systray exists'
+	rc := call(cmd)
+	return false
+}
+
+
+pub fn Systray.destroy() {
+	cmd := 'tk systray destroy'
 	rc := call(cmd)
 }
+
+pub struct Sysnotify {
+	Tkobject
+}
+
+pub fn Sysnotify.send(title string, txt string) {
+	// vn := nextvarname('sny')
+	cmd := 'tk sysnotify "${title}" "${txt}"'
+	rc := call(cmd)
+}
+
+// todo 移动窗口位置
+// todo 窗口背景/前景/theme
