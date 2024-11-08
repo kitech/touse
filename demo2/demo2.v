@@ -1,12 +1,18 @@
+import time
 import vcp
 import  vcp.tcltk
 
 fn main() {
-	tcltk.tk_main(["helllo world", "hehhe.tcl"], uimain)
+	go uithproc()
+
+	tcltk.tk_main(["helllo", "hehhe.tcl"], vnil)
+	vcp.info("hehere")
 }
 
-fn uimain(tclirp voidptr) int {
-	rc := tcltk.tk_init(tclirp)
-	vcp.falseprt(rc==tcltk.tclok, "somerr", rc)
-	return rc
+fn uithproc() {
+	for {
+		time.sleep(time.second)
+	tcltk.eval("package require Tk")
+	tcltk.eval("tk systray exists")
+	}
 }
