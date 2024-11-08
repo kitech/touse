@@ -16,7 +16,7 @@ fn C.Tk_Init(voidptr) int
 
 fn C.Tcl_Eval(... voidptr) int
 fn C.Tcl_EvalFile(... voidptr) int
-fn C.Tcl_CreateCommand(... voidptr)
+fn C.Tcl_CreateCommand(... voidptr) usize
 fn C.Tcl_GetVar(... voidptr) voidptr
 fn C.Tcl_SetVar(... voidptr) voidptr
 fn C.Tcl_Init(...voidptr) int

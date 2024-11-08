@@ -27,6 +27,9 @@ fn create_btns() {
 	for i in 0..8 {
 		btn := tcltk.Button.new("test btn${i}")
 		lb.pack(btn)
+		btn.connect(fn(cbval voidptr, args []string){
+			vcp.info("hehhe", cbval, args.str())
+		}, vnil)
 	}
 }
 

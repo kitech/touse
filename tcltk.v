@@ -3,6 +3,9 @@ module tcltk
 import  os
 import vcp
 
+
+// http://davesource.com/Fringe/Fringe/Computers/Languages/tcl_tk/tcl_C.html
+
 struct Globvars {
 	pub mut:
 	argv []voidptr
@@ -57,9 +60,10 @@ pub fn tk_init(p voidptr) int {
 }
 
 // call and eval are the same indeed
-pub fn eval(s string) {
+pub fn eval(s string) int {
 	rc := C.Tcl_Eval(gvars.tclirp, s.str)
 	vcp.info(rc, s)
+	return rc
 }
 pub fn call(s string) int {
 	// vcp.info("calling", s)
@@ -74,14 +78,17 @@ pub fn call(s string) int {
 
 pub type TclcmdFunc = fn(cbval voidptr, ir voidptr, argv []string) int
 
-pub fn create_command(ir voidptr, name string, fnp TclcmdFunc, cbval voidptr) {
-	vcp.info(name, fnp)
+pub fn create_command(ir voidptr, name string, fnp TclcmdFunc, cbval voidptr)  usize {
+	// vcp.info(name, fnp)
 	fn4c := fn[fnp](cbv voidptr, ir voidptr, argc int, argv &charptr) int {
+		// vcp.info(@FILE_LINE, cbv, argc)
 		// arr := vcp.carr2varr_sized(argv, sizeof(usize), argc)
-		arr := vcp.csarr2vsarr(argv, argc)
+		arr := vcp.csarr2vsarr(argv, argc-1)
 		return fnp(cbv, ir, arr)
 	}
-	C.Tcl_CreateCommand(ir, name.str, fnp, cbval, pnil)
+	rc := C.Tcl_CreateCommand(ir, name.str, fn4c, cbval, pnil)
+	// vcp.info(rc, name)
+	return rc
 }
 
 pub fn getvar(ir voidptr, name string) {
@@ -150,6 +157,18 @@ pub fn Button.new(txt string) Button {
 	return Button{varname:vn}
 }
 
+pub fn (me Button) connect(fnx fn(voidptr, []string), cbval voidptr) {
+	slotname := "${me.name()[1..]}_oncmd"
+	create_command(gvars.tclirp, slotname,
+			fn[fnx](a0 voidptr, a1 voidptr, args []string) int {
+		// vcp.info(@FILE_LINE, a0, a1, args.str())
+		fnx(a0, args)
+		return 0
+	}, cbval)
+	cmd := '${me.name()} configure -command ${slotname}'
+	call(cmd)
+}
+
 pub struct Labelframe {
 	Tkobject
 }
@@ -162,5 +181,5 @@ pub fn Labelframe.new(txt string) Labelframe {
 
 pub fn (me Labelframe) pack(tko Tkobjitf) {
 	cmd := 'pack ${me.varname} ${tko.name()} -fill x -padx 3p -pady 3p'
-	call(cmd)
+	rc := call(cmd)
 }
