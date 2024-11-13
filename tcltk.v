@@ -73,7 +73,23 @@ pub fn call(s string) int {
 		emsg2 := get_errnomsg0()
 		vcp.info("called", rc, emsg2, ":", s)
 	}
+	res := C.Tcl_GetStringResult(gvars.tclirp)
+	// vcp.info("res:", tosbca(res), ": ${s}")
 	return rc
+}
+pub fn call2(s string) !string {
+	// vcp.info("calling", s)
+	rc := C.Tcl_Eval(gvars.tclirp, s.str)
+	if rc != tclok {
+		// emsg := posix_error()
+		emsg2 := get_errnomsg0()
+		vcp.info("called", rc, emsg2, ":", s)
+		return error(emsg2)
+	}
+	resc := C.Tcl_GetStringResult(gvars.tclirp)
+	res := tosbca(resc)
+	vcp.info("res:", res, ": ${s}")
+	return res
 }
 
 pub type TclcmdFunc = fn(cbval voidptr, ir voidptr, argv []string) int
@@ -256,3 +272,26 @@ pub fn Sysnotify.send(title string, txt string) {
 
 // todo 移动窗口位置
 // todo 窗口背景/前景/theme
+
+pub struct Frame {
+	Tkobject
+}
+
+pub fn Frame.new() Frame{
+	vn := nextvarname('frm')
+	cmd := 'frame ${vn} -container true -width 300 -height 200'
+	rc := call(cmd)
+	return Frame{varname:vn}
+}
+
+pub struct Winfo {
+	// Tkobject
+}
+// pub fn Winfo.id()
+
+pub fn (me Tkobject) id() string {
+	cmd := 'winfo id ${me.name()}'
+	res := call2(cmd) or {panic(err)}
+	vcp.info(res)
+	return res
+}
