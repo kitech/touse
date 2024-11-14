@@ -8,14 +8,16 @@ import  vcp.mpv
 // 单纯的 mpv 窗口 108M
 
 struct Globvars {
+	/// ui
+	Uicomp
+
 	pub mut:
-	lb tcltk.Labelframe
-	btns []tcltk.Button
 	wid string
 	mpvo voidptr
 
 	mtid u64
 	mpvcbtid u64
+
 }
 const gvars = &Globvars{}
 
@@ -36,55 +38,14 @@ fn initui_done(irp voidptr) int {
 	gv := gvars
 	gv.mtid = vcp.gettid()
 
-	create_btns()
-	create_systray()
+	create_top_menus()
+	create_winlo_begin()
+	create_toolbar()	
+	create_video_area()
+	create_bottom_bar()
+	create_winlo_end()
+	create_systray()		
 	return 0
-}
-
-fn create_systray() {
-	st := tcltk.Systray.new("sty123")
-	st.exists()
-
-	tcltk.Sysnotify.send("heheh",  "notifyeddd")
-}
-
-fn create_btns() {
-	lb := tcltk.Labelframe.new("labeliss")
-	for i in 0..8 {
-		btn := tcltk.Button.new("test btn${i}")
-		lb.pack(btn)
-		btn.connect(fn(cbval voidptr, args []string){
-			vcp.info("hehhe", cbval, args.str())
-			if gvars.mpvo == vnil {
-				create_mpvobj(gvars.wid)
-			}else{
-				mpv_play_one('')
-			}
-		}, vnil)
-	}
-
-	closebtn := tcltk.Button.new("close")
-	closebtn.connect(fn(cbval voidptr, args[]string){
-		vcp.info("closing...", time.since(vcp.starttime).str())
-		tcltk.Systray.destroy()
-		exit(0)
-	}, vnil)
-	lb.pack(closebtn)
-
-	//
-	frm := tcltk.Frame.new()
-	lb.pack(frm)
-
-	wid := frm.id().clone()
-	vcp.info("wid", wid, frm.name())
-	gv := gvars
-	gv.wid = wid 
-
-	// create_mpvobj(wid)
-}
-
-fn create_frms() {
-
 }
 
 fn create_mpvobj(wid string) {
