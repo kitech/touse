@@ -4,7 +4,7 @@ import os
 import vcp
 import  vcp.tcltk
 import  vcp.mpv
-// 不链接libmpv 30M, 链接了之后90M,初始化后??M,播放时120M
+// 不链接libmpv 30M, 链接了之后89M,初始化后93M,播放时120M
 // 单纯的 mpv 窗口 108M
 
 struct Globvars {
@@ -55,7 +55,11 @@ fn create_btns() {
 		lb.pack(btn)
 		btn.connect(fn(cbval voidptr, args []string){
 			vcp.info("hehhe", cbval, args.str())
-			create_mpvobj(gvars.wid)
+			if gvars.mpvo == vnil {
+				create_mpvobj(gvars.wid)
+			}else{
+				mpv_play_one('')
+			}
 		}, vnil)
 	}
 
@@ -89,6 +93,8 @@ fn create_mpvobj(wid string) {
 	h := C.mpv_create()
 	vcp.info(h)
 	gv.mpvo = h
+	C.mpv_request_event(h, C.MPV_EVENT_LOG_MESSAGE, 1)
+	C.mpv_request_log_messages(h, c'trace')
 	C.mpv_set_wakeup_callback(h, mpv_wakeup_cb, voidptr(42))
 
 	mut rv := 0
@@ -98,13 +104,15 @@ fn create_mpvobj(wid string) {
 	rv = C.mpv_set_option_string(h, c'wid', gvars.wid.str)
 	// rv = C.mpv_set_option_string(h, c'wid', c'0x180001a')
 	check_mpvret(rv)
-
-	opts := ["wid", wid] // "vo", "xv"
-	for i:=0; i < opts.len; i+= 2{
-		// rv = C.mpv_set_option_string(h, opts[i].str, opts[i+1].str)
-		// vcp.info(i.str(), rv, opts[i], opts[i+1])
-	}
 	rv = C.mpv_set_option_string(h, c'vo', c'xv')
+	check_mpvret(rv)
+
+	opts := ["x11-bypass-compositor", "no", "input-default-bindings", "no", "input-vo-keyboard", "no", "load-scripts", "no", "no-config", "true"] // "vo", "xv"
+	for i:=0; i < opts.len; i+= 2{
+		rv = C.mpv_set_option_string(h, opts[i].str, opts[i+1].str)
+		vcp.info(i.str(), rv, opts[i], opts[i+1])
+		check_mpvret(rv)
+	}
 	// vcp.info(i.str(), rv, opts[i], opts[i+1])
 	check_mpvret(rv)
 
@@ -117,13 +125,34 @@ fn create_mpvobj(wid string) {
 	// todo 有时无图像,但有声音,
 	// 播放正常,可能是无法正确嵌入tcltk窗口
 	// 尝试一种可能的解决方案,用xlib创建窗口,看能不能放到tcltk的layout中
+	// mut loadfile := "loadfile "
+	// loadfile += if os.args.len>1{ os.args[1]} else {"hello.mp4"}
+	// rv = C.mpv_command_string(h, loadfile.str)
+	// rv = C.mpv_command_string(h, c"loadfile hello.mp4")
+
+	// cmdargs := [charptr('loadfile'.str), charptr(os.args[1].str), vnil]
+	// rv = C.mpv_command_async(h, 12345, cmdargs.data)
+	// vcp.info(rv)
+	// check_mpvret(rv)
+}
+
+fn mpv_play_one(file string) {
+	gv := gvars
+	h := gvars.mpvo
+	mut rv := 0
+	
+	// todo 有时无图像,但有声音,
+	// 播放正常,可能是无法正确嵌入tcltk窗口
+	// 尝试一种可能的解决方案,用xlib创建窗口,看能不能放到tcltk的layout中
 	mut loadfile := "loadfile "
 	loadfile += if os.args.len>1{ os.args[1]} else {"hello.mp4"}
 	// rv = C.mpv_command_string(h, loadfile.str)
 	// rv = C.mpv_command_string(h, c"loadfile hello.mp4")
 
 	cmdargs := [charptr('loadfile'.str), charptr(os.args[1].str), vnil]
-	rv = C.mpv_command_async(h, 12345, cmdargs.data)
+	vcp.info(cmdargs.len, cmdargs.str(), os.args[1])
+	rv = C.mpv_command_async(h, 12345, cmdargs.clone().data)
+	// rv = C.mpv_command_string(h, loadfile.clone().str)
 	vcp.info(rv)
 	check_mpvret(rv)
 }
@@ -149,9 +178,14 @@ fn mpv_wakeup_cb(ctx voidptr) {
 		evox := C.mpv_wait_event(gvars.mpvo, 0)
 		evo := castptr[mpv.Event](evox)
 		// println("${@FILE_LINE}, ${evo}")
-		vcp.info(i.str(), evo.str().compact())
+		// vcp.info(i.str(), evo.str().compact())
 		if evo.event_id == C.MPV_EVENT_NONE {
 			break
+		} else if evo.event_id == C.MPV_EVENT_LOG_MESSAGE {
+			msgo := castptr[mpv.EventLogMessage](evo.data)
+			vcp.info(i.str(), tosbca(msgo.prefix), tosbca(msgo.level), tosbca(msgo.text))
+		}else{
+			vcp.info(i.str(), evo.str().compact())
 		}
 	} 
 }
