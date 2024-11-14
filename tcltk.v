@@ -11,7 +11,7 @@ struct Globvars {
 	argv []voidptr
 	tclirp voidptr
 	init_done_cbfn fn(voidptr) int = vnil
-	varno i64 = 100
+	varno i64 = 10
 }
 const gvars = &Globvars{}
 
@@ -149,7 +149,8 @@ pub fn tk_create_error_handler() {
 fn nextvarname(pfx string) string {
 	mut gvs := refvar2mut(gvars)
 	no := gvs.varno++
-	return ".ttk_${pfx}_${no}"
+	return ".vtk_${pfx}_${no}"
+	// return ".ttk_${pfx}_${no}"
 }
 
 ///
@@ -301,9 +302,32 @@ pub struct Frame {
 
 pub fn Frame.new(parent Tkobjitf) Frame{
 	vn := parent.name() + nextvarname('frm')
-	cmd := 'frame ${vn} -container true -width 300 -height 200'
+	cmd := 'frame ${vn} -container true -width 300 -height 300'
 	rc := call(cmd)
 	return Frame{varname:vn}
+}
+
+pub struct Listbox {
+	Tkobject
+}
+
+pub struct TkOptions {
+pub mut:
+	bg string
+	fg string
+}
+
+pub struct ListboxOptions {
+	TkOptions
+	pub mut:
+	selmode string
+}
+
+pub fn Listbox.new(parent Tkobjitf) Listbox {
+	vn := parent.name() + nextvarname('ltbox')
+	cmd := 'listbox ${vn} -width 30 -height 20'
+	rc := call(cmd)
+	return Listbox{varname:vn}
 }
 
 pub struct Winfo {

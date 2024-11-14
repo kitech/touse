@@ -9,15 +9,25 @@ pub struct Uicomp {
 	icotray tcltk.Systray
 
 	lo0 tcltk.Labelframe // vertical
-	tlblo tcltk.Labelframe // horinizer
-	stblo tcltk.Labelframe // horinizer
-
+	tlblo tcltk.Labelframe // horinize
+	stblo tcltk.Labelframe // horinize
 	vdofrm tcltk.Frame
+
+	// right playlist
+	lo1 tcltk.Labelframe // horinize
 }
 
+/*
+  ---------- |||
+  ---------- |||
+  ---------- |||
+*/
+
+
 pub fn create_video_area() {
-	frm := tcltk.Frame.new(tcltk.Tkobject{})
-	gvars.lo0.pack(frm, tcltk.PackOptions{side:"bottom", fill:"x"})
+	frm := tcltk.Frame.new(gvars.lo0)
+	// frm := tcltk.Frame.new(tcltk.Tkobject{})
+	gvars.lo0.pack(frm, tcltk.PackOptions{side:"top", fill:"both", expend: 0})
 	gv := gvars
 	gv.vdofrm = frm
 
@@ -51,10 +61,21 @@ pub fn create_video_area2() {
 
 pub fn create_winlo_begin() {
 	gv := gvars
+
+	if true {
 	lb := tcltk.Labelframe.new("labeliss000", tcltk.Tkobject{})
 	gv.lo0 = lb
 
-	lb.pack(lb, tcltk.PackOptions{side:"bottom"})
+	lb.pack(lb, tcltk.PackOptions{side:"left", fill:"y"})
+	}
+
+	if true {
+	lb := tcltk.Labelframe.new("labeliss666", tcltk.Tkobject{})
+	gv.lo1 = lb
+
+	lb.pack(lb, tcltk.PackOptions{side:"right", fill:"y"})
+	}
+
 }
 pub fn create_winlo_end() {
 	gv := gvars
@@ -62,8 +83,8 @@ pub fn create_winlo_end() {
 }
 
 pub fn create_toolbar() {
-	// lb := tcltk.Labelframe.new("labeliss222", gvars.lo0)
-	lb := tcltk.Labelframe.new("labeliss222", tcltk.Tkobject{})
+	lb := tcltk.Labelframe.new("labeliss222", gvars.lo0)
+	// lb := tcltk.Labelframe.new("labeliss222", tcltk.Tkobject{})
 
 	for i in 0..6 {
 		btn := tcltk.Button.new("test btn${i}", lb)
@@ -78,12 +99,12 @@ pub fn create_toolbar() {
 		}, vnil)
 	}
 
-	gvars.lo0.pack(lb, tcltk.PackOptions{side:"bottom", fill:"x"})
+	gvars.lo0.pack(lb, tcltk.PackOptions{side:"top", fill:"x"})
 }
 
 pub fn create_bottom_bar() {
-	// lb := tcltk.Labelframe.new("labeliss333", gvars.lo0)
-	lb := tcltk.Labelframe.new("labeliss333", tcltk.Tkobject{})
+	lb := tcltk.Labelframe.new("labeliss333", gvars.lo0)
+	// lb := tcltk.Labelframe.new("labeliss333", tcltk.Tkobject{})
 	for i in 0..6 {
 		btn := tcltk.Button.new("stbar btn${i}", lb)
 		lb.pack(btn, tcltk.PackOptions{side:"right"})
@@ -98,6 +119,33 @@ pub fn create_bottom_bar() {
 	}
 
 	gvars.lo0.pack(lb, tcltk.PackOptions{side: "bottom", fill:"x"})
+}
+
+pub fn create_playlist_view() {
+	mut parent := gvars.lo1
+	// parent = tcltk.Tkobject{}
+	if true {
+	lb := tcltk.Listbox.new(parent)
+	gvars.lo0.pack(lb, tcltk.PackOptions{side: "top", fill:"y"})
+	}
+	if true {
+		lb := tcltk.Labelframe.new("labeliss777", parent)
+		// lb := tcltk.Labelframe.new("labeliss333", tcltk.Tkobject{})
+		for i in 0..4 {
+			btn := tcltk.Button.new("Opb${i}", lb)
+			lb.pack(btn, tcltk.PackOptions{side:"right"})
+			btn.connect(fn(cbval voidptr, args []string){
+				vcp.info("hehhe", cbval, args.str())
+				if gvars.mpvo == vnil {
+					create_mpvobj(gvars.wid)
+				}else{
+					mpv_play_one('')
+				}
+			}, vnil)
+		}
+
+		gvars.lo0.pack(lb, tcltk.PackOptions{side: "bottom", fill:"x"})
+	}
 }
 
 pub fn create_top_menus() {

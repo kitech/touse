@@ -43,6 +43,7 @@ fn initui_done(irp voidptr) int {
 	create_toolbar()	
 	create_video_area()
 	create_bottom_bar()
+	create_playlist_view()
 	create_winlo_end()
 	create_systray()		
 	return 0
@@ -55,27 +56,29 @@ fn create_mpvobj(wid string) {
 	vcp.info(h)
 	gv.mpvo = h
 	C.mpv_request_event(h, C.MPV_EVENT_LOG_MESSAGE, 1)
-	C.mpv_request_log_messages(h, c'trace')
+	C.mpv_request_log_messages(h, c'info')
 	C.mpv_set_wakeup_callback(h, mpv_wakeup_cb, voidptr(42))
 
 	mut rv := 0
 
-	vcp.info(gvars.wid, gvars.wid.len, gv.mpvo)
+	vcp.info("VideoOutWin", gvars.wid, gvars.wid.len, gv.mpvo)
 	assert gv.wid.starts_with('0x')
-	rv = C.mpv_set_option_string(h, c'wid', gvars.wid.str)
-	// rv = C.mpv_set_option_string(h, c'wid', c'0x180001a')
-	check_mpvret(rv)
-	rv = C.mpv_set_option_string(h, c'vo', c'xv')
-	check_mpvret(rv)
+	// rv = C.mpv_set_option_string(h, c'wid', gvars.wid.str)
+	// check_mpvret(rv)
 
-	opts := ["x11-bypass-compositor", "no", "input-default-bindings", "no", "input-vo-keyboard", "no", "load-scripts", "no", "no-config", "true"] // "vo", "xv"
+	mut opts := []string{}
+	opts << "wid"; opts << gvars.wid
+	// opts << "x11-bypass-compositor"; opts << "no"
+	// opts << "input-default-bindings"; opts << "no"
+	// opts << "input-vo-keyboard"; opts << "no"
+	// opts << "load-scripts" << "no"
+	// opts << "player-operation-mode"; opts << "pseudo-gui"
+	// opts << "vo"; opts << "gpu" // "gpu,libmpv,x11,xv"
 	for i:=0; i < opts.len; i+= 2{
 		rv = C.mpv_set_option_string(h, opts[i].str, opts[i+1].str)
 		vcp.info(i.str(), rv, opts[i], opts[i+1])
-		check_mpvret(rv)
+		check_mpvret(rv, opts[i], opts[i+1])
 	}
-	// vcp.info(i.str(), rv, opts[i], opts[i+1])
-	check_mpvret(rv)
 
 	// time.sleep(time.second)
 	rv = C.mpv_initialize(h)
@@ -138,6 +141,7 @@ fn mpv_wakeup_cb(ctx voidptr) {
 	for i:=0; i < 50000; i++ {
 		evox := C.mpv_wait_event(gvars.mpvo, 0)
 		evo := castptr[mpv.Event](evox)
+		evname := tosbca(C.mpv_event_name(evo.event_id))
 		// println("${@FILE_LINE}, ${evo}")
 		// vcp.info(i.str(), evo.str().compact())
 		if evo.event_id == C.MPV_EVENT_NONE {
@@ -146,15 +150,17 @@ fn mpv_wakeup_cb(ctx voidptr) {
 			msgo := castptr[mpv.EventLogMessage](evo.data)
 			vcp.info(i.str(), tosbca(msgo.prefix), tosbca(msgo.level), tosbca(msgo.text))
 		}else{
-			vcp.info(i.str(), evo.str().compact())
+			vcp.info(i.str(),evname, evo.str().compact())
 		}
 	} 
 }
-fn check_mpvret(code int) {
+fn check_mpvret(code int, what ... string) bool {
 	if code != C.MPV_ERROR_SUCCESS {
 		msg4c := C.mpv_error_string(code)
-		vcp.info(code, tosbca(msg4c))
+		vcp.info(code, tosbca(msg4c), what.str())
+		return false
 	}
+	return true
 }
 
 fn uithproc() {
