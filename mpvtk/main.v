@@ -11,10 +11,14 @@ struct Globvars {
 	btns []tcltk.Button
 	wid string
 	mpvo voidptr
+
+	mtid u64
+	mpvcbtid u64
 }
 const gvars = &Globvars{}
 
 fn main() {
+	C.GC_allow_register_threads()
 	if true {
 		rv := C.mpv_client_api_version()
 		vcp.info(rv)
@@ -26,7 +30,10 @@ fn main() {
 }
 
 fn initui_done(irp voidptr) int {
-	vcp.info("done", irp)
+	vcp.info("done", irp, vcp.gettid())
+	gv := gvars
+	gv.mtid = vcp.gettid()
+
 	create_btns()
 	create_systray()
 	return 0
@@ -113,14 +120,28 @@ fn create_mpvobj(wid string) {
 	check_mpvret(rv)
 }
 
+fn C.GC_thread_is_registered() cint
 fn mpv_wakeup_cb(ctx voidptr) {
+	gv := gvars
+	ctid := vcp.gettid()
+	// assert ctid == gvars.mtid
+	if ctid != gvars.mpvcbtid {
+		gv.mpvcbtid = ctid
+		if C.GC_thread_is_registered() != 1 {
+		sb := C.GC_stack_base{}
+		C.GC_get_stack_base(&sb)
+		C.GC_register_my_thread(&sb)
+		}
+	}
+
 	// println("mpvcb ${ctx}") // no crash
 	// related to GC??? Collecting from unknown thread
 	// vcp.info(ctx) // all vcp.info crash
-	for i:=0; i < 500; i++ {
+	for i:=0; i < 50000; i++ {
 		evox := C.mpv_wait_event(gvars.mpvo, 0)
 		evo := castptr[mpv.Event](evox)
 		// println("${@FILE_LINE}, ${evo}")
+		vcp.info(i.str(), evo.str().compact())
 		if evo.event_id == C.MPV_EVENT_NONE {
 			break
 		}
