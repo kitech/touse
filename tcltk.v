@@ -400,7 +400,7 @@ pub fn (opts MenuOptions) toline() string {
 		cmd += " -tearoff ${v}"
 	}
 
-	if opts.label != "" { cmd += " -label ${opts.label}"}
+	if opts.label != "" { cmd += ' -label "${opts.label}"'}
 	if v := opts.underline  {
 		cmd += " -underline ${v}"
 	}

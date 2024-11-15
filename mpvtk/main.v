@@ -20,6 +20,7 @@ struct Globvars {
 	mpvcbtid u64
 
 	logch chan voidptr = chan voidptr {cap: 128}
+	plst &Playlist = &Playlist{}
 }
 const gvars = &Globvars{}
 
@@ -49,7 +50,18 @@ fn initui_done(irp voidptr) int {
 	create_playlist_view()
 	create_winlo_end()
 	create_systray()		
+
+	load_playlist_toui()
 	return 0
+}
+
+pub fn load_playlist_toui() {
+	gvars.plst.load()
+
+	plst := gvars.plst
+	for e in plst.list {
+		
+	}
 }
 
 fn C.GC_thread_is_registered() cint

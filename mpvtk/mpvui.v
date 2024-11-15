@@ -4,6 +4,7 @@ import os
 
 import  vcp
 import  vcp.tcltk
+import vcp.mpv
 
 pub struct Uicomp {
 	pub mut:
@@ -17,6 +18,7 @@ pub struct Uicomp {
 
 	// right playlist
 	lo1 tcltk.Labelframe // horinize
+	plstvw tcltk.Listbox
 }
 
 /*
@@ -83,7 +85,43 @@ pub fn create_toolbar() {
 	lb := tcltk.Labelframe.new("labeliss222", gvars.lo0)
 	// lb := tcltk.Labelframe.new("labeliss222", tcltk.Tkobject{})
 
-	for i in 0..6 {
+	if true {
+		btn := tcltk.Button.new("Resume", lb)
+		lb.pack(btn, tcltk.PackOptions{side:"right"})
+		btn.connect(fn(cbval voidptr, args []string){
+			play_resume()
+		}, vnil)
+	}
+	if true {
+		btn := tcltk.Button.new("Pause", lb)
+		lb.pack(btn, tcltk.PackOptions{side:"right"})
+		btn.connect(fn(cbval voidptr, args []string){
+			play_pause()
+		}, vnil)
+	}
+	if true{
+		btn := tcltk.Button.new("Play", lb)
+		lb.pack(btn, tcltk.PackOptions{side:"right"})
+		btn.connect(fn(cbval voidptr, args []string){
+			vcp.info("hehhe", cbval, args.str())
+			play_file(os.args[1])
+		}, vnil)
+	}
+
+	if true{
+		btn := tcltk.Button.new("GetPL", lb)
+		lb.pack(btn, tcltk.PackOptions{side:"right"})
+		btn.connect(fn(cbval voidptr, args []string){
+			// vcp.info("hehhe", cbval, args.str())
+			val := mpv.get_property[i64](gvars.mpvo, "playlist-count")
+			vcp.info(val)
+			pl := mpv.get_property[string](gvars.mpvo, "playlist/0/filename")
+			// pl := mpv.get_property[string](gvars.mpvo, "playlist-path")
+			vcp.info(pl)
+		}, vnil)
+	}
+
+	for i in 0..2 {
 		btn := tcltk.Button.new("test btn${i}", lb)
 		lb.pack(btn, tcltk.PackOptions{side:"right"})
 		btn.connect(fn(cbval voidptr, args []string){
@@ -110,10 +148,12 @@ pub fn create_bottom_bar() {
 }
 
 pub fn create_playlist_view() {
+	gv := gvars
 	mut parent := gvars.lo1
 	// parent = tcltk.Tkobject{}
 	if true {
 	lb := tcltk.Listbox.new(parent)
+	gv.plstvw = lb
 	gvars.lo0.pack(lb, tcltk.PackOptions{side: "top", fill:"y"})
 	}
 	if true {
@@ -156,6 +196,15 @@ pub fn create_top_menus() {
 		menu3.add(menuc, tcltk.MenuOptions{cascade: true, label: "Pause", underline: 0})
 		menud := tcltk.Menu.new(tcltk.MenuOptions{tearoff: 0})
 		menu3.add(menud, tcltk.MenuOptions{cascade: true, label: "Reload", underline: 0})
+	}
+
+	menu5 := tcltk.Menu.new(tcltk.MenuOptions{tearoff: 0})
+	menu0.add(menu5, tcltk.MenuOptions{cascade: true, label: "Tool", underline: 0})
+	if true {
+		menua := tcltk.Menu.new(tcltk.MenuOptions{tearoff: 0})
+		menu5.add(menua, tcltk.MenuOptions{cascade: true, label: "View Log", underline: 0})
+		menub := tcltk.Menu.new(tcltk.MenuOptions{tearoff: 0})
+		menu5.add(menub, tcltk.MenuOptions{cascade: true, label: "Todo", underline: 0})
 	}
 
 	menu4 := tcltk.Menu.new(tcltk.MenuOptions{tearoff: 0})

@@ -4,6 +4,9 @@ import os
 import sync.stdatomic
 
 import vcp
+import vcp.mpv
+
+///
 
 pub struct Bkdstate {
 	pub mut:
@@ -44,6 +47,8 @@ pub fn mpvchk_create_handle() {
 	gv := gvars
 	opts := ["wid", gv.wid, "vo", "gpu", "idle", "yes", "keep-open-pause", "no", "keep-open", "yes"]
 	opts << "log-file"; opts << "mpvtk.log"
+	// opts << "playlist"; opts << "mpvtk.playlist" // why404
+	// opts << "show-progress"; opts << "yes" // why404
 	// opts << "x11-bypass-compositor"; opts << "no"
 	// opts << "input-default-bindings"; opts << "no"
 	// opts << "input-vo-keyboard"; opts << "no"
@@ -75,6 +80,12 @@ pub fn play_file(file string) {
 	mpvchk_create_handle()
 	h := gv.mpvo
 	
+	if true {
+		rv = mpv.command_async(h, 12345, "loadfile", os.args[1]) //, "append-play")
+		check_mpvret(rv)
+		return
+	}
+
 	cmdargs := [charptr('loadfile'.str), charptr(os.args[1].str), vnil]
 	cmdargs.firstz()
 	vcp.info(cmdargs.len, cmdargs.str(), os.args[1])
@@ -82,8 +93,59 @@ pub fn play_file(file string) {
 	check_mpvret(rv)
 }
 
+pub fn play_pause_or_resume() {
+	// "cycle", "pause"
+	rv := mpv.command_async(gvars.mpvo, 12345, "cycle", "pause")
+	check_mpvret(rv)
+}
+
+pub fn play_pause() {
+	if true { play_pause_or_resume(); return }
+	rv := mpv.set_property(gvars.mpvo, "pause", true)
+	check_mpvret(rv)	
+}
+
+pub fn play_resume() {
+	if true { play_pause_or_resume(); return }
+	rv := mpv.set_property(gvars.mpvo, "pause", false)
+	check_mpvret(rv)	
+}
+
 ///
 pub struct Bkdcmdmpv {
 
 }
 
+
+///
+const playlist_file = "mpvtk.playlist"
+
+// todo use .m3u8 format
+pub struct Playlist {
+	pub mut:
+	list []string
+}
+
+pub fn (me &Playlist) load() bool {
+	if !os.exists(playlist_file) {
+	}else{
+		lines := os.read_lines(playlist_file) or {
+			vcp.error(err.str()); return false }
+		me.list = lines
+	}
+	return true
+}
+
+pub fn (me &Playlist) save() bool {
+	scc := me.list.join('\n')
+	if scc != "" {
+		os.write_file(playlist_file, scc) or { vcp.error(err.str(), playlist_file) }
+	}
+	return true
+}
+
+pub fn (me &Playlist) add(file string) bool {
+	if me.list.contains(file) { return false}
+	me.list << file
+	return true
+}
