@@ -50,11 +50,6 @@ pub fn create_video_area2() {
 		lb.pack(btn, tcltk.PackOptions{side:"right"})
 		btn.connect(fn(cbval voidptr, args []string){
 			vcp.info("hehhe", cbval, args.str())
-			if gvars.mpvo == vnil {
-				create_mpvobj(gvars.wid)
-			}else{
-				mpv_play_one('')
-			}
 		}, vnil)
 	}
 
@@ -93,11 +88,6 @@ pub fn create_toolbar() {
 		lb.pack(btn, tcltk.PackOptions{side:"right"})
 		btn.connect(fn(cbval voidptr, args []string){
 			vcp.info("hehhe", cbval, args.str())
-			if gvars.mpvo == vnil {
-				// create_mpvobj(gvars.wid)
-			}else{
-				// mpv_play_one('')
-			}
 			play_file(os.args[1])
 		}, vnil)
 	}
@@ -113,11 +103,6 @@ pub fn create_bottom_bar() {
 		lb.pack(btn, tcltk.PackOptions{side:"right"})
 		btn.connect(fn(cbval voidptr, args []string){
 			vcp.info("hehhe", cbval, args.str())
-			if gvars.mpvo == vnil {
-				create_mpvobj(gvars.wid)
-			}else{
-				mpv_play_one('')
-			}
 		}, vnil)
 	}
 
@@ -139,11 +124,6 @@ pub fn create_playlist_view() {
 			lb.pack(btn, tcltk.PackOptions{side:"right"})
 			btn.connect(fn(cbval voidptr, args []string){
 				vcp.info("hehhe", cbval, args.str())
-				if gvars.mpvo == vnil {
-					create_mpvobj(gvars.wid)
-				}else{
-					mpv_play_one('')
-				}
 			}, vnil)
 		}
 
