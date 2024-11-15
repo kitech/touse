@@ -1,6 +1,9 @@
 module tcltk
 
 import  os
+import arrays
+import math
+
 import vcp
 
 
@@ -378,52 +381,45 @@ pub struct MenuOptions {
 	label string
 	underline ?int @[option;hehhe]
 	command voidptr
-}
-
-pub struct FieldInfo {
-	FieldData
-pub mut:
-	size  cint
-	padto  cint
-	offset cint
-	ptr voidptr
+	foz bool
 }
 
 // little hard!!!
 // some like offsetof
-pub fn struct_fill_offset(flds []&FieldInfo) {
-
-}
-pub fn struct_padto_size(flds []&FieldInfo) cint {
+// will fillin padto/offset
+pub fn struct_align_offset(flds []&FieldInfo) cint {
 	alignsz := cint(i32(sizeof(usize)))
 
 	// idx step more than one
 	for cnter, idx := 0, 0; idx < flds.len ; cnter++ {
-		f := flds[idx]
-		orisize := f.size
-		modsz := orisize % alignsz
-		if modsz == 0 {
+		f0 := flds[idx]
+		f0.padto = f0.size
+
+		if f0.size % alignsz == 0 {
+			idx++
 			continue
 		}
 		// last
 		if idx == flds.len-1{
-			f.padto = alignsz
+			f0.padto = ((f0.size+alignsz)/alignsz)*alignsz
 			break
 		}
 		// 查找从当前开始,一直到size的和>=alignsz
-		sumsize := orisize
+		sumsize := f0.size
 		for j := idx+1; j < flds.len; j++ {
 			f2 := &flds[j]
 			if sumsize + f2.size > alignsz {
 				f3:=&flds[j-1]
-				f3.padto = alignsz
-				vcp.info('padidx', j-1, '<=', idx.str())				
+				f3.padto = ((sumsize+alignsz)/alignsz)*alignsz
+				// vcp.info('padidx', j-1, '<=', idx.str())			
 				idx = j
 				break
 			} else if sumsize + f2.size == alignsz {
 				// do nothing
 				idx = j+1
 				break
+			}else{
+				sumsize += f2.size
 			}
 		}
 	}
@@ -433,74 +429,39 @@ pub fn struct_padto_size(flds []&FieldInfo) cint {
 		f := flds[idx]
 		f.offset = offset
 		offset += f.padto
+		// vcp.info(idx.str(), "${f.size}/${f.padto}/${f.offset}", f.name)
 	}
 
 	return 0
 }
 
 // 似乎v支持不了,实现不了
-pub fn stfieldsof[T](opts T) string {
+// only fill size/index
+pub fn struct_field_infos[T](opts T) []&FieldInfo {
 	fldcnt := struct_field_count[T]()
 	mut flds := []&FieldInfo{len:int(fldcnt)}
-	mut ret := ""
-	mut offset := 0
-	mut offidx := -1
-	mut stsize := 0
-		
-	C.offsetofcval(opts, C.command)
 
+	mut offidx := -1
 	$for f in opts.fields {
 		offidx ++
 		// vcp.info(f.typ)
-		println("${@FILE_LINE}: ${offidx}/${offset} ${f.name}, ${f.typ}")
+		// println("${@FILE_LINE}: ${offidx} ${f.name}, ${f.typ}")
 		// println("${@FILE_LINE}: ${f}")
-		mut fldinfo := FieldInfo{FieldData: f, offset: offset}
-		fldinfo.ptr = voidptr(usize(voidptr(&opts)) + usize(offset))
-
-		match f.typ {
-			tkstring {
-				// off := __offsetof(MenuOptions, f.name)
-				fldinfo.size = sizeof("")
-			}
-			typeof(?int(none)).idx { // vbug: f.typ is int, but not ?int
-				assert false, 'waitvfix'
-				zv := Optionin[int]{}
-				fldinfo.size = C.sizeofc(zv)
-			}
-			int {
-				if f.attrs.contains('option') {
-					zv := Optionin[int]{}
-					fldinfo.size = sizeof(zv)
-				}else{
-				zv := int(0)
-				fldinfo.size = sizeof(zv)
-				}
-			}
-			bool {
-				fldinfo.size = sizeof(true)
-			}
-			voidptr {
-				zv := vnil
-				fldinfo.size = sizeof(zv)
-			}
-			else{
-				println("${@FILE_LINE}: nocat: ${offidx}/${offset} ${f.name}, ${f.typ}")
-			}
-		}
-		println("${fldinfo.size}, ${f.name}")
-		offset += fldinfo.size
-		stsize += fldinfo.size
-		fldinfo.padto = fldinfo.size
+		mut fldinfo := FieldInfo{index:offidx, FieldData: f}
+		// todo waitvfix
+		fldsize := sizeof_bytyidx(f.typ, f.attrs.contains("option"))
+		fldinfo.size = fldsize
+		// println("${fldinfo.size}, ${f.name}")
 		flds[offidx] = &fldinfo
 	}
-	// 第二遍,field align/padding
-	struct_padto_size(flds)
 
+	// 第二遍,field align/padding
+	struct_align_offset(flds)
+
+	mut stsize := 0; for f in flds { stsize += f.padto }
 	stsize2 := sizeof(opts)
-	opiv := ?int(none)
-	vcp.info(typeof(opiv).name, typeof(opiv).idx)
 	assert stsize == stsize2, "rtsize not match"
-	return ret
+	return flds
 }
 
 pub fn (opts MenuOptions) toline() string {
@@ -539,7 +500,7 @@ pub fn Menu.new(opts MenuOptions) Menu {
 	// if v := opts.underline  {
 	// 	cmd += " -underline ${v}"
 	// }
-	cmd2 := stfieldsof(opts)
+	cmd2 := struct_field_infos(opts)
 	rc := call(cmd)
 	return Menu{varname:vn}
 }
