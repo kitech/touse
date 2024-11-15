@@ -1,5 +1,7 @@
 module main
 
+import os
+
 import  vcp
 import  vcp.tcltk
 
@@ -92,10 +94,11 @@ pub fn create_toolbar() {
 		btn.connect(fn(cbval voidptr, args []string){
 			vcp.info("hehhe", cbval, args.str())
 			if gvars.mpvo == vnil {
-				create_mpvobj(gvars.wid)
+				// create_mpvobj(gvars.wid)
 			}else{
-				mpv_play_one('')
+				// mpv_play_one('')
 			}
+			play_file(os.args[1])
 		}, vnil)
 	}
 

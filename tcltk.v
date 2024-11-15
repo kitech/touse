@@ -374,6 +374,7 @@ pub struct Menu {
 // 还是不能用?int这种字段
 // 即使不用?int,还是无法通用实现
 pub struct MenuOptions {
+	TkOptions
 	pub mut:
 	// attr to fix v cannot given correct type
 	tearoff ?int @[option;hehhe]

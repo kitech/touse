@@ -10,6 +10,7 @@ import  vcp.mpv
 struct Globvars {
 	/// ui
 	Uicomp
+	Bkdlibmpv
 
 	pub mut:
 	wid string
@@ -104,7 +105,10 @@ fn mpv_play_one(file string) {
 	gv := gvars
 	h := gvars.mpvo
 	mut rv := 0
-	
+
+	rv = C.mpv_set_option_string(h, c'wid', gvars.wid.str)
+	check_mpvret(rv)
+
 	// todo 有时无图像,但有声音,
 	// 播放正常,可能是无法正确嵌入tcltk窗口
 	// 尝试一种可能的解决方案,用xlib创建窗口,看能不能放到tcltk的layout中
