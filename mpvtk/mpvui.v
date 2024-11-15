@@ -154,6 +154,19 @@ pub fn create_playlist_view() {
 	if true {
 	lb := tcltk.Listbox.new(parent)
 	gv.plstvw = lb
+	// <<ListboxSelect>>
+	lb.bind('<Double-Button-1>', vnil, fn(cbv voidptr, args []string) {
+		vcp.info('playlist item click*2', cbv, args.str())
+		gv := gvars
+		res := gv.plstvw.curselone()
+		vcp.info(res)
+		res = gv.plstvw.get(res)
+		vcp.info(res)
+		res = path_reverse(res)
+		if res != "" {
+			play_file(res)
+		}
+	})
 	gvars.lo0.pack(lb, tcltk.PackOptions{side: "top", fill:"y"})
 	}
 	if true {

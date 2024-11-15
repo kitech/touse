@@ -62,6 +62,11 @@ pub fn tk_init(p voidptr) int {
 	return rc
 }
 
+// source
+pub fn source_file(file string) int {
+
+	return 0
+}
 // call and eval are the same indeed
 pub fn eval(s string) int {
 	rc := C.Tcl_Eval(gvars.tclirp, s.str)
@@ -162,9 +167,28 @@ pub struct Tkobject {
 	varname string
 }
 pub fn (me Tkobject) name() string { return me.varname }
+
+pub fn (me Tkobject) bind(ev string, cbval voidptr, fnx fn(cbv voidptr, args []string)) {
+	slotname := "${me.name()[1..]}_oncmd_${ev}"
+	create_command(gvars.tclirp, slotname,
+			fn[fnx](a0 voidptr, a1 voidptr, args []string) int {
+		vcp.info(@FILE_LINE, a0, a1, args.str())
+		fnx(a0, args)
+		return 0
+	}, cbval)
+
+	cmd := "bind ${me.name()} ${ev} ${slotname}"
+	rc := call(cmd)
+} 
+
+///
+// pub struct Bind {}
+
 pub interface Tkobjitf {
 	name() string
 }
+
+///
 
 pub struct Labelframe {
 	Tkobject
@@ -332,6 +356,27 @@ pub fn Listbox.new(parent Tkobjitf) Listbox {
 	rc := call(cmd)
 	return Listbox{varname:vn}
 }
+
+pub fn (me Listbox) add(val string) {
+	cmd := '${me.name()} insert 0 "${val}"'
+	rc := call(cmd)
+}
+
+pub fn (me Listbox) get(first string) string{
+	cmd := '${me.name()} get ${first}'
+	res := call2(cmd) or { vcp.error(err.str()); ''}
+	vcp.info(res)
+	return res
+}
+
+pub fn (me Listbox) curselone() string{
+	cmd := '${me.name()} curselection'
+	res := call2(cmd) or { vcp.error(err.str()); ''}
+	vcp.info(res)
+	return res
+}
+
+///
 
 pub struct Winfo {
 	// Tkobject

@@ -20,6 +20,7 @@ struct Globvars {
 	mpvcbtid u64
 
 	logch chan voidptr = chan voidptr {cap: 128}
+	savch chan int = chan int{cap: 8}
 	plst &Playlist = &Playlist{}
 }
 const gvars = &Globvars{}
@@ -42,6 +43,9 @@ fn initui_done(irp voidptr) int {
 	gv := gvars
 	gv.mtid = vcp.gettid()
 
+	// tcltk.eval('source ${vcp.homedir}/aprog/tkBreeze/breeze-dark/breeze-dark.tcl')
+	// tcltk.eval('source ${vcp.homedir}/aprog/Forest-ttk-theme/forest-dark.tcl')
+
 	create_top_menus()
 	create_winlo_begin()
 	create_toolbar()	
@@ -55,17 +59,27 @@ fn initui_done(irp voidptr) int {
 	return 0
 }
 
+pub fn path_reverse(file string) string {
+	arr := file.split('/')
+	arr2 := arr.reverse()
+	return arr2.join('/')
+}
+
 pub fn load_playlist_toui() {
 	gvars.plst.load()
 
 	plst := gvars.plst
 	for e in plst.list {
-		
+		v := path_reverse(e)
+		gvars.plstvw.add(v)
 	}
+	// for i in 10..29 {
+	// 	gvars.plstvw.add('fakeit5${i}')
+	// }
 }
 
 fn C.GC_thread_is_registered() cint
-fn mpv_wakeup_cb(ctx voidptr) {
+fn mpv_wakeup_cbproc(ctx voidptr) {
 	if true {mpv_wakeup_cb1(ctx)}
 }
 // 难道是这个函数处理太复杂,导致经常播放无响应??? 确实

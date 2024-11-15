@@ -67,7 +67,7 @@ pub fn mpvchk_create_handle() {
 	mvpsetopts(opts)
 	C.mpv_request_event(h, C.MPV_EVENT_LOG_MESSAGE, 1)
 	C.mpv_request_log_messages(h, c'info')
-	C.mpv_set_wakeup_callback(h, mpv_wakeup_cb, voidptr(42))
+	C.mpv_set_wakeup_callback(h, mpv_wakeup_cbproc, voidptr(42))
 
 	rv = C.mpv_initialize(h)
 	check_mpvret(rv)
@@ -79,16 +79,19 @@ pub fn play_file(file string) {
 
 	mpvchk_create_handle()
 	h := gv.mpvo
-	
+
 	if true {
-		rv = mpv.command_async(h, 12345, "loadfile", os.args[1]) //, "append-play")
+		rv = mpv.command_async(h, 12345, "loadfile", file) //, "append-play")
 		check_mpvret(rv)
+
+	gv.plst.add(file)
+	gv.savch <- 1
 		return
 	}
 
-	cmdargs := [charptr('loadfile'.str), charptr(os.args[1].str), vnil]
+	cmdargs := [charptr('loadfile'.str), charptr(file.str), vnil]
 	cmdargs.firstz()
-	vcp.info(cmdargs.len, cmdargs.str(), os.args[1])
+	vcp.info(cmdargs.len, cmdargs.str(), file)
 	rv = C.mpv_command_async(h, 12345, cmdargs.clone().data)
 	check_mpvret(rv)
 }
@@ -124,6 +127,7 @@ const playlist_file = "mpvtk.playlist"
 pub struct Playlist {
 	pub mut:
 	list []string
+	moded bool = false
 }
 
 pub fn (me &Playlist) load() bool {
@@ -140,12 +144,17 @@ pub fn (me &Playlist) save() bool {
 	scc := me.list.join('\n')
 	if scc != "" {
 		os.write_file(playlist_file, scc) or { vcp.error(err.str(), playlist_file) }
+		me.moded = false
 	}
 	return true
 }
 
 pub fn (me &Playlist) add(file string) bool {
 	if me.list.contains(file) { return false}
+	if !os.exists(file) { return false }
+	if me.list.len > 32 {}
+
 	me.list << file
+	me.moded = true
 	return true
 }

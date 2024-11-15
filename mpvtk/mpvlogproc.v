@@ -7,10 +7,19 @@ import vcp.mpv
 
 pub fn mpvlog_fwdproc() {
 	gv := gvars
-	ch := gv.logch
+	logch := gv.logch
+	savch := gv.savch
 
 	for i:= 0; ; i ++ {
-		evox := <- ch
+		select {
+			evox := <- logch {
+				// vcp.info("logch got", evox)
+			}
+			savsig := <- savch {
+				// vcp.info("savch got", typeof(savsig).name)
+				gv.plst.save()
+			}
+		}
 		// evo := castptr[mpv.Event](evox)
 		// vcp.info(evox)
 
