@@ -43,8 +43,7 @@ fn initui_done(irp voidptr) int {
 	gv := gvars
 	gv.mtid = vcp.gettid()
 
-	// tcltk.eval('source ${vcp.homedir}/aprog/tkBreeze/breeze-dark/breeze-dark.tcl')
-	// tcltk.eval('source ${vcp.homedir}/aprog/Forest-ttk-theme/forest-dark.tcl')
+	load_theme()
 
 	create_top_menus()
 	create_winlo_begin()
@@ -57,6 +56,24 @@ fn initui_done(irp voidptr) int {
 
 	load_playlist_toui()
 	return 0
+}
+
+// if run in home dir, then find theme file in exe dir
+// if run in system dir, then find theme in ../share/exename/
+pub fn load_theme() {
+	themedir := vcp.exedir
+	themefile := themedir + "/forest-dark.tcl"
+	if !os.exists(themefile) {
+		themefile = themedir + "../share/mpvtk/forest-dark.tcl"
+	}
+	if !os.exists(themefile) {
+		vcp.warn("Cannot find theme file", os.base(themefile))
+		return
+	}
+	tcltk.eval('source ${themefile}')
+	// https://github.com/rdbende/Forest-ttk-theme
+	// tcltk.eval('source ${vcp.homedir}/aprog/tkBreeze/breeze-dark/breeze-dark.tcl')
+	// tcltk.eval('source ${vcp.homedir}/aprog/Forest-ttk-theme/forest-dark.tcl')
 }
 
 pub fn path_reverse(file string) string {
