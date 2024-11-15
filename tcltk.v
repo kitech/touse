@@ -372,31 +372,76 @@ pub struct Menu {
 // 即使不用?int,还是无法通用实现
 pub struct MenuOptions {
 	pub mut:
-	tearoff ?int // = max_int
+	// attr to fix v cannot given correct type
+	tearoff ?int @[option;hehhe]
 	cascade bool
 	label string
-	underline ?int // = max_int
+	underline ?int @[option;hehhe]
 	command voidptr
 }
 
 pub struct FieldInfo {
 	FieldData
 pub mut:
-	size  int
-	offset int
+	size  cint
+	padto  cint
+	offset cint
 	ptr voidptr
 }
 
-pub struct Optionin[T] {
-	pub mut:
-	state byte
-	err IError = vnil
-	data T
+// little hard!!!
+// some like offsetof
+pub fn struct_fill_offset(flds []&FieldInfo) {
+
+}
+pub fn struct_padto_size(flds []&FieldInfo) cint {
+	alignsz := cint(i32(sizeof(usize)))
+
+	// idx step more than one
+	for cnter, idx := 0, 0; idx < flds.len ; cnter++ {
+		f := flds[idx]
+		orisize := f.size
+		modsz := orisize % alignsz
+		if modsz == 0 {
+			continue
+		}
+		// last
+		if idx == flds.len-1{
+			f.padto = alignsz
+			break
+		}
+		// 查找从当前开始,一直到size的和>=alignsz
+		sumsize := orisize
+		for j := idx+1; j < flds.len; j++ {
+			f2 := &flds[j]
+			if sumsize + f2.size > alignsz {
+				f3:=&flds[j-1]
+				f3.padto = alignsz
+				vcp.info('padidx', j-1, '<=', idx.str())				
+				idx = j
+				break
+			} else if sumsize + f2.size == alignsz {
+				// do nothing
+				idx = j+1
+				break
+			}
+		}
+	}
+
+	offset := 0
+	for idx := 0; idx < flds.len; idx++ {
+		f := flds[idx]
+		f.offset = offset
+		offset += f.padto
+	}
+
+	return 0
 }
 
 // 似乎v支持不了,实现不了
 pub fn stfieldsof[T](opts T) string {
-	mut flds := []FieldInfo{}
+	fldcnt := struct_field_count[T]()
+	mut flds := []&FieldInfo{len:int(fldcnt)}
 	mut ret := ""
 	mut offset := 0
 	mut offidx := -1
@@ -408,6 +453,7 @@ pub fn stfieldsof[T](opts T) string {
 		offidx ++
 		// vcp.info(f.typ)
 		println("${@FILE_LINE}: ${offidx}/${offset} ${f.name}, ${f.typ}")
+		// println("${@FILE_LINE}: ${f}")
 		mut fldinfo := FieldInfo{FieldData: f, offset: offset}
 		fldinfo.ptr = voidptr(usize(voidptr(&opts)) + usize(offset))
 
@@ -416,13 +462,19 @@ pub fn stfieldsof[T](opts T) string {
 				// off := __offsetof(MenuOptions, f.name)
 				fldinfo.size = sizeof("")
 			}
-			?int { // vbug: f.typ is int, but not ?int
+			typeof(?int(none)).idx { // vbug: f.typ is int, but not ?int
+				assert false, 'waitvfix'
 				zv := Optionin[int]{}
 				fldinfo.size = C.sizeofc(zv)
 			}
 			int {
+				if f.attrs.contains('option') {
+					zv := Optionin[int]{}
+					fldinfo.size = sizeof(zv)
+				}else{
 				zv := int(0)
 				fldinfo.size = sizeof(zv)
+				}
 			}
 			bool {
 				fldinfo.size = sizeof(true)
@@ -438,9 +490,15 @@ pub fn stfieldsof[T](opts T) string {
 		println("${fldinfo.size}, ${f.name}")
 		offset += fldinfo.size
 		stsize += fldinfo.size
-		flds << fldinfo
+		fldinfo.padto = fldinfo.size
+		flds[offidx] = &fldinfo
 	}
+	// 第二遍,field align/padding
+	struct_padto_size(flds)
+
 	stsize2 := sizeof(opts)
+	opiv := ?int(none)
+	vcp.info(typeof(opiv).name, typeof(opiv).idx)
 	assert stsize == stsize2, "rtsize not match"
 	return ret
 }
@@ -481,7 +539,7 @@ pub fn Menu.new(opts MenuOptions) Menu {
 	// if v := opts.underline  {
 	// 	cmd += " -underline ${v}"
 	// }
-	// cmd += stfieldsof(opts)
+	cmd2 := stfieldsof(opts)
 	rc := call(cmd)
 	return Menu{varname:vn}
 }

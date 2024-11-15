@@ -114,6 +114,7 @@ fn mpv_play_one(file string) {
 	// rv = C.mpv_command_string(h, c"loadfile hello.mp4")
 
 	cmdargs := [charptr('loadfile'.str), charptr(os.args[1].str), vnil]
+	cmdargs.firstz()
 	vcp.info(cmdargs.len, cmdargs.str(), os.args[1])
 	rv = C.mpv_command_async(h, 12345, cmdargs.clone().data)
 	// rv = C.mpv_command_string(h, loadfile.clone().str)
@@ -123,6 +124,22 @@ fn mpv_play_one(file string) {
 
 fn C.GC_thread_is_registered() cint
 fn mpv_wakeup_cb(ctx voidptr) {
+	if true {mpv_wakeup_cb1(ctx)}
+	else {mpv_wakeup_cb2(ctx)}
+}
+fn mpv_wakeup_cb1(ctx voidptr) {
+	mpvo := gvars.mpvo
+	for i:=0; i < 50000; i++ {
+		evox := C.mpv_wait_event(mpvo, 0)
+		evo := castptr[mpv.Event](evox)
+		if evo.event_id == C.MPV_EVENT_NONE {
+			break
+		}
+	}
+}
+// 难道是这个函数处理太复杂,导致经常播放无响应???
+fn mpv_wakeup_cb2(ctx voidptr) {
+	if true {return}
 	gv := gvars
 	ctid := vcp.gettid()
 	// assert ctid == gvars.mtid
