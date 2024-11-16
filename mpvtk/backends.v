@@ -2,6 +2,7 @@
 
 import os
 import sync.stdatomic
+import arrays
 
 import vcp
 import vcp.mpv
@@ -75,6 +76,29 @@ pub fn mpvchk_create_handle() {
 	check_mpvret(rv)
 }
 
+pub fn play_files(files ... string) {
+	gv := gvars
+	mut rv := 0
+
+	mpvchk_create_handle()
+	h := gv.mpvo
+
+	// 插入到playerlist,并按照顺序播放
+	// 如果是多个媒体文件, 则建立临时的内部playlist
+	for idx, file in files {
+		if files.len > 1 {
+			// 这个参数有时不会播放???
+		rv = mpv.command_async(h, 12345, 'loadfile', file, 'insert-at-play', idx.str()) //, "append-play")
+		check_mpvret(rv)
+		}else{
+		rv = mpv.command_async(h, 12345, 'loadfile', file) //, "append-play")
+		check_mpvret(rv)
+		}
+	}
+
+	add_playlist_uidisk(...files)
+}
+
 pub fn play_file(file string) {
 	gv := gvars
 	mut rv := 0
@@ -86,8 +110,7 @@ pub fn play_file(file string) {
 		rv = mpv.command_async(h, 12345, "loadfile", file) //, "append-play")
 		check_mpvret(rv)
 
-	gv.plst.add(file)
-	gv.savch <- 1
+		add_playlist_uidisk(file)
 		return
 	}
 
@@ -121,6 +144,16 @@ pub struct Bkdcmdmpv {
 
 }
 
+pub fn add_playlist_uidisk(files ... string) {
+	for file in files {
+		ok := gvars.plst.add(file)
+		if !ok { continue }
+		v := path_reverse(file)
+		v = path_escape_fortk(v)
+		gvars.plstvw.add(v)
+	}
+	gvars.savch <- 1
+}
 
 ///
 const playlist_file = "mpvtk.playlist"

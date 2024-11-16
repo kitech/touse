@@ -91,12 +91,12 @@ pub fn call2(s string) !string {
 	if rc != tclok {
 		// emsg := posix_error()
 		emsg2 := get_errnomsg0()
-		vcp.info("called", rc, emsg2, ":", s)
+		vcp.error("called", rc, emsg2, ":", s)
 		return error(emsg2)
 	}
 	resc := C.Tcl_GetStringResult(gvars.tclirp)
 	res := tosbca(resc)
-	vcp.info("res:", res, ": ${s}")
+	// vcp.info("res:", res, ": ${s}")
 	return res
 }
 
@@ -115,14 +115,19 @@ pub fn create_command(ir voidptr, name string, fnp TclcmdFunc, cbval voidptr)  u
 	return rc
 }
 
-pub fn getvar(ir voidptr, name string) {
+pub fn getvar(ir voidptr, name string) string {
 	rv := C.Tcl_GetVar(ir, name.str, 0)
-	vcp.info(rv)
+	return tosbca(charptr(rv))
 }
 
 pub fn setvar(ir voidptr, name string, val voidptr) {
 	rv := C.Tcl_SetVar(ir, name.str, val, 0)
 	vcp.info(rv)
+}
+
+pub fn unsetvar(ir voidptr, name string) cint {
+	rv := C.Tcl_UnsetVar(ir, name.str, 0)
+	return  rv
 }
 
 fn C.Tcl_PosixError(... voidptr) charptr
@@ -485,4 +490,17 @@ pub fn (me Menu) add(m Menu, opts MenuOptions) {
 	// 	cmd += " -command ${opts.command}"
 	// }
 	rc := call(cmd)
+}
+
+pub fn (me Menu) addcmd(text string, fnx fn(cbv voidptr, args []string)) {
+	slotname := "${me.name()[1..]}_${text}_oncmd"
+	create_command(gvars.tclirp, slotname,
+			fn[fnx](a0 voidptr, a1 voidptr, args []string) int {
+		vcp.info(@FILE_LINE, a0, a1, args.str())
+		fnx(a0, args)
+		return 0
+	}, vnil)
+
+	cmd := '${me.name()} add command -label "${text}" -command ${slotname}'
+	call(cmd)
 }

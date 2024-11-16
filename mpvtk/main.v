@@ -24,9 +24,10 @@ struct Globvars {
 	plst &Playlist = &Playlist{}
 }
 const gvars = &Globvars{}
+const cfgfile = "mpvtk.toml"
 
 fn main() {
-	C.GC_allow_register_threads()
+	// C.GC_allow_register_threads()
 	if true {
 		rv := C.mpv_client_api_version()
 		vcp.info(rv)
@@ -75,10 +76,28 @@ pub fn load_theme() {
 	// tcltk.eval('source ${vcp.homedir}/aprog/Forest-ttk-theme/forest-dark.tcl')
 }
 
+// if run in home dir, then find theme file in exe dir
+// if run in system dir, then find theme in ../share/exename/
+pub fn cfgdir_resolve() string {
+	dir := vcp.exedir
+	if dir.starts_with(vcp.homedir) {
+		return dir
+	}else{
+		return os.join_path("", vcp.homedir, ".config/mpvtk")
+	}
+}
+
 pub fn path_reverse(file string) string {
 	arr := file.split('/')
 	arr2 := arr.reverse()
 	return arr2.join('/')
+}
+pub fn path_escape_fortk(v string) string {
+	if v.contains('[') {
+		v = v.replace('[', '\\[')
+		v = v.replace(']', '\\]')
+	}
+	return v
 }
 
 pub fn load_playlist_toui() {
@@ -87,6 +106,7 @@ pub fn load_playlist_toui() {
 	plst := gvars.plst
 	for e in plst.list {
 		v := path_reverse(e)
+		v = path_escape_fortk(v)
 		gvars.plstvw.add(v)
 	}
 	// for i in 10..29 {
@@ -94,64 +114,6 @@ pub fn load_playlist_toui() {
 	// }
 }
 
-fn C.GC_thread_is_registered() cint
-fn mpv_wakeup_cbproc(ctx voidptr) {
-	if true {mpv_wakeup_cb1(ctx)}
-}
-// 难道是这个函数处理太复杂,导致经常播放无响应??? 确实
-// dont malloc memory useing gc
-// only use C.printf
-fn mpv_wakeup_cb1(ctx voidptr) {
-	isgcth := C.GC_thread_is_registered() == 1 
-	if !isgcth {
-		// C.printf(c'thread not gc managed %d\n', vcp.gettid())
-	}
-	// vcp.gcreg_mythread()
-
-	mpvo := gvars.mpvo
-	for i:=0; i < 50000; i++ {
-		evox := C.mpv_wait_event(mpvo, 0)
-		evo := castptr[mpv.Event](evox)
-		if evo.event_id == C.MPV_EVENT_NONE {
-			break
-		}
-		// evox2 := cmemdup(evox, sizeof(mpv.Event))
-		// evo2 := castptr[mpv.Event](evox2)
-		// evo2.data = vnil
-
-		evid := int(evo.event_id)
-		evname := mpv.event_name(evo.event_id)
-		// match evid {
-		// use vbug works, const == var, but not var == const
-		if mpv.EVENT_LOG_MESSAGE == evid {
-			msgo := castptr[mpv.EventLogMessage](evo.data)
-			// C.printf(c'mpv_wakeup_cb:77: %d %s: %s', i, evname, msgo.text)
-			// evo2.data = cmemdup(evo.data, sizeof(mpv.EventLogMessage))	
-			// vcp.freerc(ptr)
-			// println('${@FILE_LINE}: ${tosbca(evname)}, ${tosbca(msgo.text)}')
-			// x := '${@FILE_LINE}: ${tosbca(evname)}, ${tosbca(msgo.text)}'
-		}
-		else if mpv.EVENT_PROPERTY_CHANGE == evid {
-			C.printf(c'%s: %d, evid: %d, %s ...\n', (@FILE_LINE).str, i, evid, evname)
-		}
-		else {
-			C.printf(c'%s: %d, evid: %d, %s ...\n', (@FILE_LINE).str, i, evid, evname)
-		}
-		// }
-
-		gvars.logch <- evox
-	}
-			
-}
-
-fn check_mpvret(code int, what ... string) bool {
-	if code != C.MPV_ERROR_SUCCESS {
-		msg4c := C.mpv_error_string(code)
-		vcp.info(code, tosbca(msg4c), what.str())
-		return false
-	}
-	return true
-}
 
 fn uithproc() {
 	for idx:=0;; idx++ {

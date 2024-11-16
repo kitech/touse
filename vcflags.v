@@ -21,6 +21,7 @@ fn C.Tcl_GetStringResult(voidptr) charptr
 fn C.Tcl_CreateCommand(... voidptr) usize
 fn C.Tcl_GetVar(... voidptr) voidptr
 fn C.Tcl_SetVar(... voidptr) voidptr
+fn C.Tcl_UnsetVar(... voidptr) cint
 fn C.Tcl_Init(...voidptr) int
 fn C.Tcl_AppInit(...voidptr) int
 fn C.Tcl_StaticLibrary(...voidptr) int

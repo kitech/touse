@@ -189,10 +189,34 @@ pub fn create_top_menus() {
 	tcltk.Dotwin.conf(menu0)
 
 	menu1 := tcltk.Menu.new(tcltk.MenuOptions{tearoff: 0})
-	menu0.add(menu1, tcltk.MenuOptions{cascade: true, label: "File", underline: 0})
+	menu0.add(menu1, tcltk.MenuOptions{cascade: true, label: "Open", underline: 0})
 	if true {
-		menua := tcltk.Menu.new(tcltk.MenuOptions{tearoff: 0})
-		menu1.add(menua, tcltk.MenuOptions{cascade: true, label: "Exit", underline: 0})
+		// menua := tcltk.Menu.new(tcltk.MenuOptions{tearoff: 0})
+		// menu1.add(menua, tcltk.MenuOptions{cascade: true, label: "File", underline: 0})
+		menu1.addcmd("Open", fn(cbv voidptr, args []string) {
+			vcp.info(cbv, args.str())
+			res := tcltk.choose_files()
+			vcp.info(res.len, res.str())
+
+			if res.len > 0 {
+				play_files(...res)
+			}
+		})
+
+		// menub := tcltk.Menu.new(tcltk.MenuOptions{tearoff: 0})
+		// menu1.add(menub, tcltk.MenuOptions{cascade: true, label: "Url", underline: 0})
+		menu1.addcmd("Url", fn(cbv voidptr, args []string) {
+			vcp.info(cbv, args.str())
+			res := tcltk.Inputdia.run()
+			if res != "" {
+				play_file(res)
+			}
+		})
+
+		menuc := tcltk.Menu.new(tcltk.MenuOptions{tearoff: 0})
+		menu1.add(menuc, tcltk.MenuOptions{cascade: true, label: "Clipboard", underline: 0})
+		menuz := tcltk.Menu.new(tcltk.MenuOptions{tearoff: 0})
+		menu1.add(menuz, tcltk.MenuOptions{cascade: true, label: "Exit", underline: 0})
 	}
 
 	menu2 := tcltk.Menu.new(tcltk.MenuOptions{tearoff: 0})
