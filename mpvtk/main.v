@@ -52,8 +52,7 @@ fn initui_done(irp voidptr) int {
 	create_bottom_bar()
 	create_playlist_view()
 	create_winlo_end()
-	create_systray()		
-
+	create_systray()
 	load_playlist_toui()
 	return 0
 }
@@ -121,7 +120,7 @@ fn mpv_wakeup_cb1(ctx voidptr) {
 		// evo2.data = vnil
 
 		evid := int(evo.event_id)
-		evname := C.mpv_event_name(evo.event_id)
+		evname := mpv.event_name(evo.event_id)
 		// match evid {
 		// use vbug works, const == var, but not var == const
 		if mpv.EVENT_LOG_MESSAGE == evid {
@@ -132,8 +131,11 @@ fn mpv_wakeup_cb1(ctx voidptr) {
 			// println('${@FILE_LINE}: ${tosbca(evname)}, ${tosbca(msgo.text)}')
 			// x := '${@FILE_LINE}: ${tosbca(evname)}, ${tosbca(msgo.text)}'
 		}
+		else if mpv.EVENT_PROPERTY_CHANGE == evid {
+			C.printf(c'%s: %d, evid: %d, %s ...\n', (@FILE_LINE).str, i, evid, evname)
+		}
 		else {
-			// C.printf(c'mpv_wakeup_cb:80: %d %s ...\n', i, evname)	
+			C.printf(c'%s: %d, evid: %d, %s ...\n', (@FILE_LINE).str, i, evid, evname)
 		}
 		// }
 

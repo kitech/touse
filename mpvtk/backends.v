@@ -68,6 +68,8 @@ pub fn mpvchk_create_handle() {
 	C.mpv_request_event(h, C.MPV_EVENT_LOG_MESSAGE, 1)
 	C.mpv_request_log_messages(h, c'info')
 	C.mpv_set_wakeup_callback(h, mpv_wakeup_cbproc, voidptr(42))
+	rv = mpv.observe_property[bool](h,'eof-reached')
+	check_mpvret(rv)
 
 	rv = C.mpv_initialize(h)
 	check_mpvret(rv)
