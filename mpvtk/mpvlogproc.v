@@ -72,9 +72,6 @@ fn mpv_wakeup_cb1(ctx voidptr) {
 		if evo.event_id == .NONE {
 			break
 		}
-		// evox2 := cmemdup(evox, sizeof(mpv.Event))
-		// evo2 := castptr[mpv.Event](evox2)
-		// evo2.data = vnil
 
 		evid := int(evo.event_id)
 		evname := mpv.event_name0(cint(evo.event_id))
@@ -82,23 +79,23 @@ fn mpv_wakeup_cb1(ctx voidptr) {
 		// use vbug works, const == var, but not var == const
 		if mpv.EVENT_LOG_MESSAGE == evid {
 			msgo := castptr[mpv.EventLogMessage](evo.data)
-			// C.printf(c'mpv_wakeup_cb:77: %d %s: %s', i, evname, msgo.text)
-			// evo2.data = cmemdup(evo.data, sizeof(mpv.EventLogMessage))	
-			// vcp.freerc(ptr)
-			// println('${@FILE_LINE}: ${tosbca(evname)}, ${tosbca(msgo.text)}')
-			// x := '${@FILE_LINE}: ${tosbca(evname)}, ${tosbca(msgo.text)}'
+			C.infolm(i, evid, evname, msgo.text)
 		}
 		else if mpv.EVENT_PROPERTY_CHANGE == evid {
-			// C.printf(c'%s: %d, evid: %d, %s ...\n', (@FILE_LINE).str, i, evid, evname)
-			C.infolm(i, evid, evname)
+			pev := castptr[mpv.EventProperty](evo.data)
+			C.infolm(i, evid, evname, pev.name)
 		}
 		else {
-			// C.printf(c'%s: %d, evid: %d, %s ...\n', (@FILE_LINE).str, i, evid, evname)
 			C.infolm(i, evid, evname)
 		}
-		// }
 
 		gvars.logch <- evox
 	}
 			
+}
+
+pub fn cmemdup_typed[T](p voidptr, size usize) &T {
+	p0 := cmemdup(p, size)
+	p1 := castptr[T](p0)
+	return p1
 }
