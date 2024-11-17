@@ -195,10 +195,12 @@ pub fn create_top_menus() {
 		// menu1.add(menua, tcltk.MenuOptions{cascade: true, label: "File", underline: 0})
 		menu1.addcmd("Open", fn(cbv voidptr, args []string) {
 			vcp.info(cbv, args.str())
-			res := tcltk.choose_files()
+			lastdir := gvars.pmcfg.get('ui.lastdir')
+			res := tcltk.choose_files(lastdir)
 			vcp.info(res.len, res.str())
 
 			if res.len > 0 {
+				gvars.pmcfg.addup_lastdir(os.dir(res[0]))
 				play_files(...res)
 			}
 		})
@@ -209,6 +211,7 @@ pub fn create_top_menus() {
 			vcp.info(cbv, args.str())
 			res := tcltk.Inputdia.run()
 			if res != "" {
+				gvars.pmcfg.addup_lasturl(res)
 				play_file(res)
 			}
 		})

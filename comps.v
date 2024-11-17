@@ -30,8 +30,10 @@ tkwait window .t
 	return val
 }
 
-pub fn choose_files() []string {
+pub fn choose_files(dir string) []string {
 	cmd := 'tk_getOpenFile -multiple 1'
+	if dir != "" { cmd += ' -initialdir ${dir}'}
+	
 	res := call2(cmd) or {panic(err)}
 	// vcp.info(res)
 	arr0 := split_tcl_strlist(res)

@@ -58,6 +58,7 @@ fn mpv_wakeup_cbproc(ctx voidptr) {
 // 难道是这个函数处理太复杂,导致经常播放无响应??? 确实
 // dont malloc memory useing gc
 // only use C.printf
+@[vcpnogc: "don't gc_malloc in this function"]
 fn mpv_wakeup_cb1(ctx voidptr) {
 	isgcth := C.GC_thread_is_registered() == 1 
 	if !isgcth {

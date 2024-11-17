@@ -1,5 +1,6 @@
 import time
 import os
+import toml
 
 import vcp
 import  vcp.tcltk
@@ -22,9 +23,10 @@ struct Globvars {
 	logch chan voidptr = chan voidptr {cap: 128}
 	savch chan int = chan int{cap: 8}
 	plst &Playlist = &Playlist{}
+	pmcfg &Pmconfig = &Pmconfig{}
 }
 const gvars = &Globvars{}
-const cfgfile = "mpvtk.toml"
+const cfgfile = cfgdir_resolve() + "/mpvtk.toml"
 
 fn main() {
 	// C.GC_allow_register_threads()
@@ -45,6 +47,7 @@ fn initui_done(irp voidptr) int {
 	gv.mtid = vcp.gettid()
 
 	load_theme()
+	load_config()
 
 	create_top_menus()
 	create_winlo_begin()
@@ -114,6 +117,104 @@ pub fn load_playlist_toui() {
 	// }
 }
 
+// v.toml 太垃圾了
+pub struct Pmconfig {
+	pub mut:
+	moded bool
+	// can read but not edit
+	fd &toml.Doc = vnil
+	// can write
+	wd map[string]toml.Any
+}
+
+pub fn (me &Pmconfig) addup_lastdir(dir string) {
+	if dir.len==0 || dir == '.' { return }
+	me.addup('ui.lastdir', dir)
+}
+pub fn (me &Pmconfig) addup_lasturl(dir string) {
+	if dir.len==0 || dir == '.' { return }
+	me.addup('ui.lasturl', dir)
+}
+// 只适用map的
+pub fn (me &Pmconfig) addup(key string, dir string) {
+	if dir.len==0 || dir == '.' { return }
+
+	c := gvars.pmcfg
+	fd := c.fd
+	
+	path := key.split('.')
+	cval := toml.Any(dir)
+	// 递归向上一级赋值
+	for i := path.len-1; i >= 0; i-- {
+		cpath := path[..i].join('.')
+		oval := fd.value(cpath)
+		// vcp.info('set...', i.str(), cpath, oval.str())
+
+		x := oval.as_map()
+		if oval == toml.null {
+			x = map[string]toml.Any{}
+		}
+		x[path[i]] = cval
+		cval = x
+		// vcp.info(i.str(), cpath, cval.to_toml())
+	}
+
+	c.wd[path[0]] = cval.as_map()[path[0]]
+
+	c.moded = true
+	save_config() 
+}
+pub fn (me &Pmconfig) addup_demo(dir string) {
+	if dir.len==0 || dir == '.' { return }
+
+	c := gvars.pmcfg
+	fd := c.fd
+	
+	ui := fd.value('ui').as_map()
+	ui['lastdir'] = dir	
+	c.wd['ui'] = ui
+	c.moded = true
+	save_config() 
+}
+
+pub fn (me &Pmconfig) get(key string) string {
+	vx := me.fd.value(key)
+	vcp.info(key, vx.str())
+	return vx.string()
+}
+
+pub fn load_config() {
+	// vcp.info("Loadcfg...", cfgfile, os.exists(cfgfile))
+	fd := toml.parse_file(cfgfile) or {
+		dftcfgs := '[mpv]
+		keep-open-pause = "no"
+		keep-open = "yes"
+		idle = "yes"
+		xo = "xv"
+		[ui]
+		'
+
+		toml.parse_text(dftcfgs) or {panic(err)}
+	}
+	refvar2mut(gvars).pmcfg.fd = &fd
+	refvar2mut(gvars).pmcfg.wd = fd.to_any().as_map()
+}
+pub fn save_config() {
+	c := gvars.pmcfg
+	if !c.moded {
+		return
+	}
+	defer {c.moded = false}
+
+	// vbug, c error
+	// scc := toml.encode(gvars.pmcfg.wd)
+	scc := c.wd.to_toml()
+	scc += '\n'
+
+	fd := toml.parse_text(scc) or {panic(err)}
+	c.fd = &fd
+	os.write_file(cfgfile, scc) or {panic(err)}
+}
 
 fn uithproc() {
 	for idx:=0;; idx++ {

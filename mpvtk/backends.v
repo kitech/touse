@@ -47,6 +47,9 @@ pub fn mpvchk_create_handle() {
 	// keep-open-pause=no and keep-open=yes fix this!!!
 	gv := gvars
 	opts := ["wid", gv.wid, "vo", "gpu", "idle", "yes", "keep-open-pause", "no", "keep-open", "yes"]
+	// 支持参数覆盖
+	// vo=xv,libmpv内存会小30-40M
+	opts << "vo"; opts << "xv"
 	opts << "log-file"; opts << "mpvtk.log"
 	// opts << "playlist"; opts << "mpvtk.playlist" // why404
 	// opts << "show-progress"; opts << "yes" // why404
