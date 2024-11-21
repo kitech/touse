@@ -192,6 +192,21 @@ pub fn load_config() {
 		idle = "yes"
 		xo = "xv"
 		[ui]
+		winpos-x = ""
+		winpos-y = ""
+		winpos-width = ""
+		winpos-height = ""
+		theme = ""
+		loop-ordered = "no"
+		loop-random = "yes"
+		mute = "no"
+		show-playlist = "yes"
+		[else]
+		loglevel = ""
+		logdir = ""
+		snapdir = ""
+		[playlist]
+		[playhistory]
 		'
 
 		toml.parse_text(dftcfgs) or {panic(err)}
