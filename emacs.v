@@ -37,12 +37,13 @@ fn eminit(rt &Runtime) int {
 	vcp.info('envinfo:', env.vh.size, sizeof(Env))
 	emcheckenv(env)
 	vcp.info('envfn:', env.nle_check().str())
-	tv2 := env.intern('hehehe')
 	tv := env.intval(123)
 	vcp.info('envfn:', tv)
-	vcp.info(tv.isnil(), tv2.isnil())
-	vcp.info(tv.toint(), tv2.toint())
-	vcp.info(tv.toint(), tv2.toint()) // why zero
+	vcp.info(tv.isnil())
+	vcp.info(tv.toint())
+	vcp.info(tv.toint()) // why zero
+
+	basictt()
 
 	return 0
 }
@@ -121,6 +122,7 @@ pub enum ProcInputResult {
 }
 
 pub type Limb = isize
+pub type Symbol = string
 
 pub union Env {
 pub mut:
@@ -138,9 +140,126 @@ pub fn (me &Env) intern(name string) Value {
 	return me.vm.intern_(me, name.str)
 }
 
+pub fn (me &Env) fcall(fun Value, args ...Value) Value {
+	nargs := isize(args.len)
+	rv := me.vm.funcall(me, fun, nargs, args.data)
+	return rv
+}
+
+pub fn (me &Env) fcall2(funame string, args ...Value) Value {
+	fun := me.intern(funame)
+	nargs := isize(args.len)
+	rv := me.vm.funcall(me, fun, nargs, args.data)
+	return rv
+}
+
+// todo
+pub fn (me &Env) fcall3(funame string, args ...Anyer) Anyer {
+	fun := me.intern(funame)
+	nargs := isize(args.len)
+	arr := []Value{len: args.len + 1}
+	for i := 0; i < args.len; i++ {
+		arg := args[i]
+		v := me.toel(arg)
+		arr[i] = v
+	}
+	rv := me.vm.funcall(me, fun, nargs, arr.data)
+	vcp.info(funame, rv.strfy())
+	// 	return rv
+	return zeroof[Anyer]()
+}
+
+pub fn (me &Env) toel(arg Anyer) Value {
+	rv := zeroof[Value]()
+	match arg {
+		string {
+			rv = me.strval(arg)
+		}
+		int, isize, usize, i32, i64, u64 {
+			rv = me.intval(isize(arg))
+		}
+		f64, f32 {
+			rv = me.realval(f64(arg))
+		}
+		// ???
+		bool {}
+		Value {
+			rv = arg
+		}
+		Symbol {
+			rv = me.intern(arg)
+		}
+		voidptr {
+			rv = arg
+		}
+		else {
+			vcp.warn('nocat', arg)
+		}
+	}
+	return rv
+}
+
+pub fn (me &Env) fromel(arg Value) Anyer {
+	tyo := arg.typof()
+	tystr := tyo.strfy()
+	match tystr {
+		// 'string' {}
+		// 'symbol' {}
+		// 'integer' {}
+		// 'float' {}
+		'boolean' {}
+		else {
+			vcp.info('nocat', tystr)
+		}
+	}
+	return zeroof[Anyer]()
+}
+
+// strfy
+pub fn (me Value) strfy() string {
+	nargs := isize(1)
+	rv := emvs.env.fcall2('prin1-to-string', me)
+	s := rv.tostr()
+	return s
+}
+
+pub fn (me Value) isnil() bool {
+	if me.asptr() == vnil {
+		return true
+	}
+	env := emvs.env
+	rv := env.vm.is_not_nil(env, me)
+	return !rv
+}
+
+pub fn (me Value) typof() Value {
+	env := emvs.env
+	rv := env.vm.type_of(env, me)
+	return rv
+}
+
 pub fn (me Value) toint() isize {
 	env := emvs.env
 	rv := env.vm.extract_integer(env, me)
+	return rv
+}
+
+pub fn (me Value) tostr() string {
+	env := emvs.env
+	size := isize(0)
+	bv := env.vm.copy_string_contents(env, me, vnil, &size)
+	// assert bv == true
+	if bv == false {
+		env.nle_check()
+		return ''
+	}
+	// vcp.info('needlen', size, bv)
+	buf := []i8{len: int(size)}
+	bv = env.vm.copy_string_contents(env, me, buf.data, &size)
+	// assert bv == true
+	env.nle_check()
+
+	rv := tosbca(buf.data, int(size))
 	return rv
 }
 
@@ -149,10 +268,29 @@ pub fn (me &Env) intval(v isize) Value {
 	return rv
 }
 
-pub fn (me Value) isnil() bool {
-	env := emvs.env
-	rv := env.vm.is_not_nil(env, me)
-	return !rv
+pub fn (me &Env) strval(v string) Value {
+	rv := me.vm.make_string(me, v.str, isize(v.len))
+	me.chkret()
+	return rv
+}
+
+pub fn (me &Env) realval(v f64) Value {
+	rv := me.vm.make_float(me, v)
+	return rv
+}
+
+// pub fn (me &Env) nle_get() FcallExit {
+// 	return me.vm.non_local_exit_check(me)
+// }
+
+// todo cannot get errmsg
+pub fn (me &Env) chkret() {
+	sym := zeroof[Value]()
+	data := zeroof[Value]()
+	tv := me.vm.non_local_exit_get(me, &sym, &data)
+	if tv != .return_ {
+		vcp.info(tv.str(), sym.isnil(), data.isnil())
+	}
 }
 
 ///
@@ -185,11 +323,9 @@ pub:
 
 	non_local_exit_throw fn (env voidptr, tag voidptr, value voidptr) = vnil
 
-	make_function_ fn () = vnil
-	// make_function fn (env voidptr, min_arity isize, max_arity isize,
-	//                func fn(e voidptr, nargs isize, args voidptr, data voidptr) voidptr,
-	//                docstring charptr, data voidptr) voidptr = vnil
-	funcall fn (env voidptr, func voidptr, nargs isize, args voidptr) voidptr = vnil
+	make_function_ fn (env voidptr, min_arity isize, max_arity isize, fun fn (e voidptr, nargs isize, args &Value, data voidptr) Value, docstr charptr, data voidptr) Value = vnil
+
+	funcall fn (env voidptr, fun Value, nargs isize, args &Value) Value = vnil
 
 	intern_ fn (env voidptr, name charptr) Value = vnil
 
@@ -207,7 +343,7 @@ pub:
 
 	make_float fn (env voidptr, d f64) Value = vnil
 
-	copy_string_contents fn (env voidptr, value voidptr, buf byteptr, len &isize) bool = vnil
+	copy_string_contents fn (env voidptr, value Value, buf byteptr, len &isize) bool = vnil
 
 	make_string fn (env voidptr, str charptr, len isize) Value = vnil
 
@@ -216,19 +352,15 @@ pub:
 	get_user_ptr fn (env voidptr, arg voidptr) voidptr      = vnil
 	set_user_ptr fn (env voidptr, arg voidptr, ptr voidptr) = vnil
 
-	get_user_finalizer_ fn () = vnil
-	// get_user_finalizer fn (env voidptr, uptr voidptr)
-	// void (*(*get_user_finalizer) (emacs_env *env, emacs_value uptr))
-	//   (void *) EMACS_NOEXCEPT EMACS_ATTRIBUTE_NONNULL(1);
-	set_user_finalizer_ fn () = vnil
-	// void (*set_user_finalizer) (emacs_env *env, emacs_value arg,
-	//   		      void (*fin) (void *) EMACS_NOEXCEPT)
-	//   EMACS_ATTRIBUTE_NONNULL(1);
-	vec_get fn (env voidptr, vector voidptr, index isize) voidptr = vnil
+	get_user_finalizer_ fn (env voidptr, arg Value) voidptr = vnil
 
-	vec_set fn (env voidptr, vector isize, index isize, value voidptr) = vnil
+	set_user_finalizer_ fn (env voidptr, arg Value, fin fn (voidptr)) = vnil
 
-	vec_size fn (env voidptr, vector voidptr) isize = vnil
+	vec_get fn (env voidptr, vector Value, index isize) Value = vnil
+
+	vec_set fn (env voidptr, vector Value, index isize, value Value) = vnil
+
+	vec_size fn (env voidptr, vector Value) isize = vnil
 
 	should_quit fn (env voidptr) bool = vnil
 
@@ -244,14 +376,14 @@ pub:
 
 	make_big_integer fn (env voidptr, sign int, count isize, magnitude &Limb) voidptr = vnil
 
-	get_function_finalizer_ fn () = vnil
+	// return should be fn(voidptr)
+	get_function_finalizer_ fn (env voidptr, arg Value) voidptr = vnil
 	// void (*(*EMACS_ATTRIBUTE_NONNULL (1)
 	//           get_function_finalizer) (emacs_env *env,
 	//                                    emacs_value arg)) (void *) EMACS_NOEXCEPT;
-	set_function_finalizer_ fn () = vnil
-	// void (*set_function_finalizer) (emacs_env *env, emacs_value arg,
-	//                                 void (*fin) (void *) EMACS_NOEXCEPT)
-	//   EMACS_ATTRIBUTE_NONNULL (1);
+
+	set_function_finalizer_ fn (env voidptr, arg Value, fin fn (voidptr)) = vnil
+
 	open_channel fn (env voidptr, pipe_process voidptr) int = vnil
 
 	make_interactive fn (env voidptr, function voidptr, spec voidptr) = vnil
