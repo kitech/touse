@@ -15,6 +15,8 @@ fn emuser_init(e &emacs.Env) {
 	eminit_hooks(e)
 	eminit_shotkeys(e)
 	eminit_peekvars(e)
+
+	eminit_uis(e)
 }
 
 const shotkeys = {
@@ -52,7 +54,35 @@ fn eminit_hooks(e &emacs.Env) {
 	}
 }
 
+struct MainWin {
+pub mut:
+	left1 emacs.Value
+	left2 emacs.Value
+}
+
+const emmw = &MainWin{}
+
 fn eminit_uis(e &emacs.Env) {
+	dw, dh := e.display_pixel_width(), e.display_pixel_height()
+	w := e.window_pixel_width(vnil)
+	h := e.window_pixel_height(vnil)
+	vcp.info('size: ${w}x${h}, dsp: ${dw}x${dh}')
+
+	// cannot resize a root window of a frame
+	// e.window_resize(vnil, 200, true, true)
+
+	frmwidth := dw * 8 / 9
+	frmheight := dh * 5 / 6
+
+	rgtwinwidth := frmwidth * 3 / 4
+	topleftheight := frmheight * 3 / 5
+
+	e.set_frame_width(vnil, frmwidth, true)
+
+	w1 := e.split_window(vnil, rgtwinwidth, .left, true)
+	refvar2mut(emmw).left1 = w1
+	w2 := e.split_window(w1, topleftheight, .below, true)
+	refvar2mut(emmw).left2 = w2
 }
 
 const elvars = ['last-nonmenu-event', 'default-directory', 'use-dialog-box', 'use-file-dialog',
