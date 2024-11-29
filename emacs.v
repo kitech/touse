@@ -16,10 +16,19 @@ import vcp
 // need __rt_exit???
 // #flag @VEXEROOT/thirdparty/tcc/lib/tcc/runmain.o
 
+// 这篇文档讲的详细, https://phst.eu/emacs-modules.html
+
 __global plugin_is_GPL_compatible = 1
+
+fn init() {
+	// C.infolm(c'...')
+}
+
+// this is first called, even before emacs.init()
 
 @[export: 'emacs_module_init']
 fn eminitc(rtx &C.emacs_runtime) int {
+	// C.infolm(c'...')
 	vcp.fixvsogc()
 	vcp.fixvsoinit()
 
@@ -31,20 +40,19 @@ fn eminitc(rtx &C.emacs_runtime) int {
 fn eminit(rt &Runtime) int {
 	vcp.info('emver:', MAJOR_VERION, rt.str().compact())
 	env := rt.getenv()
-	refvar2mut(emvs).rt = rt
-	refvar2mut(emvs).env = env
-
-	vcp.info('envinfo:', env.vh.size, sizeof(Env))
 	emcheckenv(env)
-	vcp.info('envfn:', env.nle_check().str())
-	tv := env.intval(123)
-	vcp.info('envfn:', tv)
-	vcp.info(tv.isnil())
-	vcp.info(tv.toint())
-	vcp.info(tv.toint()) // why zero
+	assert env.nle_check() == .return_
 
-	basictt()
+	refvar2mut(emvs).elnil = env.globref(env.intern('nil'))
+	refvar2mut(emvs).eltrue = env.globref(env.intern('t'))
+	// refvar2mut(emvs).rt = rt
+	// refvar2mut(emvs).env = env
 
+	basictt(env)
+
+	if emvs.emuser_init != vnil {
+		emvs.emuser_init(env)
+	}
 	return 0
 }
 
@@ -61,13 +69,25 @@ fn emcheckenv(e &Env) {
 	}
 }
 
+pub fn reginiter(cb fn (e &Env)) {
+	refvar2mut(emvs).emuser_init = cb
+}
+
 // todo what will happend if load to .so use this library
 const emvs = &Emvars{}
 
 struct Emvars {
 pub mut:
-	rt  &Runtime = vnil
-	env &Env     = vnil
+	callcnt int = 0 // maybe call multiple times by emacs???
+	elnil   Value
+	eltrue  Value
+
+	// dont save any emacs Runtime/Env's reference
+	// rt  &Runtime = vnil
+	// env &Env     = vnil
+	emuser_init fn (e &Env) = vnil
+
+	elclostmpno i64 = 10
 }
 
 ///
@@ -84,10 +104,6 @@ pub fn (me Value) asptr() voidptr {
 struct C.emacs_runtime {}
 
 pub type RuntimePrivate = usize
-
-pub fn getrt() &Runtime {
-	return emvs.rt
-}
 
 pub struct Runtime {
 pub mut:
@@ -123,6 +139,7 @@ pub enum ProcInputResult {
 
 pub type Limb = isize
 pub type Symbol = string
+pub type ElfuncType = Symbol | Value | string
 
 pub union Env {
 pub mut:
@@ -132,12 +149,35 @@ pub mut:
 	vm  Env29 // note: this need change to max version when major upgrade
 }
 
+pub fn (me &Env) chkeq(o &Env) {
+	eq := voidptr(me) == unsafe { nil }
+	if !eq {
+		vcp.info('eq', eq, 'me', voidptr(me), 'o', voidptr(o))
+	}
+}
+
 pub fn (me &Env) nle_check() FcallExit {
 	return me.vm.non_local_exit_check(me)
 }
 
 pub fn (me &Env) intern(name string) Value {
 	return me.vm.intern_(me, name.str)
+}
+
+pub fn (me Value) globref(env &Env) Value {
+	return env.globref(me)
+}
+
+pub fn (me &Env) globref(v Value) Value {
+	return me.vm.make_global_ref(me, v)
+}
+
+pub fn (me Value) unglobref(env &Env) {
+	env.unglobref(me)
+}
+
+pub fn (me &Env) unglobref(v Value) {
+	me.vm.free_global_ref(me, v)
 }
 
 pub fn (me &Env) fcall(fun Value, args ...Value) Value {
@@ -164,13 +204,13 @@ pub fn (me &Env) fcall3(funame string, args ...Anyer) Anyer {
 		arr[i] = v
 	}
 	rv := me.vm.funcall(me, fun, nargs, arr.data)
-	vcp.info(funame, rv.strfy())
+	vcp.info(funame, rv.strfy(me))
 	// 	return rv
 	return zeroof[Anyer]()
 }
 
 pub fn (me &Env) toel(arg Anyer) Value {
-	rv := zeroof[Value]()
+	rv := emvs.elnil
 	match arg {
 		string {
 			rv = me.strval(arg)
@@ -200,8 +240,8 @@ pub fn (me &Env) toel(arg Anyer) Value {
 }
 
 pub fn (me &Env) fromel(arg Value) Anyer {
-	tyo := arg.typof()
-	tystr := tyo.strfy()
+	tyo := arg.typof(me)
+	tystr := tyo.strfy(me)
 	match tystr {
 		// 'string' {}
 		// 'symbol' {}
@@ -216,36 +256,53 @@ pub fn (me &Env) fromel(arg Value) Anyer {
 }
 
 // strfy
-pub fn (me Value) strfy() string {
+pub fn (me Value) strfy(env &Env) string {
+	return env.strfy(me)
+}
+
+pub fn (env &Env) strfy(me Value) string {
 	nargs := isize(1)
-	rv := emvs.env.fcall2('prin1-to-string', me)
-	s := rv.tostr()
+	rv := env.fcall2('prin1-to-string', me)
+	s := rv.tostr(env)
 	return s
 }
 
-pub fn (me Value) isnil() bool {
+pub fn (me Value) isnil(env &Env) bool {
+	return env.isnil(me)
+}
+
+pub fn (env &Env) isnil(me Value) bool {
 	if me.asptr() == vnil {
 		return true
 	}
-	env := emvs.env
 	rv := env.vm.is_not_nil(env, me)
 	return !rv
 }
 
-pub fn (me Value) typof() Value {
-	env := emvs.env
+pub fn (me Value) typof(env &Env) Value {
+	return env.typof(me)
+}
+
+pub fn (env &Env) typof(me Value) Value {
 	rv := env.vm.type_of(env, me)
 	return rv
 }
 
-pub fn (me Value) toint() isize {
-	env := emvs.env
+pub fn (me Value) toint(env &Env) isize {
+	return env.toint(me)
+}
+
+pub fn (env &Env) toint(me Value) isize {
 	rv := env.vm.extract_integer(env, me)
 	return rv
 }
 
-pub fn (me Value) tostr() string {
-	env := emvs.env
+pub fn (me Value) tostr(env &Env) string {
+	return env.tostr(me)
+}
+
+// must string type or fail
+pub fn (env &Env) tostr(me Value) string {
 	size := isize(0)
 	bv := env.vm.copy_string_contents(env, me, vnil, &size)
 	// assert bv == true
@@ -279,17 +336,30 @@ pub fn (me &Env) realval(v f64) Value {
 	return rv
 }
 
+fn elmodfunfwder(e &Env, nargs isize, args &Value, data voidptr) Value {
+	vcp.info(e, nargs, data)
+	cb := funcof(data, fn () {})
+	cb()
+	return emvs.elnil
+}
+
+pub fn (me &Env) funval(cb fn ()) Value {
+	elfn := me.vm.make_function_(me, 0, 0, elmodfunfwder, vnil, voidptr(cb))
+	me.nle_check()
+	return elfn
+}
+
 // pub fn (me &Env) nle_get() FcallExit {
 // 	return me.vm.non_local_exit_check(me)
 // }
 
 // todo cannot get errmsg
 pub fn (me &Env) chkret() {
-	sym := zeroof[Value]()
-	data := zeroof[Value]()
+	sym := emvs.elnil
+	data := emvs.elnil
 	tv := me.vm.non_local_exit_get(me, &sym, &data)
 	if tv != .return_ {
-		vcp.info(tv.str(), sym.isnil(), data.isnil())
+		vcp.info(tv.str(), sym.isnil(me), data.isnil(me))
 	}
 }
 
@@ -310,8 +380,8 @@ pub struct Env25 {
 pub struct Env29 {
 	Envheader
 pub:
-	make_global_ref fn (env voidptr, value Value) voidptr  = vnil
-	free_global_ref fn (env voidptr, global_value voidptr) = vnil
+	make_global_ref fn (env voidptr, value Value) Value  = vnil
+	free_global_ref fn (env voidptr, global_value Value) = vnil
 
 	non_local_exit_check fn (env voidptr) FcallExit = vnil
 
@@ -333,7 +403,7 @@ pub:
 
 	is_not_nil fn (env voidptr, arg Value) bool = vnil
 
-	eq fn (env voidptr, a voidptr, b voidptr) bool = vnil
+	eq fn (env voidptr, a Value, b Value) bool = vnil
 
 	extract_integer fn (env voidptr, arg Value) isize = vnil
 

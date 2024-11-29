@@ -1,4 +1,15 @@
 
+### TODOS
+
+- [ ] treemacs 添加函数列表/类型列表窗口
+- [ ] 弹出窗口式操作
+- [ ] i18n
+
+### compile
+
+v -keepc -shared .
+
+### cmdline
 
 emacs --init-directory=./  --debug-init -l  emacs.so
 
