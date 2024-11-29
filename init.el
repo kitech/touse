@@ -1,0 +1,15 @@
+;; (require 'myemod)
+
+(defun veopen-file-dialog()
+  (interactive)
+  (let ((last-nonmenu-event nil)
+        (use-dialog-box t)
+        (use-file-dialog t))
+    (call-interactively #'find-file))
+  )
+
+(defun vehello()
+  (interactive)
+  (message "vehello^^^")
+  )
+;; (global-set-key (kbd "C-,") 'veopen-file-dialog)

@@ -39,3 +39,24 @@ fn basictt(env &Env) {
 	// env.fcall3('setq-local', Symbol('tool-bar-mode'), 'off')
 	vcp.info(env.fcall3('symbol-value', Symbol('tool-bar-mode')))
 }
+
+fn funcstt(env &Env) {
+	fun := fn (e &Env) {
+		vcp.info('test clos fun callback from emacs')
+	}
+	elfn := env.funval(fun)
+	// elfn = env.globref(elfn) // not need
+	vcp.info(env.typof(elfn)) // module-function
+	env.fcall(elfn)
+
+	symname := veclosnext()
+	vcp.info(symname)
+
+	env.fcall3('defalias', env.intern(symname), elfn)
+	// env.fcall3('fset', env.intern(symname), elfn)
+	symin := env.intern(symname)
+	env.fcall(symin)
+	// rv := env.fcall3(me.funame2el(@FN), Symbol(hook), elfn)
+	// rv := env.fcall3(me.funame2el(@FN), Symbol(hook), symin)
+	env.nle_check()
+}

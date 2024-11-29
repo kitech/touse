@@ -338,12 +338,12 @@ pub fn (me &Env) realval(v f64) Value {
 
 fn elmodfunfwder(e &Env, nargs isize, args &Value, data voidptr) Value {
 	vcp.info(e, nargs, data)
-	cb := funcof(data, fn () {})
-	cb()
+	cb := funcof(data, fn (_ &Env) {})
+	cb(e)
 	return emvs.elnil
 }
 
-pub fn (me &Env) funval(cb fn ()) Value {
+pub fn (me &Env) funval(cb fn (e &Env)) Value {
 	elfn := me.vm.make_function_(me, 0, 0, elmodfunfwder, vnil, voidptr(cb))
 	me.nle_check()
 	return elfn

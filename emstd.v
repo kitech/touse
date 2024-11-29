@@ -6,20 +6,35 @@ import vcp
 // set, stringp, integerp, symbolp ...
 // descript-variable, ...
 
-pub fn (me Value) desc() {
+pub fn (me Value) descfy() {
 	// describe-variable
 }
 
-// pub fn (me &Env) set() {
+// pub fn (me &Env) setvar() {
 // }
+pub fn (me &Env) getvar(varname string) Value {
+	return me.symbol_value(varname)
+}
 
-pub fn (me &Env) funame2el(name string) string {
+pub fn (me &Env) symbol_value(varname string) Value {
+	rv := me.fcall2(funame2el(@FN), me.intern(varname))
+	if rv.typof(me).strfy(me) == 'symbol' {
+		// rv = me.fcall2(funame2el(@FN), rv)
+	}
+	return rv
+}
+
+pub fn (me &Env) funame2el(name string) Value {
+	s := funame2el(name)
+	rv := me.intern(s)
+	return rv
+}
+
+pub fn funame2el(name string) string {
 	s := name.camel_to_snake()
 	s = s.replace('_', '-')
-	vcp.info(name, '=>', s)
+	// vcp.info(name, '=>', s)
 	return s
-	// rv := me.intern(s)
-	// return rv
 }
 
 fn veclosnext() string {
@@ -27,23 +42,29 @@ fn veclosnext() string {
 	return 'veclos${emvs.elclostmpno}'
 }
 
-pub fn (me &Env) add_hook(hook string, fun fn ()) {
-	x := voidptr(vnil)
-	y := usize(0)
-
+// todo return error
+pub fn (me &Env) add_hook(hook string, fun fn (e &Env)) {
 	elfn := me.funval(fun)
-	elfn = me.globref(elfn)
-	// me.fcall(elfn) // 在这还不能直接fcall,需要intern???
-	vcp.info(me.typof(elfn)) // module-function
-	me.fcall(elfn)
+	rv := me.fcall3(funame2el(@FN), Symbol(hook), elfn)
+	me.nle_check()
+}
 
-	symname := veclosnext()
-	vcp.info(symname)
-	me.fcall3('defalias', me.intern(symname), elfn)
-	// me.fcall3('fset', me.intern(symname), elfn)
-	symin := me.intern(symname)
-	me.fcall(symin)
-	// rv := me.fcall3(me.funame2el(@FN), Symbol(hook), elfn)
-	// rv := me.fcall3(me.funame2el(@FN), Symbol(hook), symin)
+// pub type DefunType = ...
+
+// todo fun support more types
+// todo return error
+// fun, fn(&Env) // , voidptr, usize, FunctionData
+pub fn (me &Env) defun(funame string, fun fn (e &Env), doc string) {
+	fun0 := voidptr(fun)
+	$if T is $function {
+	} $else {
+		vcp.warn('must specify a fn(..)', typeof(fun).name)
+		return
+	}
+}
+
+pub fn (me &Env) global_set_key(keys string, funame string) {
+	rv1 := me.fcall2('kbd', me.strval(keys))
+	me.fcall3(funame2el(@FN), rv1, Symbol(funame))
 	me.nle_check()
 }
