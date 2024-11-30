@@ -1,4 +1,7 @@
 import dl
+import os
+import time
+import rand
 import vcp
 import emacs
 
@@ -74,6 +77,27 @@ const emmw = &MainWin{}
 fn eminit_uis(e &emacs.Env) {
 }
 
+fn emui_waitcond(e &emacs.Env, maxtry int, condfn fn () bool) bool {
+	btime := time.now()
+	for i := 0; i < maxtry; i++ {
+		cdok := condfn()
+		if !cdok {
+			if rand.int() % 2 == 1 {
+				e.fcall2('redisplay')
+			} else {
+				e.fcall2('sit-for', e.realval(0.01))
+			}
+		} else {
+			if i > 0 {
+				vcp.info('sit-for ', i.str(), time.since(btime).str())
+			}
+			return true
+		}
+	}
+	vcp.info('resize not done, wait???', maxtry, time.since(btime).str())
+	return false
+}
+
 // call at some later time, eg. after window fully inited
 fn eminit_resize_mainwin_ifneed(e &emacs.Env) {
 	dw, dh := e.display_pixel_width(), e.display_pixel_height()
@@ -92,16 +116,85 @@ fn eminit_resize_mainwin_ifneed(e &emacs.Env) {
 
 	// vcp.info(rgtwinwidth, topleftheight)
 	// some times, split too small error???
+	minw := e.window_min_size(vnil, true, true)
+	// vcp.info(minw)
 
 	e.set_frame_width(vnil, frmwidth, true)
 
+	emui_waitcond(e, 99, fn [e, rgtwinwidth] () bool {
+		cwwidth := e.window_pixel_width(vnil)
+		return cwwidth >= rgtwinwidth
+	})
+	cwwidth := e.window_pixel_width(vnil)
+
 	w1 := e.split_window(vnil, rgtwinwidth, .left, true)
+	if w1.isnil(e) {
+		vcp.info(111, w1.isnil(e), minw, cwwidth, rgtwinwidth)
+		e.chkret()
+		return
+	}
 	refvar2mut(emmw).left1 = w1
+
 	w2 := e.split_window(w1, topleftheight, .below, true)
+	if w1.isnil(e) {
+		vcp.info(111, w1.isnil(e), minw, cwwidth, rgtwinwidth)
+		e.chkret()
+		return
+	}
 	refvar2mut(emmw).left2 = w2
 
+	w0 := e.getwin(vnil)
+	wins := e.window_list()
+	for idx, wx in wins {
+		vcp.info(wx.window_name(e), w0.window_name(e))
+		e.select_window(wx)
+		if e.eq(wx, w0) {
+		} else if e.eq(wx, w1) {
+			e.switch_to_buffer2('*Messages*')
+		} else if e.eq(wx, w2) {
+			e.switch_to_buffer2('*Messages*')
+		}
+	}
+	e.select_window(w0)
+	w1.set_window_parameter(e, 'tab-line-format', e.intern('none'))
+	w2.set_window_parameter(e, 'tab-line-format', e.intern('none'))
+	// w1.set_window_parameter(e, 'mode-line-format', e.intern('none'))
+	// w2.set_window_parameter(e, 'mode-line-format', e.intern('none'))
+	w1.set_window_parameter(e, 'header-line-format', e.intern('none'))
+	w2.set_window_parameter(e, 'header-line-format', e.intern('none'))
+	w1.set_window_parameter(e, 'no-delete-other-windows', emacs.bool2el(true))
+	w2.set_window_parameter(e, 'no-delete-other-windows', emacs.bool2el(true))
+
+	// 为什么在这个循环里设置就不管用???
+	buflst := e.buffer_list()
+	for b in buflst {
+		name := b.buffer_name(e)
+		vcp.info(name)
+		match name {
+			// seems not work
+			'*scratch*' {
+				// e.select_window(w0)
+				// e.switch_to_buffer(b)
+				// e.set_buffer2(name)
+			}
+			'*Messages*' {
+				// e.select_window(w2)
+				// e.switch_to_buffer(b)
+				// e.set_buffer2(name)
+			}
+			'aaa' {}
+			else {
+				// e.select_window(w0)
+				// e.switch_to_buffer(b)
+				// e.set_buffer2(name)
+			}
+		}
+	}
+
 	e.fcall2('set-window-dedicated-p', w1, e.intern('t'))
+	e.chkret()
 	e.fcall2('set-window-dedicated-p', w2, e.intern('t'))
+	e.chkret()
 }
 
 // command-line-1: Symbol’s value as variable is void: global-tab-bar-mode
@@ -132,5 +225,9 @@ fn run_window_configuration_change_hook(e &emacs.Env) {
 	// e.nle_clear_indeep()
 	// tv.tostr(e)
 	// e.chkret()
+
+	tcons := e.cons2(1, 1.2, '3.4')
+	vcp.info(tcons.strfy(e))
+
 	vcp.info(999)
 }

@@ -205,6 +205,10 @@ pub fn (me &Env) unglobref(v Value) {
 	me.vm.free_global_ref(me, v)
 }
 
+pub fn (me &Env) eq(a Value, b Value) bool {
+	return me.vm.eq(me, a, b)
+}
+
 pub fn (me &Env) fcall(fun Value, args ...Value) Value {
 	nargs := isize(args.len)
 	rv := me.vm.funcall(me, fun, nargs, args.data)

@@ -1,16 +1,18 @@
 
 ### TODOS
 
-- [ ] treemacs 添加函数列表/类型列表窗口
+- [+] treemacs 添加函数列表/类型列表窗口
 - [+] 弹出窗口式操作
 - [ ] i18n
+- [ ] 中文界面,菜单/工具条提示等
+- [x] 支持绑定按键
 - [ ] 按键绑定尽量用两个键
 - [ ] minibuffer不应该占全部宽度
 - [ ] 像firefox/vscode那种tab切换,非全循环,有一种栈结构
 - [ ] 滚动条的宽度
 - [ ] window title bar, hide/height
 - [ ] 无法获取到错误信息
-
+- [ ] tab line 最右,显示关闭窗口?
 
 ### compile
 

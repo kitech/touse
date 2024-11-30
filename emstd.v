@@ -121,7 +121,7 @@ pub fn (me &Env) anyp(vx Value) {
 		'wholenump', 'numberp', 'number-or-marker-p', 'overlayp', 'processp', 'sequencep', 'stringp',
 		'subrp', 'symbolp', 'syntax-table-p', 'user-variable-p', 'vectorp', 'window-configuration-p',
 		'window-live-p', 'windowp', 'booleanp', 'string-or-null-p']
-	// type-of
+	// type-of, class-of
 	for idx, pf in pfuncs {
 		rv := me.fcall2(pf, vx)
 		if !rv.isnil(me) {

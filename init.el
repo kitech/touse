@@ -1,5 +1,10 @@
 ;; (require 'myemod)
 
+(setq inhibit-startup-message t)
+;; (setq global-tab-line-mode t)
+;; (tab-line-mode)
+(global-tab-line-mode)
+
 (defun veopen-file-dialog()
   (interactive)
   (let ((last-nonmenu-event nil)
