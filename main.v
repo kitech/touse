@@ -1,3 +1,4 @@
+import dl
 import vcp
 import emacs
 
@@ -17,6 +18,8 @@ fn emuser_init(e &emacs.Env) {
 	eminit_peekvars(e)
 
 	eminit_uis(e)
+
+	vcp.info('done')
 }
 
 const shotkeys = {
@@ -49,7 +52,13 @@ fn eminit_hooks(e &emacs.Env) {
 		idx := idx_
 		e.add_hook(hook_, fn [idx] (e &emacs.Env) {
 			hook := hooks[idx]
-			vcp.info('111', idx.str(), hook, 'cllaed')
+			name4v := '${@MOD}__run_' + emacs.nameofel(hook, false)
+			sym4v := vcp.dlsym0(name4v)
+			// vcp.info('111', idx.str(), hook, 'cllaed', name4v, sym4v)
+			if sym4v != vnil {
+				fno := funcof(sym4v, fn (_ &emacs.Env) {})
+				fno(e)
+			}
 		})
 	}
 }
@@ -63,6 +72,10 @@ pub mut:
 const emmw = &MainWin{}
 
 fn eminit_uis(e &emacs.Env) {
+}
+
+// call at some later time, eg. after window fully inited
+fn eminit_resize_mainwin_ifneed(e &emacs.Env) {
 	dw, dh := e.display_pixel_width(), e.display_pixel_height()
 	w := e.window_pixel_width(vnil)
 	h := e.window_pixel_height(vnil)
@@ -77,16 +90,25 @@ fn eminit_uis(e &emacs.Env) {
 	rgtwinwidth := frmwidth * 3 / 4
 	topleftheight := frmheight * 3 / 5
 
+	// vcp.info(rgtwinwidth, topleftheight)
+	// some times, split too small error???
+
 	e.set_frame_width(vnil, frmwidth, true)
 
 	w1 := e.split_window(vnil, rgtwinwidth, .left, true)
 	refvar2mut(emmw).left1 = w1
 	w2 := e.split_window(w1, topleftheight, .below, true)
 	refvar2mut(emmw).left2 = w2
+
+	e.fcall2('set-window-dedicated-p', w1, e.intern('t'))
+	e.fcall2('set-window-dedicated-p', w2, e.intern('t'))
 }
 
+// command-line-1: Symbol’s value as variable is void: global-tab-bar-mode
+// 'global-tab-bar-mode'
 const elvars = ['last-nonmenu-event', 'default-directory', 'use-dialog-box', 'use-file-dialog',
-	'window-system', 'tool-bar-mode', 'menu-bar-mode']
+	'window-system', 'tool-bar-mode', 'menu-bar-mode', 'global-tab-bar-mode', 'global-tab-line-mode',
+	'command-error-function', 'debug-on-message']
 
 fn eminit_peekvars(e &emacs.Env) {
 	for idx, vn in elvars {
@@ -95,4 +117,20 @@ fn eminit_peekvars(e &emacs.Env) {
 		vty := val.typof(e)
 		vcp.info(idx.str(), vn.str(), vty.strfy(e), str)
 	}
+}
+
+/// hooks
+fn run_window_setup_hook(e &emacs.Env) {
+	vcp.info('...')
+	e.chkret()
+	eminit_resize_mainwin_ifneed(e)
+}
+
+fn run_window_configuration_change_hook(e &emacs.Env) {
+	// 	vcp.info('...')
+	// tv := e.intval(123)
+	// e.nle_clear_indeep()
+	// tv.tostr(e)
+	// e.chkret()
+	vcp.info(999)
 }

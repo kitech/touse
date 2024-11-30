@@ -54,7 +54,7 @@ pub fn (e &Env) set_frame_width(frm Value, w int, inpixel bool) {
 
 pub fn (e &Env) getwin(w Value) Value {
 	rv := w
-	if w.isnil(e) {
+	if rv.isnil(e) {
 		rv = e.fcall2('selected-window')
 	}
 	return rv
@@ -62,8 +62,16 @@ pub fn (e &Env) getwin(w Value) Value {
 
 pub fn (e &Env) getframe(frm Value) Value {
 	rv := frm
-	if frm.isnil(e) {
+	if rv.isnil(e) {
 		rv = e.fcall2('selected-frame')
+	}
+	return rv
+}
+
+pub fn (e &Env) orbuffer(buf Value) Value {
+	rv := buf
+	if rv.isnil(e) {
+		rv = e.fcall2('current-buffer')
 	}
 	return rv
 }

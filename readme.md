@@ -9,6 +9,8 @@
 - [ ] 像firefox/vscode那种tab切换,非全循环,有一种栈结构
 - [ ] 滚动条的宽度
 - [ ] window title bar, hide/height
+- [ ] 无法获取到错误信息
+
 
 ### compile
 

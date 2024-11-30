@@ -26,6 +26,7 @@ fn init() {
 
 // this is first called, even before emacs.init()
 
+// noexcept: orcrash
 @[export: 'emacs_module_init']
 fn eminitc(rtx &C.emacs_runtime) int {
 	// C.infolm(c'...')
@@ -45,6 +46,7 @@ fn eminit(rt &Runtime) int {
 
 	refvar2mut(emvs).elnil = env.globref(env.intern('nil'))
 	refvar2mut(emvs).eltrue = env.globref(env.intern('t'))
+	refvar2mut(emvs).elvoid = env.globref(env.intern('void'))
 	// refvar2mut(emvs).rt = rt
 	// refvar2mut(emvs).env = env
 
@@ -81,6 +83,7 @@ pub mut:
 	callcnt int = 0 // maybe call multiple times by emacs???
 	elnil   Value
 	eltrue  Value
+	elvoid  Value
 
 	// dont save any emacs Runtime/Env's reference
 	// rt  &Runtime = vnil
@@ -100,10 +103,27 @@ pub fn (me Value) asptr() voidptr {
 	return voidptr(usize(me))
 }
 
+pub struct Valuein {
+pub mut:
+	v voidptr
+}
+
+pub struct Envpriv {
+pub mut:
+	pending_non_local_exit FcallExit
+	non_local_exit_symbol  voidptr
+	non_local_exit_data    voidptr
+}
+
 @[typedef]
 struct C.emacs_runtime {}
 
 pub type RuntimePrivate = usize
+
+pub struct RuntimePriv {
+pub:
+	init_env &Env = vnil
+}
 
 pub struct Runtime {
 pub mut:
@@ -140,6 +160,7 @@ pub enum ProcInputResult {
 pub type Limb = isize
 pub type Symbol = string
 pub type ElfuncType = Symbol | Value | string
+pub type ElsymType = Symbol | Value | string
 
 pub union Env {
 pub mut:
@@ -158,6 +179,10 @@ pub fn (me &Env) chkeq(o &Env) {
 
 pub fn (me &Env) nle_check() FcallExit {
 	return me.vm.non_local_exit_check(me)
+}
+
+pub fn (me &Env) nle_clear() {
+	me.vm.non_local_exit_clear(me)
 }
 
 pub fn (me &Env) intern(name string) Value {
@@ -183,6 +208,7 @@ pub fn (me &Env) unglobref(v Value) {
 pub fn (me &Env) fcall(fun Value, args ...Value) Value {
 	nargs := isize(args.len)
 	rv := me.vm.funcall(me, fun, nargs, args.data)
+	me.nle_check()
 	return rv
 }
 
@@ -190,6 +216,7 @@ pub fn (me &Env) fcall2(funame string, args ...Value) Value {
 	fun := me.intern(funame)
 	nargs := isize(args.len)
 	rv := me.vm.funcall(me, fun, nargs, args.data)
+	me.nle_check()
 	return rv
 }
 
@@ -204,6 +231,7 @@ pub fn (me &Env) fcall3(funame string, args ...Anyer) Anyer {
 		arr[i] = v
 	}
 	rv := me.vm.funcall(me, fun, nargs, arr.data)
+	me.nle_check()
 	vcp.info(funame, rv.strfy(me))
 	// 	return rv
 	return zeroof[Anyer]()
@@ -261,6 +289,18 @@ pub fn (me Value) strfy(env &Env) string {
 }
 
 pub fn (env &Env) strfy(me Value) string {
+	// ty := env.vm.type_of(env, me)
+	// env.nle_check()
+	// if ty.isnil(env) {
+	// 	return 'tynil'
+	// }
+	// tystr := env.fcall2('prin1-to-string', ty).tostr(env)
+	// vcp.info(me, tystr, '/', me.isnil(env), ty.isnil(env))
+	// if tystr == 'symbol' {
+	// 	symstr := env.fcall2('prin1-to-string', me).tostr(env)
+	// 	return 'symbol(${symstr})'
+	// }
+	// symbol cannot print1-to-string
 	nargs := isize(1)
 	rv := env.fcall2('prin1-to-string', me)
 	s := rv.tostr(env)
@@ -285,6 +325,7 @@ pub fn (me Value) typof(env &Env) Value {
 
 pub fn (env &Env) typof(me Value) Value {
 	rv := env.vm.type_of(env, me)
+	env.nle_check()
 	return rv
 }
 
@@ -303,20 +344,41 @@ pub fn (me Value) tostr(env &Env) string {
 
 // must string type or fail
 pub fn (env &Env) tostr(me Value) string {
+	// if me.isnil(env) {
+	// 	return 'elvtostr(nil0)'
+	// }
+	// bvx := env.vm.funcall(env, env.intern('stringp'), 1, &me)
+	// if bvx.isnil(env) {
+	// 	vcp.warn('notstr, should', me.typof(env).strfy(env), me)
+	// 	return 'elvtostr(notstr)'
+	// }
+
 	size := isize(0)
 	bv := env.vm.copy_string_contents(env, me, vnil, &size)
 	// assert bv == true
 	if bv == false {
-		env.nle_check()
-		return ''
+		ev := env.nle_check()
+		// vcp.info(ev.str(), me.isnil(env))
+		sym := emvs.eltrue
+		data := emvs.eltrue
+		env.vm.non_local_exit_get(env, &sym, &data)
+		// vcp.info(sym.isnil(env), data.isnil(env))
+		vcp.warn('cannot get strsize', size, ev, 'error sym/data:', derefvar[voidptr](&voidptr(sym)),
+			derefvar[voidptr]((&voidptr(data))), sym.isnil(env), data.isnil(env))
+		// env.nle_clear_indeep()
+		// vcp.info(ev.str(), size, me.isnil(env))
+		// clear wrong type arguments???
+		return 'elvtostr(nil1)'
 	}
 	// vcp.info('needlen', size, bv)
 	buf := []i8{len: int(size)}
 	bv = env.vm.copy_string_contents(env, me, buf.data, &size)
 	// assert bv == true
-	env.nle_check()
+	// env.nle_check()
+	env.chkret()
 
-	rv := tosbca(buf.data, int(size))
+	assert size > 0
+	rv := tosbca(buf.data, int(size) - 1)
 	return rv
 }
 
@@ -336,8 +398,11 @@ pub fn (me &Env) realval(v f64) Value {
 	return rv
 }
 
+// data is real callback fnptr
 fn elmodfunfwder(e &Env, nargs isize, args &Value, data voidptr) Value {
-	vcp.info(e, nargs, data)
+	if data == vnil {
+		vcp.warn(e, nargs, data)
+	}
 	cb := funcof(data, fn (_ &Env) {})
 	cb(e)
 	return emvs.elnil
@@ -353,22 +418,77 @@ pub fn (me &Env) funval(cb fn (e &Env)) Value {
 // 	return me.vm.non_local_exit_check(me)
 // }
 
+/*
+https://archive.fosdem.org/2019/schedule/event/extend_emacs_2019/attachments/slides/3357/export/events/attachments/extend_emacs_2019/slides/3357/FOSDEM19_emacs_modules.pdf
+All API operations may fail and set a pending per-env exit
+state
+– Similar to errno in concept
+*/
+
+pub fn (me &Env) nle_clear_indeep() {
+	insym := me.vm.private_members.non_local_exit_symbol
+	indata := me.vm.private_members.non_local_exit_data
+	me.vm.private_members.pending_non_local_exit = .return_
+	me.vm.private_members.non_local_exit_symbol = vnil
+	me.vm.private_members.non_local_exit_data = vnil
+	// vcp.info(me.vh.str())
+}
+
 // todo cannot get errmsg
 pub fn (me &Env) chkret() {
-	sym := emvs.elnil
-	data := emvs.elnil
+	sym := emvs.eltrue
+	data := emvs.eltrue // emvs.elnil
+
 	tv := me.vm.non_local_exit_get(me, &sym, &data)
+	// vcp.info(tv.str(), '???')
+
 	if tv != .return_ {
-		vcp.info(tv.str(), sym.isnil(me), data.isnil(me))
+		insym := me.vm.private_members.non_local_exit_symbol
+		indata := me.vm.private_members.non_local_exit_data
+		vcp.info(tv.str(), sym.isnil(me), data.isnil(me), insym, indata)
+		// vcp.info(tosbca(voidptr(indata), 36))
+		// vcp.info(islispobj(insym), islispobj(indata))
+		// sym, data 啥都不是的类型...
+		// me.anyp(emvs.eltrue)
+
+		args := [sym]
+		for pf in ['print', 'prin1', 'princ', 'terpri', 'pp', 'prin1-to-string'] {
+			if true {
+				break
+			}
+			xv := me.vm.funcall(me, me.intern(pf), 1, args.data)
+			vcp.info(pf.clone(), xv.strfy(me), xv.typof(me).strfy(me))
+		}
+		me.vm.funcall(me, me.intern('flush-standard-output'), 0, vnil)
+
+		// me.vm.non_local_exit_clear(me)
 	}
+	// vcp.info(tv.str(), 333)
+}
+
+pub fn (me &Env) vecget(vec Value, idx isize) Value {
+	return me.vm.vec_get(me, vec, idx)
+}
+
+pub fn (me &Env) vecset(vec Value, idx isize, newval Value) {
+	me.vm.vec_set(me, vec, idx, newval)
+}
+
+pub fn (me &Env) veclen(vec Value) int {
+	rv := me.vm.vec_size(me, vec)
+	return int(rv)
+}
+
+pub fn (me &Env) should_quit() bool {
+	return me.vm.should_quit_(me)
 }
 
 ///
 
 pub struct Envheader {
-pub:
+pub mut:
 	size            isize
-	private_members voidptr
+	private_members &Envpriv
 }
 
 pub struct Env25 {
@@ -432,7 +552,7 @@ pub:
 
 	vec_size fn (env voidptr, vector Value) isize = vnil
 
-	should_quit fn (env voidptr) bool = vnil
+	should_quit_ fn (env voidptr) bool = vnil
 
 	process_input fn (env voidptr) ProcInputResult = vnil
 
