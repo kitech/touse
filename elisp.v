@@ -46,8 +46,9 @@ pub fn (e &Env) cons2arr(v Value) []Value {
 }
 
 pub fn (e &Env) cons(vals ...Value) Value {
-	rv := emvs.elnil
-	for i := vals.len - 1; i >= 0; i-- {
+	assert vals.len > 0
+	rv := vals[vals.len - 1]
+	for i := vals.len - 2; i >= 0; i-- {
 		rv = e.fcall2(funame2el(@FN), vals[i], rv)
 	}
 	return rv
@@ -61,5 +62,18 @@ pub fn (e &Env) cons2(vals ...Anyer) Value {
 	}
 	rv := e.cons(...elvs)
 	assert rv.typof(e).strfy(e) == 'cons'
+	return rv
+}
+
+// assoc list
+pub fn (e &Env) alist(kvs map[string]Value) Value {
+	items := []Value{len: kvs.len}
+	cnt := 0
+	for k, v in kvs {
+		item := e.cons(e.intern(k), v)
+		items[cnt++] = item
+	}
+	rv := e.fcall2('list', ...items)
+	vcp.info(rv.typof(e).strfy(e))
 	return rv
 }

@@ -197,6 +197,31 @@ fn eminit_resize_mainwin_ifneed(e &emacs.Env) {
 	e.chkret()
 }
 
+fn create_float_window(e &emacs.Env) {
+	topfrm := e.getframe(vnil)
+	frm := e.make_child_frame(topfrm)
+	vcp.info(frm.strfy(e))
+	// frm.set_frame_parameter(e, 'parent-frame', topfrm)
+	// frm.set_frame_parameter(e, 'menu-bar-lines', e.intval(0))
+	// frm.set_frame_parameter(e, 'menu-bar-mode', emacs.bool2el(false))
+	// frm.set_frame_parameter(e, 'auto-lower', emacs.bool2el(false))
+	// // frm.set_frame_parameter(e, 'minibuffer', emacs.bool2el(false))
+	// frm.set_frame_parameter(e, 'tool-bar-lines', e.intval(0))
+
+	// frm.set_frame_parameter(e, 'user-position', emacs.bool2el(true))
+	// frm.set_frame_parameter(e, 'left', e.intval(100))
+	// frm.set_frame_parameter(e, 'top', e.intval(100))
+	e.set_frame_size(frm, 500, 300, true)
+	e.set_frame_position(frm, 200, 50)
+
+	// 创建第二个的时候有点问题呢?
+	if false {
+		frm2 := e.make_child_frame(topfrm)
+		e.set_frame_size(frm, 400, 300, true)
+		e.set_frame_position(frm, 600, 150)
+	}
+}
+
 // command-line-1: Symbol’s value as variable is void: global-tab-bar-mode
 // 'global-tab-bar-mode'
 const elvars = ['last-nonmenu-event', 'default-directory', 'use-dialog-box', 'use-file-dialog',
@@ -217,6 +242,7 @@ fn run_window_setup_hook(e &emacs.Env) {
 	vcp.info('...')
 	e.chkret()
 	eminit_resize_mainwin_ifneed(e)
+	create_float_window(e)
 }
 
 fn run_window_configuration_change_hook(e &emacs.Env) {

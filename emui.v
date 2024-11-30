@@ -66,12 +66,32 @@ pub fn (w Value) set_window_parameter(e &Env, prm string, val Value) {
 	e.fcall2(funame2el(@FN), w, e.intern(prm), val)
 }
 
+pub fn (w Value) set_frame_parameter(e &Env, prm string, val Value) {
+	e.fcall2(funame2el(@FN), w, e.intern(prm), val)
+	// e.fcall2(funame2el(@FN), w, e.strval(prm), val)
+}
+
 pub fn (e &Env) set_frame_size(frm Value, w int, h int, inpixel bool) {
+	if w > 0 {
+		e.set_frame_width(frm, w, inpixel)
+	}
+	if h > 0 {
+		e.set_frame_height(frm, h, inpixel)
+	}
 }
 
 pub fn (e &Env) set_frame_width(frm Value, w int, inpixel bool) {
 	frm2 := e.getframe(frm)
 	rv := e.fcall2(funame2el(@FN), frm2, e.intval(w), emvs.elnil, bool2el(inpixel))
+}
+
+pub fn (e &Env) set_frame_height(frm Value, w int, inpixel bool) {
+	frm2 := e.getframe(frm)
+	rv := e.fcall2(funame2el(@FN), frm2, e.intval(w), emvs.elnil, bool2el(inpixel))
+}
+
+pub fn (e &Env) set_frame_position(frm Value, x int, y int) {
+	rv := e.fcall2(funame2el(@FN), frm, e.intval(x), e.intval(y))
 }
 
 pub fn (e &Env) getwin(w Value) Value {
@@ -178,4 +198,55 @@ pub fn (e &Env) set_buffer(b Value) {
 pub fn (e &Env) set_buffer2(b string) {
 	rv := e.fcall2('set-buffer', e.strval(b))
 	e.chkret()
+}
+
+pub fn (e &Env) mini_button_window() Value {
+	return e.fcall2(funame2el(@FN))
+}
+
+//  set-minibuffer-window window
+// float window
+// Emacs里有两种实现方式，一种基于overlay，缺点是遇到Unicode或者不等宽的字符会出问题，不过支持Terminal。另一种是基于Emacs26加入的childframe机制，可以完美显示，不过不支持TUI（不过终端下的显示元素都比较单一）。
+
+pub fn (e &Env) make_button(bp int, ep int) Value {
+	return e.fcall2(funame2el(@FN), e.intval(bp), e.intval(ep))
+}
+
+pub fn (e &Env) insert_button(label string) Value {
+	return e.fcall2(funame2el(@FN), e.strval(label))
+}
+
+pub fn (e &Env) make_frame() Value {
+	return e.fcall2(funame2el(@FN))
+}
+
+pub fn (e &Env) make_child_frame(p Value) Value {
+	// minibuffer . nil
+	// parent-frame . p
+	kvs := map[string]Value{}
+	kvs['minibuffer'] = emvs.elnil
+	kvs['parent-frame'] = p
+	kvs['width'] = e.intval(300)
+	kvs['menu-bar-lines'] = e.intval(0)
+	kvs['tool-bar-lines'] = e.intval(0)
+	kvs['menu-bar-mode'] = bool2el(false) // noeffect
+	kvs['tool-bar-mode'] = bool2el(false) // noeffect
+	kvs['tab-line-mode'] = bool2el(false) // noeffect
+	kvs['auto-lower'] = bool2el(true)
+	kvs['auto-raise'] = bool2el(true)
+	kvs['visibility'] = bool2el(true)
+	kvs['undecorated'] = bool2el(true)
+	kvs['inhibit-double-buffering'] = bool2el(true)
+	kvs['z-group'] = e.intern('above')
+
+	alst := e.alist(kvs)
+
+	// alst := emvs.elnil
+	// item0 := e.fcall2('cons', e.intern('minibuffer'), emvs.elnil)
+	// item1 := e.fcall2('cons', e.intern('parent-frame'), p)
+	// item2 := e.fcall2('cons', e.intern('width'), e.intval(300))
+	// alst = e.fcall2('list', item0, item1, item2)
+
+	rv := e.fcall2('make-frame', alst)
+	return rv
 }

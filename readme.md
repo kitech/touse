@@ -13,6 +13,9 @@
 - [ ] window title bar, hide/height
 - [ ] 无法获取到错误信息
 - [ ] tab line 最右,显示关闭窗口?
+- [ ] sublime安装插件的浮动窗口
+- [ ] 扩展管理
+- [ ] vscode右侧工具按钮,文件,扩展,...
 
 ### compile
 
@@ -39,7 +42,11 @@ emacs 命令行参数:
 --fg-daemon[=NAME]
 
 
+
 #### more docs
+
+// float window
+// Emacs里有两种实现方式，一种基于overlay，缺点是遇到Unicode或者不等宽的字符会出问题，不过支持Terminal。另一种是基于Emacs26加入的childframe机制，可以完美显示，不过不支持TUI（不过终端下的显示元素都比较单一）。
 
 https://www.masteringemacs.org/article/mastering-key-bindings-emacs
 

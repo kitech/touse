@@ -254,7 +254,13 @@ pub fn (me &Env) toel(arg Anyer) Value {
 			rv = me.realval(f64(arg))
 		}
 		// ???
-		bool {}
+		bool {
+			if arg {
+				rv = emvs.eltrue
+			} else {
+				rv = emvs.elnil
+			}
+		}
 		Value {
 			rv = arg
 		}
