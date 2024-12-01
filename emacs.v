@@ -416,9 +416,11 @@ pub fn (env &Env) tostr(me Value) string {
 		sym := emvs.eltrue
 		data := emvs.eltrue
 		env.vm.non_local_exit_get(env, &sym, &data)
+		env.vm.non_local_exit_clear(env) // 这是一个技巧,拿到错误信息就清除,然后再解析错误
 		// vcp.info(sym.isnil(env), data.isnil(env))
-		vcp.warn('cannot get strsize', size, ev, 'error sym/data:', derefvar[voidptr](&voidptr(sym)),
+		vcp.warn('cannot get strsize', size, ev.str(), 'error sym/data:', derefvar[voidptr](&voidptr(sym)),
 			derefvar[voidptr]((&voidptr(data))), sym.isnil(env), data.isnil(env))
+		vcp.warn(sym.strfy(env), data.strfy(env))
 		// env.nle_clear_indeep()
 		// vcp.info(ev.str(), size, me.isnil(env))
 		// clear wrong type arguments???
@@ -500,12 +502,14 @@ pub fn (me &Env) chkret() {
 	data := emvs.eltrue // emvs.elnil
 
 	tv := me.vm.non_local_exit_get(me, &sym, &data)
+	me.vm.non_local_exit_clear(me) // 这是一个技巧,拿到错误信息就清除,然后再解析错误
 	// vcp.info(tv.str(), '???')
 
 	if tv != .return_ {
 		insym := me.vm.private_members.non_local_exit_symbol
 		indata := me.vm.private_members.non_local_exit_data
 		vcp.info(tv.str(), sym.isnil(me), data.isnil(me), insym, indata)
+		vcp.warn(sym.strfy(me), data.strfy(me))
 		// vcp.info(tosbca(voidptr(indata), 36))
 		// vcp.info(islispobj(insym), islispobj(indata))
 		// sym, data 啥都不是的类型...

@@ -11,11 +11,11 @@
 - [ ] 像firefox/vscode那种tab切换,非全循环,有一种栈结构
 - [ ] 滚动条的宽度
 - [ ] window title bar, hide/height
-- [ ] 无法获取到错误信息
 - [ ] tab line 最右,显示关闭窗口?
 - [ ] sublime安装插件的浮动窗口
 - [ ] 扩展管理
 - [ ] vscode右侧工具按钮,文件,扩展,...
+- [x] 无法获取到错误信息
 
 ### compile
 

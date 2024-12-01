@@ -355,6 +355,11 @@ pub fn (e &Env) make_minbuf_frame(p Value) Value {
 	return rv
 }
 
+pub fn (e &Env) minibuffer_contents() string {
+	rv := e.fcall2(funame2el(@FN))
+	return rv.tostr(e)
+}
+
 pub fn (v Value) select_frame(e &Env) {
 	rv := e.fcall2(funame2el(@FN), v)
 }

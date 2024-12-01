@@ -163,7 +163,8 @@ fn eminit_resize_mainwin_ifneed(e &emacs.Env) {
 	e.switch_to_buffer2('*Minibuf-0*')
 	w3.set_window_parameter(e, 'minibuffer', e.intern('only'))
 	w3.set_window_parameter(e, 'mini', emacs.bool2el(true))
-	// e.set_minibuffer_window(w3)
+	e.set_minibuffer_window(w3)
+	vcp.info(e.minibuffer_contents())
 	// if e.nle_check() != .return_ {
 	// 	vcp.error('somerr')
 	// 	return
