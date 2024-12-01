@@ -71,6 +71,8 @@ pub mut:
 	left1 emacs.Value
 	left2 emacs.Value
 
+	minibufwin emacs.Value
+
 	popwin_pkginst emacs.Value
 }
 
@@ -146,11 +148,44 @@ fn eminit_resize_mainwin_ifneed(e &emacs.Env) {
 	}
 	refvar2mut(emmw).left2 = w2
 
-	w3 := e.split_window(w0, 30, .above, true)
+	w3 := e.split_window(w0, 480, .below, true)
 	if w3.isnil(e) {
 		vcp.info(111, w1.isnil(e), minw, cwwidth, rgtwinwidth)
 		e.chkret()
 		return
+	}
+	refvar2mut(emmw).minibufwin = w3
+
+	// some about minibuffer
+	oldmbwin := e.minibuffer_window()
+	vcp.info(oldmbwin.strfy(e), w3.strfy(e))
+	e.select_window(w3)
+	e.switch_to_buffer2('*Minibuf-0*')
+	w3.set_window_parameter(e, 'minibuffer', e.intern('only'))
+	w3.set_window_parameter(e, 'mini', emacs.bool2el(true))
+	// e.set_minibuffer_window(w3)
+	// if e.nle_check() != .return_ {
+	// 	vcp.error('somerr')
+	// 	return
+	// }
+	if false { // use c create minibuffer frame
+		cfunc1 := vcp.dlsym0('make_minibuffer_frame')
+		cfno1 := funcof(cfunc1, fn () voidptr {
+			return vnil
+		})
+		minifrm := cfno1()
+		vcp.info(minifrm)
+	}
+	if false { // try create float minibuffer
+		mbfrm := e.make_minbuf_frame(vnil)
+		vcp.info(mbfrm.strfy(e))
+		e.set_frame_size(mbfrm, 600, 100, true)
+		e.set_frame_position(mbfrm, 700, 600)
+	}
+	if true {
+		oldmbfrm := oldmbwin.window_frame(e)
+		dftfrm := e.getframe(vnil)
+		vcp.info('dftfrm/mbfrm', e.eq(dftfrm, oldmbfrm), dftfrm.strfy(e), oldmbfrm.strfy(e))
 	}
 
 	wins := e.window_list()
@@ -252,7 +287,7 @@ fn create_fixed_buffers(e &emacs.Env) {
 	for i in 0 .. 6 {
 		btn := e.insert_button('insbtn${i}')
 		eb1.insert(e, '\n')
-		vcp.info(btn.typof(e).strfy(e))
+		// vcp.info(btn.typof(e).strfy(e))
 		fn1 := fn (e &emacs.Env) {
 			vcp.info('btn clicked')
 		}

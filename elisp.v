@@ -97,7 +97,7 @@ pub fn (e &Env) alist(kvs map[string]Value) Value {
 	rv := e.fcall2('list', ...items)
 	rvty := rv.typof(e).strfy(e)
 	// vcp.info(rvty)
-	assert rvty == 'cons'
+	// assert rvty == 'cons'
 	return rv
 }
 

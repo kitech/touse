@@ -63,6 +63,12 @@ pub fn (w Value) window_name(e &Env) string {
 	return s
 }
 
+pub fn (w Value) window_frame(e &Env) Value {
+	// window-frame
+	rv := e.fcall2(funame2el(@FN), w)
+	return rv
+}
+
 pub fn (w Value) set_window_parameter(e &Env, prm string, val Value) {
 	e.fcall2(funame2el(@FN), w, e.intern(prm), val)
 }
@@ -205,11 +211,18 @@ pub fn (e &Env) set_buffer2(b string) {
 	e.chkret()
 }
 
-pub fn (e &Env) mini_buffer_window() Value {
+pub fn (e &Env) minibuffer_window() Value {
 	return e.fcall2(funame2el(@FN))
 }
 
 // set-minibuffer-window window
+// error: Window is not a minibuffer window
+// https://www.gnu.org/software/emacs/manual/html_node/elisp/Window-Internals.html
+pub fn (e &Env) set_minibuffer_window(w Value) {
+	rv := e.fcall2(funame2el(@FN), w)
+	e.chkret()
+}
+
 // float window
 // Emacs里有两种实现方式，一种基于overlay，缺点是遇到Unicode或者不等宽的字符会出问题，不过支持Terminal。另一种是基于Emacs26加入的childframe机制，可以完美显示，不过不支持TUI（不过终端下的显示元素都比较单一）。
 
@@ -221,7 +234,7 @@ pub fn (e &Env) make_button(bp int, ep int) Value {
 // 这个button更像链接,怎么更像button呢
 pub fn (e &Env) insert_button(label string) Value {
 	rv := e.fcall2(funame2el(@FN), e.strval(label))
-	assert rv.typof(e).strfy(e) == 'overlay' // it overlay?
+	// assert rv.typof(e).strfy(e) == 'overlay' // it overlay?
 	return rv
 }
 
@@ -264,6 +277,60 @@ pub fn (e &Env) make_child_frame(p Value) Value {
 	kvs['drag-internal-border'] = emvs.eltrue
 	kvs['drag-with-header-line'] = emvs.eltrue
 	kvs['drag-with-mode-line'] = emvs.eltrue
+
+	// auto conv
+	for k, v in kvs {
+		// vcp.info(v.strfy(e))
+		tv := e.fromel(v)
+		// vcp.info(tv)
+		kvs2[k] = tv
+	}
+
+	alst0 := e.alist(kvs)
+	alst2 := e.alist2(kvs2)
+	// alst := if rand.int() % 2 == 1 { alst0 } else { alst2 }
+	alst := ifelse(rand.int() % 2 == 1, alst0, alst2)
+
+	// alst := emvs.elnil
+	// item0 := e.fcall2('cons', e.intern('minibuffer'), emvs.elnil)
+	// item1 := e.fcall2('cons', e.intern('parent-frame'), p)
+	// item2 := e.fcall2('cons', e.intern('width'), e.intval(300))
+	// alst = e.fcall2('list', item0, item1, item2)
+
+	rv := e.fcall2('make-frame', alst)
+	return rv
+}
+
+pub fn (e &Env) make_minbuf_frame(p Value) Value {
+	// frame paramter keys
+	// minibuffer . nil
+	// parent-frame . p
+
+	kvs2 := map[string]Anyer{}
+	// kvs2['minibuffer'] = Symbol('only')
+	// kvs2['parent-frame'] = p
+
+	kvs := map[string]Value{}
+	kvs['minibuffer'] = e.intern('only')
+	// kvs['parent-frame'] = p
+	kvs['width'] = e.intval(300)
+	kvs['menu-bar-lines'] = e.intval(0)
+	kvs['tool-bar-lines'] = e.intval(0)
+	kvs['menu-bar-mode'] = bool2el(false) // noeffect
+	kvs['tool-bar-mode'] = bool2el(false) // noeffect
+	kvs['tab-line-mode'] = bool2el(false) // noeffect
+	kvs['auto-lower'] = bool2el(false)
+	kvs['auto-raise'] = bool2el(false)
+	kvs['visibility'] = bool2el(true)
+	kvs['undecorated'] = bool2el(true)
+	kvs['inhibit-double-buffering'] = bool2el(true)
+	kvs['z-group'] = e.intern('above')
+	kvs['name'] = e.strval('emff0x${voidptr(e)}')
+	kvs['title'] = e.strval('emtitle0x${voidptr(e)}')
+	kvs['unsplittable'] = emvs.eltrue
+	// kvs['drag-internal-border'] = emvs.eltrue
+	// kvs['drag-with-header-line'] = emvs.eltrue
+	// kvs['drag-with-mode-line'] = emvs.eltrue
 
 	// auto conv
 	for k, v in kvs {
