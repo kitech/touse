@@ -49,7 +49,7 @@ pub fn (me &Env) symbol_value(varname string) Value {
 
 pub fn (me &Env) symbol_value2(v Value) Value {
 	varsym := v
-	rv := me.fcall2(funame2el(@FN), varsym)
+	rv := me.fcall2('symbol-value', varsym)
 	me.nle_check()
 	if rv == vnil {
 	}

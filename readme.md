@@ -48,7 +48,10 @@ emacs 命令行参数:
 // float window
 // Emacs里有两种实现方式，一种基于overlay，缺点是遇到Unicode或者不等宽的字符会出问题，不过支持Terminal。另一种是基于Emacs26加入的childframe机制，可以完美显示，不过不支持TUI（不过终端下的显示元素都比较单一）。
 
+https://emacsdocs.org/docs/elisp/Window-Frame-Parameters
+
 https://www.masteringemacs.org/article/mastering-key-bindings-emacs
 
 https://phst.eu/emacs-modules.html
+
 

@@ -1,5 +1,6 @@
 module emacs
 
+import rand
 import vcp
 
 //  tab-bar (frame tabs) or tab-line (buffer tabs).
@@ -221,8 +222,14 @@ pub fn (e &Env) make_frame() Value {
 }
 
 pub fn (e &Env) make_child_frame(p Value) Value {
+	// frame paramter keys
 	// minibuffer . nil
 	// parent-frame . p
+
+	kvs2 := map[string]Anyer{}
+	kvs2['minibuffer'] = false
+	kvs2['parent-frame'] = p
+
 	kvs := map[string]Value{}
 	kvs['minibuffer'] = emvs.elnil
 	kvs['parent-frame'] = p
@@ -238,8 +245,25 @@ pub fn (e &Env) make_child_frame(p Value) Value {
 	kvs['undecorated'] = bool2el(true)
 	kvs['inhibit-double-buffering'] = bool2el(true)
 	kvs['z-group'] = e.intern('above')
+	kvs['name'] = e.strval('emff0x${voidptr(e)}')
+	kvs['title'] = e.strval('emtitle0x${voidptr(e)}')
+	kvs['unsplittable'] = emvs.eltrue
+	kvs['drag-internal-border'] = emvs.eltrue
+	kvs['drag-with-header-line'] = emvs.eltrue
+	kvs['drag-with-mode-line'] = emvs.eltrue
 
-	alst := e.alist(kvs)
+	// auto conv
+	for k, v in kvs {
+		// vcp.info(v.strfy(e))
+		tv := e.fromel(v)
+		// vcp.info(tv)
+		kvs2[k] = tv
+	}
+
+	alst0 := e.alist(kvs)
+	alst2 := e.alist2(kvs2)
+	// alst := if rand.int() % 2 == 1 { alst0 } else { alst2 }
+	alst := ifelse(rand.int() % 2 == 1, alst0, alst2)
 
 	// alst := emvs.elnil
 	// item0 := e.fcall2('cons', e.intern('minibuffer'), emvs.elnil)

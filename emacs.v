@@ -242,24 +242,39 @@ pub fn (me &Env) fcall3(funame string, args ...Anyer) Anyer {
 }
 
 pub fn (me &Env) toel(arg Anyer) Value {
+	itfin := itface2struct(&arg)
 	rv := emvs.elnil
 	match arg {
 		string {
 			rv = me.strval(arg)
 		}
+		// seems v not correct deref, when multiple match items
+		// wait v fix this
 		int, isize, usize, i32, i64, u64 {
-			rv = me.intval(isize(arg))
+			dptr := usize(arg)
+			tv := isize(arg)
+			tv2 := derefvar[isize](itfin.ptr)
+			if tv != tv2 {
+				assert dptr == itfin.ptr
+				// vcp.info(tv, itfin.typ, tv2)
+				tv = tv2
+			}
+			rv = me.intval(tv)
 		}
 		f64, f32 {
-			rv = me.realval(f64(arg))
+			dptr := usize(arg)
+			tv := f64(arg)
+			tv2 := derefvar[f64](itfin.ptr)
+			if tv != tv2 {
+				assert dptr == itfin.ptr
+				// vcp.info(tv, itfin.typ, tv2)
+				tv = tv2
+			}
+			rv = me.realval(tv)
 		}
 		// ???
 		bool {
-			if arg {
-				rv = emvs.eltrue
-			} else {
-				rv = emvs.elnil
-			}
+			rv = bool2el(arg)
 		}
 		Value {
 			rv = arg
@@ -277,20 +292,40 @@ pub fn (me &Env) toel(arg Anyer) Value {
 	return rv
 }
 
+// elisp的类型太多,似乎不容易转
 pub fn (me &Env) fromel(arg Value) Anyer {
 	tyo := arg.typof(me)
 	tystr := tyo.strfy(me)
+
+	rv := Anyer(arg)
 	match tystr {
-		// 'string' {}
-		// 'symbol' {}
-		// 'integer' {}
-		// 'float' {}
-		'boolean' {}
+		// 什么也不是类型
+		// '' {}
+		'string' {
+			rv = arg.tostr(me)
+		}
+		'symbol' { // get symbol name???
+			// tv := me.symbol_value2(arg)
+			// vcp.info(111)
+			// rv = Symbol(tv.strfy(me)) // == arg.symbol_name(me)
+			// vcp.info(222, arg.symbol_name(me), '/')
+		}
+		'integer' {
+			tv := arg.toint(me)
+			rv = tv
+			// vcp.info(222, tv, rv as isize) // correct
+			assert rv as isize == tv
+		}
+		'float' {
+			rv = arg.toreal(me)
+		}
+		// 还没有构造出来过elisp的boolean value
+		// 'boolean' {}
 		else {
-			vcp.info('nocat', tystr)
+			vcp.info('nocat', tystr, '/')
 		}
 	}
-	return zeroof[Anyer]()
+	return rv
 }
 
 // strfy
@@ -345,6 +380,15 @@ pub fn (me Value) toint(env &Env) isize {
 
 pub fn (env &Env) toint(me Value) isize {
 	rv := env.vm.extract_integer(env, me)
+	return rv
+}
+
+pub fn (me Value) toreal(env &Env) f64 {
+	return env.toint(me)
+}
+
+pub fn (env &Env) toreal(me Value) f64 {
+	rv := env.vm.extract_float(env, me)
 	return rv
 }
 
