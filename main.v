@@ -146,7 +146,7 @@ fn eminit_resize_mainwin_ifneed(e &emacs.Env) {
 	}
 	refvar2mut(emmw).left2 = w2
 
-	w3 := e.split_window(w0, 30, .below, true)
+	w3 := e.split_window(w0, 30, .above, true)
 	if w3.isnil(e) {
 		vcp.info(111, w1.isnil(e), minw, cwwidth, rgtwinwidth)
 		e.chkret()
