@@ -72,6 +72,12 @@ pub mut:
 	left1 emacs.Value
 	left2 emacs.Value
 
+	btnbar emacs.Value
+	dirwin emacs.Value
+	symwin emacs.Value
+	msgwin emacs.Value
+	bigwin emacs.Value
+
 	minibufwin emacs.Value
 
 	popwin_pkginst emacs.Value
@@ -102,6 +108,15 @@ fn emui_waitcond(e &emacs.Env, maxtry int, condfn fn () bool) bool {
 	vcp.info('resize not done, wait???', maxtry, time.since(btime).str())
 	return false
 }
+
+/*
+window layout
+    ----------------------
+    |w1|   |    w0      |
+    |  |w4 |            |
+    |  | - |------------|
+    |  |w2 |    w3      |
+*/
 
 // call at some later time, eg. after window fully inited
 fn eminit_resize_mainwin_ifneed(e &emacs.Env) {
@@ -141,7 +156,15 @@ fn eminit_resize_mainwin_ifneed(e &emacs.Env) {
 	}
 	refvar2mut(emmw).left1 = w1
 
-	w2 := e.split_window(w1, topleftheight, .below, true)
+	w4 := e.split_window(w1, 80, .right, true)
+	if w1.isnil(e) {
+		vcp.info(111, w1.isnil(e), minw, cwwidth, rgtwinwidth)
+		e.chkret()
+		return
+	}
+	// refvar2mut(emmw).left2 = w2
+
+	w2 := e.split_window(w4, topleftheight, .below, true)
 	if w1.isnil(e) {
 		vcp.info(111, w1.isnil(e), minw, cwwidth, rgtwinwidth)
 		e.chkret()
@@ -157,51 +180,23 @@ fn eminit_resize_mainwin_ifneed(e &emacs.Env) {
 	}
 	refvar2mut(emmw).minibufwin = w3
 
-	// some about minibuffer
-	oldmbwin := e.minibuffer_window()
-	vcp.info(oldmbwin.strfy(e), w3.strfy(e))
-	e.select_window(w3)
-	e.switch_to_buffer2('*Minibuf-0*')
-	w3.set_window_parameter(e, 'minibuffer', e.intern('only'))
-	w3.set_window_parameter(e, 'mini', emacs.bool2el(true))
-	// e.set_minibuffer_window(w3)
-	// if e.nle_check() != .return_ {
-	// 	vcp.error('somerr')
-	// 	return
-	// }
-	if false { // use c create minibuffer frame
-		cfunc1 := vcp.dlsym0('make_minibuffer_frame')
-		cfno1 := funcof(cfunc1, fn () voidptr {
-			return vnil
-		})
-		minifrm := cfno1()
-		vcp.info(minifrm)
-	}
-	if false { // try create float minibuffer
-		mbfrm := e.make_minbuf_frame(vnil)
-		vcp.info(mbfrm.strfy(e))
-		e.set_frame_size(mbfrm, 600, 100, true)
-		e.set_frame_position(mbfrm, 700, 600)
-	}
-	if true {
-		oldmbfrm := oldmbwin.window_frame(e)
-		dftfrm := e.getframe(vnil)
-		vcp.info('dftfrm/mbfrm', e.eq(dftfrm, oldmbfrm), dftfrm.strfy(e), oldmbfrm.strfy(e))
-	}
-
 	wins := e.window_list()
 	for idx, wx in wins {
 		vcp.info(wx.window_name(e), w0.window_name(e))
 		e.select_window(wx)
 		if e.eq(wx, w0) {
 		} else if e.eq(wx, w1) {
-			e.switch_to_buffer2('*Messages*')
+			// e.switch_to_buffer2('*Messages*')
 		} else if e.eq(wx, w2) {
+			e.switch_to_buffer2('*Messages*')
+		} else if e.eq(wx, w3) {
 			e.switch_to_buffer2('*Messages*')
 		}
 	}
 	e.select_window(w0)
 	w1.set_window_parameter(e, 'tab-line-format', e.intern('none'))
+	w3.set_window_parameter(e, 'tab-line-format', e.intern('none'))
+	w4.set_window_parameter(e, 'tab-line-format', e.intern('none'))
 	w2.set_window_parameter(e, 'tab-line-format', e.intern('none'))
 	// w1.set_window_parameter(e, 'mode-line-format', e.intern('none'))
 	// w2.set_window_parameter(e, 'mode-line-format', e.intern('none'))
@@ -209,6 +204,8 @@ fn eminit_resize_mainwin_ifneed(e &emacs.Env) {
 	w2.set_window_parameter(e, 'header-line-format', e.intern('none'))
 	w1.set_window_parameter(e, 'no-delete-other-windows', emacs.bool2el(true))
 	w2.set_window_parameter(e, 'no-delete-other-windows', emacs.bool2el(true))
+	w3.set_window_parameter(e, 'no-delete-other-windows', emacs.bool2el(true))
+	w4.set_window_parameter(e, 'no-delete-other-windows', emacs.bool2el(true))
 
 	// 为什么在这个循环里设置就不管用???
 	buflst := e.buffer_list()
@@ -236,12 +233,96 @@ fn eminit_resize_mainwin_ifneed(e &emacs.Env) {
 		}
 	}
 
-	e.select_window(w1)
+	e.select_window(w4)
 	e.fcall2('dired', e.strval(os.getwd()))
-	e.fcall2('set-window-dedicated-p', w1, e.intern('t'))
+	e.fcall2('set-window-dedicated-p', w4, e.intern('t'))
 	e.chkret()
 	e.fcall2('set-window-dedicated-p', w2, e.intern('t'))
 	e.chkret()
+	e.fcall2('set-window-dedicated-p', w3, e.intern('t'))
+	e.chkret()
+
+	///
+	refvar2mut(emmw).bigwin = w0
+	refvar2mut(emmw).msgwin = w3
+	refvar2mut(emmw).symwin = w2
+	refvar2mut(emmw).dirwin = w4
+	refvar2mut(emmw).btnbar = w1
+}
+
+fn create_btnwin_content(e &emacs.Env) {
+	btnbar := emmw.btnbar
+
+	e.select_window(btnbar)
+	eb1 := e.get_buffer_create('test222')
+	e.switch_to_buffer(eb1)
+	e.getwin(vnil).set_window_dedicated_p(e, true)
+
+	eb1.insert(e, 'App\n')
+
+	if true {
+		btn := e.insert_button('Instpkg')
+		eb1.insert(e, '\n\n')
+		// vcp.info(btn.typof(e).strfy(e))
+		fn1 := fn (e &emacs.Env) {
+			vcp.info('btn clicked')
+		}
+		fnv1 := e.funval(fn1)
+		btn.button_put(e, 'mouse-action', fnv1)
+	}
+
+	for i in 0 .. 12 {
+		btn := e.insert_button('btn${i}')
+		eb1.insert(e, '\n\n')
+		// vcp.info(btn.typof(e).strfy(e))
+		fn1 := fn (e &emacs.Env) {
+			vcp.info('btn clicked')
+		}
+		fnv1 := e.funval(fn1)
+		btn.button_put(e, 'mouse-action', fnv1)
+	}
+
+	w1 := btnbar
+	e.fcall2('set-window-dedicated-p', w1, e.intern('t'))
+	e.chkret()
+}
+
+fn create_flowt_minibuf(e &emacs.Env) {
+	w3 := emmw.msgwin
+
+	// some about minibuffer
+	oldmbwin := e.minibuffer_window()
+	vcp.info(oldmbwin.strfy(e), w3.strfy(e))
+	if false {
+		e.select_window(w3)
+		e.switch_to_buffer2('*Minibuf-0*')
+		w3.set_window_parameter(e, 'minibuffer', e.intern('only'))
+		w3.set_window_parameter(e, 'mini', emacs.bool2el(true))
+		// e.set_minibuffer_window(w3)
+		// if e.nle_check() != .return_ {
+		// 	vcp.error('somerr')
+		// 	return
+		// }
+	}
+	if false { // use c create minibuffer frame
+		cfunc1 := vcp.dlsym0('make_minibuffer_frame')
+		cfno1 := funcof(cfunc1, fn () voidptr {
+			return vnil
+		})
+		minifrm := cfno1()
+		vcp.info(minifrm)
+	}
+	if false { // try create float minibuffer
+		mbfrm := e.make_minbuf_frame(vnil)
+		vcp.info(mbfrm.strfy(e))
+		e.set_frame_size(mbfrm, 600, 100, true)
+		e.set_frame_position(mbfrm, 700, 600)
+	}
+	if true {
+		oldmbfrm := oldmbwin.window_frame(e)
+		dftfrm := e.getframe(vnil)
+		vcp.info('dftfrm/mbfrm', e.eq(dftfrm, oldmbfrm), dftfrm.strfy(e), oldmbfrm.strfy(e))
+	}
 }
 
 fn create_float_window(e &emacs.Env) {
@@ -325,7 +406,10 @@ fn run_window_setup_hook(e &emacs.Env) {
 	vcp.info('...')
 	e.chkret()
 	eminit_resize_mainwin_ifneed(e)
+
+	create_btnwin_content(e)
 	create_float_window(e)
+	create_flowt_minibuf(e)
 	create_fixed_buffers(e)
 }
 
@@ -340,4 +424,9 @@ fn run_window_configuration_change_hook(e &emacs.Env) {
 	vcp.info(tcons.strfy(e))
 
 	vcp.info(999)
+}
+
+fn run_after_save_hook(e &emacs.Env) {
+	bfile := e.buffer_file_name(vnil)
+	vcp.info('savewt', bfile)
 }

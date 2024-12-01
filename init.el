@@ -18,3 +18,13 @@
   (message "vehello^^^")
   )
 ;; (global-set-key (kbd "C-,") 'veopen-file-dialog)
+
+(defun f-this-file ()
+  "Return path to this file."
+  (cond
+   (load-in-progress load-file-name)
+   ((and (boundp 'byte-compile-current-file) byte-compile-current-file)
+    byte-compile-current-file)
+   (:else (buffer-file-name))))
+
+(message (f-this-file))

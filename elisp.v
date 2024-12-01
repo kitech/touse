@@ -13,11 +13,13 @@ pub fn islispobj(v voidptr) int {
 	fno2 := funcof(sym2, fn (_ voidptr) int {
 		return 0
 	})
+
 	rv2 := fno2(voidptr(v))
 	//	vcp.info(rv2)
 	return rv2
 }
 
+///
 pub fn (e &Env) car(v Value) Value {
 	return e.fcall2('car', v)
 }

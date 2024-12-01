@@ -390,6 +390,11 @@ pub fn (v Value) buffer_string(e &Env) string {
 	return rv.tostr(e)
 }
 
+pub fn (e &Env) buffer_file_name(b Value) string {
+	rv := e.fcall2(funame2el(@FN))
+	return rv.tostr(e)
+}
+
 pub fn (b Value) buffer_move(e &Env, pos int) {
 }
 
