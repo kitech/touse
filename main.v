@@ -48,7 +48,7 @@ const hooks = ['after-change-major-mode-hook', 'after-init-hook', 'emacs-startup
 	'buffer-list-update-hook', 'buffer-quit-function', 'focus-in-hook', 'focus-out-hook',
 	'window-setup-hook', 'after-save-hook', 'before-save-hook', 'quit-window-hook', 'post-gc-hook',
 	'window-configuration-change-hook', 'after-setting-font-hook', 'suspend-hook',
-	'suspend-resume-hook']
+	'suspend-resume-hook', 'minibuffer-setup-hook', 'minibuffer-with-setup-hook']
 
 fn eminit_hooks(e &emacs.Env) {
 	for idx_, hook_ in hooks {
@@ -57,13 +57,14 @@ fn eminit_hooks(e &emacs.Env) {
 			hook := hooks[idx]
 			name4v := '${@MOD}__run_' + emacs.nameofel(hook, false)
 			sym4v := vcp.dlsym0(name4v)
-			// vcp.info('111', idx.str(), hook, 'cllaed', name4v, sym4v)
+			// vcp.info('111', idx.str(), hook, 'called', name4v, sym4v)
 			if sym4v != vnil {
 				fno := funcof(sym4v, fn (_ &emacs.Env) {})
 				fno(e)
 			}
 		})
 	}
+	vcp.info('added hooks:', hooks.len)
 }
 
 struct MainWin {
@@ -163,8 +164,7 @@ fn eminit_resize_mainwin_ifneed(e &emacs.Env) {
 	e.switch_to_buffer2('*Minibuf-0*')
 	w3.set_window_parameter(e, 'minibuffer', e.intern('only'))
 	w3.set_window_parameter(e, 'mini', emacs.bool2el(true))
-	e.set_minibuffer_window(w3)
-	vcp.info(e.minibuffer_contents())
+	// e.set_minibuffer_window(w3)
 	// if e.nle_check() != .return_ {
 	// 	vcp.error('somerr')
 	// 	return
@@ -310,6 +310,14 @@ fn eminit_peekvars(e &emacs.Env) {
 		vty := val.typof(e)
 		vcp.info(idx.str(), vn.str(), vty.strfy(e), str)
 	}
+}
+
+fn run_minibuffer_setup_hook(e &emacs.Env) {
+	vcp.info('...')
+}
+
+fn run_minibuffer_with_setup_hook(e &emacs.Env) {
+	vcp.info('...')
 }
 
 /// hooks

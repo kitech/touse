@@ -2,6 +2,7 @@ module emacs
 
 import dl
 import vcp
+import time
 
 #include <emacs-module.h>
 #include "@VMODROOT/emacs/emacs.h"
@@ -91,28 +92,62 @@ pub mut:
 	emuser_init fn (e &Env) = vnil
 
 	elclostmpno i64 = 10
+
+	lasterr   string
+	errdupcnt int
+	lasterrtm time.Time
 }
 
 ///
 pub const MAJOR_VERION = C.EMACS_MAJOR_VERSION
 
 // should be voidptr, but voidptr has some special
-pub type Value = usize
+pub type Value = usize // = &ValueTag
+pub type LispObject = usize // LispWord
 
 pub fn (me Value) asptr() voidptr {
 	return voidptr(usize(me))
 }
 
-pub struct Valuein {
+pub struct ValueTag {
 pub mut:
-	v voidptr
+	v LispObject // Lisp_Object v;
+}
+
+pub struct LispString {
+pub mut:
+	size      isize
+	size_byte isize
+	intervals voidptr // todo
+	data      charptr
+	// unioned next &LispString
+	// unioned GCALIGNED_UNION_MEMBER
+}
+
+const value_frame_size = 512
+
+pub struct ValueFrame {
+pub mut:
+	objects [512]ValueTag
+	offset  cint
+	next    &ValueFrame = vnil
+}
+
+pub struct ValueStorage {
+pub mut:
+	initial ValueFrame
+	current &ValueFrame = vnil
 }
 
 pub struct Envpriv {
 pub mut:
+	// enum emacs_funcall_exit
 	pending_non_local_exit FcallExit
-	non_local_exit_symbol  voidptr
-	non_local_exit_data    voidptr
+
+	non_local_exit_symbol voidptr
+	non_local_exit_data   voidptr
+
+	storage ValueStorage
 }
 
 @[typedef]
@@ -409,21 +444,7 @@ pub fn (env &Env) tostr(me Value) string {
 
 	size := isize(0)
 	bv := env.vm.copy_string_contents(env, me, vnil, &size)
-	// assert bv == true
 	if bv == false {
-		ev := env.nle_check()
-		// vcp.info(ev.str(), me.isnil(env))
-		sym := emvs.eltrue
-		data := emvs.eltrue
-		env.vm.non_local_exit_get(env, &sym, &data)
-		env.vm.non_local_exit_clear(env) // 这是一个技巧,拿到错误信息就清除,然后再解析错误
-		// vcp.info(sym.isnil(env), data.isnil(env))
-		vcp.warn('cannot get strsize', size, ev.str(), 'error sym/data:', derefvar[voidptr](&voidptr(sym)),
-			derefvar[voidptr]((&voidptr(data))), sym.isnil(env), data.isnil(env))
-		vcp.warn(sym.strfy(env), data.strfy(env))
-		// env.nle_clear_indeep()
-		// vcp.info(ev.str(), size, me.isnil(env))
-		// clear wrong type arguments???
 		return 'elvtostr(nil1)'
 	}
 	// vcp.info('needlen', size, bv)
@@ -502,32 +523,23 @@ pub fn (me &Env) chkret() {
 	data := emvs.eltrue // emvs.elnil
 
 	tv := me.vm.non_local_exit_get(me, &sym, &data)
+	assert tv == me.vm.private_members.pending_non_local_exit
 	me.vm.non_local_exit_clear(me) // 这是一个技巧,拿到错误信息就清除,然后再解析错误
-	// vcp.info(tv.str(), '???')
 
 	if tv != .return_ {
-		insym := me.vm.private_members.non_local_exit_symbol
-		indata := me.vm.private_members.non_local_exit_data
-		vcp.info(tv.str(), sym.isnil(me), data.isnil(me), insym, indata)
-		vcp.warn(sym.strfy(me), data.strfy(me))
-		// vcp.info(tosbca(voidptr(indata), 36))
-		// vcp.info(islispobj(insym), islispobj(indata))
-		// sym, data 啥都不是的类型...
-		// me.anyp(emvs.eltrue)
-
-		args := [sym]
-		for pf in ['print', 'prin1', 'princ', 'terpri', 'pp', 'prin1-to-string'] {
-			if true {
-				break
-			}
-			xv := me.vm.funcall(me, me.intern(pf), 1, args.data)
-			vcp.info(pf.clone(), xv.strfy(me), xv.typof(me).strfy(me))
+		// vcp.info(tv.str(), sym.isnil(me), data.isnil(me))
+		errmsg := sym.strfy(me) + ': ' + data.strfy(me)
+		if errmsg != emvs.lasterr {
+			vcp.warn(errmsg)
+			refvar2mut(emvs).lasterr = errmsg
+		} else {
+			refvar2mut(emvs).errdupcnt += 1
 		}
-		me.vm.funcall(me, me.intern('flush-standard-output'), 0, vnil)
+		refvar2mut(emvs).lasterrtm = time.now()
 
-		// me.vm.non_local_exit_clear(me)
+		// peek mode, restore it
+		me.vm.private_members.pending_non_local_exit = tv
 	}
-	// vcp.info(tv.str(), 333)
 }
 
 pub fn (me &Env) vecget(vec Value, idx isize) Value {

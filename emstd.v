@@ -133,3 +133,15 @@ pub fn (me &Env) anyp(vx Value) {
 		vcp.info(rv.strfy(me))
 	}
 }
+
+fn (me &Env) someprint(sym Value) {
+	args := [sym]
+	for pf in ['print', 'prin1', 'princ', 'terpri', 'pp', 'prin1-to-string'] {
+		if true {
+			break
+		}
+		xv := me.vm.funcall(me, me.intern(pf), 1, args.data)
+		vcp.info(pf.clone(), xv.strfy(me), xv.typof(me).strfy(me))
+	}
+	// me.vm.funcall(me, me.intern('flush-standard-output'), 0, vnil)
+}
