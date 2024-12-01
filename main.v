@@ -106,6 +106,7 @@ fn eminit_resize_mainwin_ifneed(e &emacs.Env) {
 	w := e.window_pixel_width(vnil)
 	h := e.window_pixel_height(vnil)
 	vcp.info('size: ${w}x${h}, dsp: ${dw}x${dh}')
+	w0 := e.getwin(vnil)
 
 	// cannot resize a root window of a frame
 	// e.window_resize(vnil, 200, true, true)
@@ -145,7 +146,13 @@ fn eminit_resize_mainwin_ifneed(e &emacs.Env) {
 	}
 	refvar2mut(emmw).left2 = w2
 
-	w0 := e.getwin(vnil)
+	w3 := e.split_window(w0, 30, .below, true)
+	if w3.isnil(e) {
+		vcp.info(111, w1.isnil(e), minw, cwwidth, rgtwinwidth)
+		e.chkret()
+		return
+	}
+
 	wins := e.window_list()
 	for idx, wx in wins {
 		vcp.info(wx.window_name(e), w0.window_name(e))
