@@ -235,7 +235,7 @@ pub fn (me &Env) fcall3(funame string, args ...Anyer) Anyer {
 		arr[i] = v
 	}
 	rv := me.vm.funcall(me, fun, nargs, arr.data)
-	me.nle_check()
+	me.chkret()
 	vcp.info(funame, rv.strfy(me))
 	// 	return rv
 	return zeroof[Anyer]()
@@ -457,13 +457,19 @@ fn elmodfunfwder(e &Env, nargs isize, args &Value, data voidptr) Value {
 	if data == vnil {
 		vcp.warn(e, nargs, data)
 	}
+	vcp.trueprt(nargs > 0, nargs, 'todo')
+	for idx in 0 .. nargs {
+		item := args[idx]
+		aty := item.typof(e)
+		// vcp.info(idx.str(), item, aty.strfy(e), item.strfy(e))
+	}
 	cb := funcof(data, fn (_ &Env) {})
 	cb(e)
 	return emvs.elnil
 }
 
 pub fn (me &Env) funval(cb fn (e &Env)) Value {
-	elfn := me.vm.make_function_(me, 0, 0, elmodfunfwder, vnil, voidptr(cb))
+	elfn := me.vm.make_function_(me, 0, 16, elmodfunfwder, vnil, voidptr(cb))
 	me.nle_check()
 	return elfn
 }

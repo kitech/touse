@@ -72,6 +72,10 @@ pub fn (w Value) set_frame_parameter(e &Env, prm string, val Value) {
 	// e.fcall2(funame2el(@FN), w, e.strval(prm), val)
 }
 
+pub fn (w Value) set_window_dedicated_p(e &Env, val bool) {
+	e.fcall2(funame2el(@FN), w, bool2el(val))
+}
+
 pub fn (e &Env) set_frame_size(frm Value, w int, h int, inpixel bool) {
 	if w > 0 {
 		e.set_frame_width(frm, w, inpixel)
@@ -201,20 +205,29 @@ pub fn (e &Env) set_buffer2(b string) {
 	e.chkret()
 }
 
-pub fn (e &Env) mini_button_window() Value {
+pub fn (e &Env) mini_buffer_window() Value {
 	return e.fcall2(funame2el(@FN))
 }
 
-//  set-minibuffer-window window
+// set-minibuffer-window window
 // float window
 // Emacs里有两种实现方式，一种基于overlay，缺点是遇到Unicode或者不等宽的字符会出问题，不过支持Terminal。另一种是基于Emacs26加入的childframe机制，可以完美显示，不过不支持TUI（不过终端下的显示元素都比较单一）。
 
+// 给当前的buff文字加链接
 pub fn (e &Env) make_button(bp int, ep int) Value {
 	return e.fcall2(funame2el(@FN), e.intval(bp), e.intval(ep))
 }
 
+// 这个button更像链接,怎么更像button呢
 pub fn (e &Env) insert_button(label string) Value {
-	return e.fcall2(funame2el(@FN), e.strval(label))
+	rv := e.fcall2(funame2el(@FN), e.strval(label))
+	assert rv.typof(e).strfy(e) == 'overlay' // it overlay?
+	return rv
+}
+
+// it really set property
+pub fn (v Value) button_put(e &Env, prop string, val Value) {
+	rv := e.fcall2(funame2el(@FN), v, e.intern(prop), val)
 }
 
 pub fn (e &Env) make_frame() Value {
@@ -273,4 +286,46 @@ pub fn (e &Env) make_child_frame(p Value) Value {
 
 	rv := e.fcall2('make-frame', alst)
 	return rv
+}
+
+pub fn (v Value) select_frame(e &Env) {
+	rv := e.fcall2(funame2el(@FN), v)
+}
+
+pub fn (v Value) select_frame_set_input_focus(e &Env) {
+	rv := e.fcall2(funame2el(@FN), v)
+}
+
+pub fn (v Value) raise_frame(e &Env) {
+	rv := e.fcall2(funame2el(@FN), v)
+}
+
+pub fn (v Value) lower_frame(e &Env) {
+	rv := e.fcall2(funame2el(@FN), v)
+}
+
+pub fn (e &Env) get_buffer_create(name string) Value {
+	rv := e.fcall2(funame2el(@FN), e.strval(name))
+	return rv
+}
+
+pub fn (e &Env) kill_buffer(b Value) {
+	rv := e.fcall2(funame2el(@FN), b)
+}
+
+pub fn (v Value) buffer_string(e &Env) string {
+	rv := e.fcall2(funame2el(@FN), v)
+	return rv.tostr(e)
+}
+
+pub fn (b Value) buffer_move(e &Env, pos int) {
+}
+
+pub fn (b Value) insert(e &Env, val string) {
+	rv := e.fcall2(funame2el(@FN), e.strval(val))
+}
+
+pub fn (b Value) point(e &Env) int {
+	rv := e.fcall2(funame2el(@FN), b)
+	return int(rv.toint(e))
 }

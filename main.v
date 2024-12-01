@@ -70,6 +70,8 @@ struct MainWin {
 pub mut:
 	left1 emacs.Value
 	left2 emacs.Value
+
+	popwin_pkginst emacs.Value
 }
 
 const emmw = &MainWin{}
@@ -191,6 +193,8 @@ fn eminit_resize_mainwin_ifneed(e &emacs.Env) {
 		}
 	}
 
+	e.select_window(w1)
+	e.fcall2('dired', e.strval(os.getwd()))
 	e.fcall2('set-window-dedicated-p', w1, e.intern('t'))
 	e.chkret()
 	e.fcall2('set-window-dedicated-p', w2, e.intern('t'))
@@ -212,13 +216,41 @@ fn create_float_window(e &emacs.Env) {
 	// frm.set_frame_parameter(e, 'left', e.intval(100))
 	// frm.set_frame_parameter(e, 'top', e.intval(100))
 	e.set_frame_size(frm, 500, 300, true)
-	e.set_frame_position(frm, 200, 50)
+	e.set_frame_position(frm, 200, 150)
 
 	// 创建第二个的时候有点问题呢?
 	if false {
 		frm2 := e.make_child_frame(topfrm)
 		e.set_frame_size(frm, 400, 300, true)
 		e.set_frame_position(frm, 600, 150)
+	}
+
+	// save some
+	mw := emmw
+	mw.popwin_pkginst = frm
+}
+
+fn create_fixed_buffers(e &emacs.Env) {
+	mw := emmw
+	frm := mw.popwin_pkginst
+	frm.raise_frame(e)
+	frm.select_frame(e)
+	frm.select_frame_set_input_focus(e)
+
+	eb1 := e.get_buffer_create('test111')
+	e.switch_to_buffer(eb1)
+	e.getwin(vnil).set_window_dedicated_p(e, true)
+
+	eb1.insert(e, 'hehehhehee\n')
+	for i in 0 .. 6 {
+		btn := e.insert_button('insbtn${i}')
+		eb1.insert(e, '\n')
+		vcp.info(btn.typof(e).strfy(e))
+		fn1 := fn (e &emacs.Env) {
+			vcp.info('btn clicked')
+		}
+		fnv1 := e.funval(fn1)
+		btn.button_put(e, 'mouse-action', fnv1)
 	}
 }
 
@@ -243,6 +275,7 @@ fn run_window_setup_hook(e &emacs.Env) {
 	e.chkret()
 	eminit_resize_mainwin_ifneed(e)
 	create_float_window(e)
+	create_fixed_buffers(e)
 }
 
 fn run_window_configuration_change_hook(e &emacs.Env) {
