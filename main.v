@@ -41,7 +41,8 @@ fn eminit_shotkeys(e &emacs.Env) {
 	}
 }
 
-//
+// 查找所有符号, M-x apropos RET hook
+// mapatoms
 // 这两个hook的函数参数有要求,
 // 'window-scroll-functions', 'window-size-change-functions'
 const hooks = ['after-change-major-mode-hook', 'after-init-hook', 'emacs-startup-hook',
@@ -235,6 +236,7 @@ fn eminit_resize_mainwin_ifneed(e &emacs.Env) {
 
 	e.select_window(w4)
 	e.fcall2('dired', e.strval(os.getwd()))
+	// e.fcall2('dired', e.strval(vcp.path_expend('~/aprog')))
 	e.fcall2('set-window-dedicated-p', w4, e.intern('t'))
 	e.chkret()
 	e.fcall2('set-window-dedicated-p', w2, e.intern('t'))
@@ -340,7 +342,8 @@ fn create_float_window(e &emacs.Env) {
 	// frm.set_frame_parameter(e, 'left', e.intval(100))
 	// frm.set_frame_parameter(e, 'top', e.intval(100))
 	e.set_frame_size(frm, 500, 300, true)
-	e.set_frame_position(frm, 200, 150)
+	// e.set_frame_position(frm, 200, 150)
+	e.set_frame_position(frm, 900, 50)
 
 	// 创建第二个的时候有点问题呢?
 	if false {
@@ -426,7 +429,39 @@ fn run_window_configuration_change_hook(e &emacs.Env) {
 	vcp.info(999)
 }
 
+const md2jpldirs = ['~/mdnote', '~/Sync']
+const md2jplexts = ['.md', '.markdown', '.txt']
+
 fn run_after_save_hook(e &emacs.Env) {
 	bfile := e.buffer_file_name(vnil)
 	vcp.info('savewt', bfile)
+
+	run_md2jpl(bfile)
+}
+
+fn md2jpl_match(bfile string) (string, bool) {
+	dir := ''
+	extok := false
+	for ext in md2jplexts {
+		if bfile.ends_with(ext) {
+			extok = true
+			break
+		}
+	}
+	for d in md2jpldirs {
+		d2 := vcp.path_expend(d)
+		if bfile.starts_with(d2) {
+			dir = d2
+			break
+		}
+	}
+	return dir, extok
+}
+
+fn run_md2jpl(bfile string) {
+	dir, extok := md2jpl_match(bfile)
+	if dir == '' || !extok {
+		return
+	}
+	vcp.info('mated', bfile)
 }

@@ -84,10 +84,17 @@ fn veclosnext() string {
 	return 'veclos${emvs.elclostmpno}'
 }
 
+// safe not out of range
+pub fn arrayat[T](args []T, idx int) T {
+	return if args.len > idx { args[idx] } else { zeroof[T]() }
+}
+
 // todo return error
-pub fn (me &Env) add_hook(hook string, fun fn (e &Env)) {
+pub fn (me &Env) add_hook(hook string, fun fn (e &Env), appendorlocal ...bool) {
 	elfn := me.funval(fun)
-	rv := me.fcall3(funame2el(@FN), Symbol(hook), elfn)
+	append := arrayat(appendorlocal, 0)
+	local := arrayat(appendorlocal, 1)
+	rv := me.fcall3(funame2el(@FN), Symbol(hook), elfn, bool2el(append), bool2el(local))
 	me.nle_check()
 }
 
@@ -109,6 +116,15 @@ pub fn (me &Env) global_set_key(keys string, funame string) {
 	rv1 := me.fcall2('kbd', me.strval(keys))
 	me.fcall3(funame2el(@FN), rv1, Symbol(funame))
 	me.nle_check()
+}
+
+// some global list
+pub fn package_archives(e &Env) Value {
+	return e.intern(funame2el(@FN))
+}
+
+pub fn load_path(e &Env) Value {
+	return e.intern(funame2el(@FN))
 }
 
 ///

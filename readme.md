@@ -3,6 +3,7 @@
 
 - [+] treemacs 添加函数列表/类型列表窗口
 - [+] 弹出窗口式操作
+- [ ] 弹出菜单
 - [ ] i18n
 - [ ] 中文界面,菜单/工具条提示等
 - [x] 支持绑定按键
@@ -15,6 +16,9 @@
 - [ ] sublime安装插件的浮动窗口
 - [ ] 扩展管理
 - [ ] vscode右侧工具按钮,文件,扩展,...
+- [ ] 遵循先启动再配置的原则.
+        现有的好多是先配置,有问题无法正常启动
+- [ ] 应该有emacs的全局搜索,文档,代码,api
 - [x] 无法获取到错误信息
 
 ### compile
@@ -44,6 +48,11 @@ emacs 命令行参数:
 
 
 #### more docs
+
+- emacs 内搜索, apropos, info-apropos, elisp-index-search,
+  只是缺少: 聚焦搜索/spotlight
+
+- emacs四套ui, console(make-button), widget(widget-create), xwidget(native widget), webkit widgets
 
 // float window
 // Emacs里有两种实现方式，一种基于overlay，缺点是遇到Unicode或者不等宽的字符会出问题，不过支持Terminal。另一种是基于Emacs26加入的childframe机制，可以完美显示，不过不支持TUI（不过终端下的显示元素都比较单一）。
