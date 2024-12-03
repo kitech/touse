@@ -1,7 +1,12 @@
 ;; (require 'myemod)
 
+;; (setq  toggle-debug-on-error t)
 (setq inhibit-startup-message t)
+(setq dired-kill-when-opening-new-dired-buffer t)
 ;; (setq global-tab-line-mode t)
+;; (jit-lock-mode nil)
+;; fix this https://github.com/Alexander-Miller/treemacs/issues/157
+;; (jit-lock-debug-mode nil)
 ;; (tab-line-mode)
 (global-tab-line-mode)
 
@@ -28,12 +33,17 @@
    (:else (buffer-file-name))))
 
 (message (f-this-file))
+
+(add-to-list 'load-path "~/.emacs.d/handby")
+;; (add-to-list 'load-path "~/aprog/mkuse/emacs")
+;; (require 'lspmdx)
+(load-file "lspmdx.el")
 (custom-set-variables
  ;; custom-set-variables was added by Custom.
  ;; If you edit it by hand, you could mess it up, so be careful.
  ;; Your init file should contain only one such instance.
  ;; If there is more than one, they won't work right.
- '(package-selected-packages '(yasnippet lsp-mode hydra)))
+ '(package-selected-packages '(company yasnippet lsp-mode hydra)))
 (custom-set-faces
  ;; custom-set-faces was added by Custom.
  ;; If you edit it by hand, you could mess it up, so be careful.
