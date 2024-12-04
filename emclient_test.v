@@ -1,15 +1,20 @@
 module emacs
 
 import vcp
+import time
 
 fn test_1() {
 }
 
 fn test_2() {
+	btime := time.now()
 	runon_uithread(fn (e &Env, args []Value) Value {
 		vcp.info('ehehe', e.asptr())
 		return emvs.eltrue
-	}, false, 1.2, f32(123), 'abc', 42)
+	}, true, 1.2, f32(123), 'abc', 42)
+	vcp.info(time.since(btime).str())
+
+	runon_uithread('prin1-to-string', false, 1.2)
 
 	assert false
 }

@@ -3,6 +3,7 @@ module emacs
 import dl
 import vcp
 import time
+import os
 
 #include <emacs-module.h>
 #include "@VMODROOT/emacs/emacs.h"
@@ -50,6 +51,8 @@ fn eminit(rt &Runtime) int {
 	refvar2mut(emvs).elvoid = env.globref(env.intern('void'))
 	// refvar2mut(emvs).rt = rt
 	// refvar2mut(emvs).env = env
+	sockfile := os.join_path(env.getvar('server-socket-dir').tostr(env), 'socket')
+	ref2mut(emvs).servsockfile = sockfile
 	env.defun('emacs-runon-uithread', emacs_runon_uithread, '')
 
 	basictt(env)
@@ -97,6 +100,8 @@ pub mut:
 	lasterr   string
 	errdupcnt int
 	lasterrtm time.Time
+
+	servsockfile string
 }
 
 ///
@@ -426,7 +431,7 @@ pub fn (env &Env) toint(me Value) isize {
 }
 
 pub fn (me Value) toreal(env &Env) f64 {
-	return env.toint(me)
+	return env.toreal(me)
 }
 
 pub fn (env &Env) toreal(me Value) f64 {

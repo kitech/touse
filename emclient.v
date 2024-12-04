@@ -4,6 +4,7 @@ import net
 import net.unix
 import vcp
 import os
+import time
 
 #flag @VMODROOT/emacs/emclient.o
 
@@ -12,7 +13,7 @@ fn C.emacs_unquote_argument(...voidptr) cint
 pub fn quote(v string) string {
 	rv := []u8{len: v.len * 2 + 1}
 	rc := C.emacs_quote_argument(v.str, rv.data)
-	vcp.info(int(rc), v.len)
+
 	return rv[..int(rc)].bytestr()
 }
 
@@ -72,20 +73,36 @@ pub fn unquote_(v string) string {
 
 pub type UifuncType = string | Funcur | voidptr
 
-// todo proc can also be elisp symbol
-pub fn runon_uithread_nowait(proc Funcur, args ...Anyer) {
+//  proc can also be elisp symbol
+pub fn runon_uithread_nowait(proc UifuncType, args ...Anyer) {
 	runon_uithread(proc, false, ...args)
 }
 
+// 1ms-30ms+
 // also means emacs main thread
-pub fn runon_uithread(proc Funcur, nowait bool, args ...Anyer) {
+pub fn runon_uithread(proc UifuncType, nowait bool, args ...Anyer) {
+	btime := time.now()
 	mypid := os.getpid() // sender
-	c := unix.connect_stream('/run/user/1000/emacsv/server') or { panic(err) }
+	sockfile := emvs.servsockfile
+	if sockfile == '' {
+		sockfile = '/run/user/1000/emacsv/server'
+	}
+	c := unix.connect_stream(sockfile) or {
+		vcp.error(err.str())
+		return
+	}
 	defer { c.close() or { panic(err) } }
 
 	cmd := 'print server-socket-dir'
 	cmd = 'emacs-runon-uithread 12345678'
-	cmd = 'emacs-runon-uithread ${mypid} ${usize(proc)} ${args.len}'
+	// cmd = 'emacs-runon-uithread ${mypid} ${usize(proc)} ${args.len}'
+	cmd = 'emacs-runon-uithread ${mypid}'
+	match proc {
+		string { cmd += ' "${proc}"' }
+		Funcur { cmd += ' "0x${voidptr(proc)}"' }
+		voidptr { cmd += ' "0x${voidptr(proc)}"' }
+	}
+	cmd += ' ${args.len}'
 	for idx, arg in args {
 		itfin := itface2struct(&arg)
 		val := match arg {
@@ -118,9 +135,20 @@ pub fn runon_uithread(proc Funcur, nowait bool, args ...Anyer) {
 	}
 	// vcp.info(cmd)
 	cmd = quote(cmd)
-	n := c.write_string('-eval (${cmd})\n') or { panic(err) }
+	prm := ifelse(nowait, '-nowait', '')
+	// vcp.info(prm, cmd)
+	n := c.write_string('${prm} -eval (${cmd})\n') or { panic(err) }
 	// vcp.info(n, cmd, voidptr(proc))
+
+	// vcp.info('write used', time.since(btime).str()) // 150us
+	// todo how
+	if nowait {
+		// return
+	}
+
 	res := ''
+	btime = time.now()
+	c.set_read_timeout(time.millisecond * 500)
 	for {
 		mut buf := []u8{len: 128}
 		n = c.read(mut buf) or {
@@ -132,6 +160,7 @@ pub fn runon_uithread(proc Funcur, nowait bool, args ...Anyer) {
 		// vcp.info(n, buf[..n].bytestr(), '/')
 		res += buf[..n].bytestr()
 	}
+	etime := time.now()
 	// parse result
 	lines := res.split('\n')
 	for idx, line in lines {
@@ -140,7 +169,7 @@ pub fn runon_uithread(proc Funcur, nowait bool, args ...Anyer) {
 		}
 		kv := line.split(' ')
 		k, v := kv[0], unquote(kv[1])
-		vcp.info('<<<', idx.str(), 'k', k, 'v', v)
+		vcp.info('<<<', idx.str(), 'k', k, 'v', v, time.since(btime).str())
 	}
 }
 
@@ -151,22 +180,42 @@ fn tt_runonth(e &Env, args []Value) Value {
 
 // defalis: emacs-runon-uithread
 fn emacs_runon_uithread(e &Env, argc isize, args &Value, data voidptr) Value {
-	arr := []Value{len: int(argc) - 3}
-	for i := 3; i < argc; i++ {
+	fixcnt := 3 // pid, fnptr, argc
+	arr := []Value{len: int(argc) - fixcnt}
+	for i := 0; i < argc; i++ {
 		tv := args[i]
 		// vcp.info(i.str(), tv.typof(e).strfy(e), tv.strfy(e))
-		arr[i - 3] = tv
+		if i >= fixcnt {
+			arr[i - fixcnt] = tv
+		}
 	}
 
 	mypid := os.getpid()
 	a0 := args[0].toint(e)
-	a1 := voidptr(usize(args[1].toint(e)))
-	if a0 != mypid {
-		a1 = voidptr(tt_runonth)
+	a1 := args[1].tostr(e)
+
+	isfnptr := a1.starts_with('0x')
+	rv := emvs.elnil
+	if isfnptr {
+		// overflow-error: (11595785290660792405)
+		// a1 := voidptr(usize(args[1].toint(e)))
+		if a0 != mypid {
+			// a1 = voidptr(tt_runonth)
+			a1 = '0x${voidptr(tt_runonth)}'
+		}
+
+		fnptrx := a1[2..].parse_uint(16, 64) or { 0 }
+		assert fnptrx != 0, a1
+		fnptr := voidptr(usize(fnptrx))
+		fnv := Funcur(fnptr)
+		// vcp.info('calling from/mypid', a0, mypid, argc, a1)
+		rv = fnv(e, arr)
+		// vcp.info('done', argc, a1)
+	} else {
+		// vcp.info('calling', a1, arr.len)
+		rv = e.fcall2(a1, ...arr)
 	}
-	fnv := Funcur(a1)
-	// vcp.info('calling from/mypid', a0, mypid, argc, a1)
-	rv := fnv(e, arr)
-	// vcp.info('done', argc, a1)
-	return e.strval('argc=${argc}, data=${data}, rv=${rv.strfy(e)}')
+
+	// vcp.info('argc=${argc}, data=${data}, rv=${rv.strfy(e)}')
+	return rv
 }
