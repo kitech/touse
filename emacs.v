@@ -50,6 +50,7 @@ fn eminit(rt &Runtime) int {
 	refvar2mut(emvs).elvoid = env.globref(env.intern('void'))
 	// refvar2mut(emvs).rt = rt
 	// refvar2mut(emvs).env = env
+	env.defun('emacs-runon-uithread', emacs_runon_uithread, '')
 
 	basictt(env)
 
@@ -177,7 +178,9 @@ pub fn (me &Runtime) getenv() &Env {
 // extern int emacs_module_init (struct emacs_runtime *runtime)
 pub type ModInitin = fn (rt voidptr) int
 
-pub type Funcin = fn (env voidptr, nargs usize, args voidptr, data voidptr) voidptr
+pub type Funcin = fn (env &Env, nargs isize, args &Value, data voidptr) Value
+
+pub type Funcur = fn (env &Env, args []Value) Value
 
 pub type Finalin = fn (data voidptr)
 
@@ -203,6 +206,10 @@ pub mut:
 	v25 Env25
 	v29 Env29
 	vm  Env29 // note: this need change to max version when major upgrade
+}
+
+pub fn (me &Env) asptr() voidptr {
+	return voidptr(me)
 }
 
 pub fn (me &Env) chkeq(o &Env) {

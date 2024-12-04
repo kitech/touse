@@ -103,7 +103,14 @@ pub fn (me &Env) add_hook(hook string, fun fn (e &Env), appendorlocal ...bool) {
 // todo fun support more types
 // todo return error
 // fun, fn(&Env) // , voidptr, usize, FunctionData
-pub fn (me &Env) defun(funame string, fun fn (e &Env), doc string) {
+pub fn (me &Env) defun(funame string, fun Funcin, doc string) {
+	fun0 := voidptr(fun)
+	fnv := me.vm.make_function_(me, 0, 12, fun, vnil, vnil)
+	sym := me.intern(funame)
+	me.fcall2('defalias', sym, fnv)
+}
+
+pub fn (me &Env) defun2(funame string, fun Funcin, doc string) {
 	fun0 := voidptr(fun)
 	$if T is $function {
 	} $else {

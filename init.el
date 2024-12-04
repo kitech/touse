@@ -1,6 +1,7 @@
 ;; (require 'myemod)
 
 ;; (setq  toggle-debug-on-error t)
+(show-paren-mode)
 (setq inhibit-startup-message t)
 (setq dired-kill-when-opening-new-dired-buffer t)
 ;; (setq global-tab-line-mode t)
@@ -9,6 +10,7 @@
 ;; (jit-lock-debug-mode nil)
 ;; (tab-line-mode)
 (global-tab-line-mode)
+
 
 (defun veopen-file-dialog()
   (interactive)
@@ -32,12 +34,27 @@
     byte-compile-current-file)
    (:else (buffer-file-name))))
 
+(defun load-file-samedir (file)
+  (load-file   (expand-file-name file
+                                 (file-name-directory
+                                  (file-truename load-file-name)))))
 (message (f-this-file))
+(message user-emacs-directory)
+(setq server-socket-dir "/run/user/1000/emacsv")
+(server-start)
+
 
 (add-to-list 'load-path "~/.emacs.d/handby")
 ;; (add-to-list 'load-path "~/aprog/mkuse/emacs")
 ;; (require 'lspmdx)
-(load-file "lspmdx.el")
+;; (load-file "lspmdx.el")
+(load-file-samedir  "lspmdx.el")
+
+;; (setq module-file-suffix ".emso")
+;; (module-load "emdemo.so")
+;; (load-file "emdemo.so")
+(load-file-samedir  "emdemo.so")
+
 (custom-set-variables
  ;; custom-set-variables was added by Custom.
  ;; If you edit it by hand, you could mess it up, so be careful.

@@ -1,9 +1,11 @@
+module main
+
 import dl
 import os
 import time
 import rand
 import vcp
-import emacs
+import mkuse.emacs
 
 fn main() {
 	vcp.info(int(emacs.MAJOR_VERION))
@@ -112,11 +114,11 @@ fn emui_waitcond(e &emacs.Env, maxtry int, condfn fn () bool) bool {
 
 /*
 window layout
-    ----------------------
-    |w1|   |    w0      |
-    |  |w4 |            |
-    |  | - |------------|
-    |  |w2 |    w3      |
+----------------------
+|w1|   |    w0      |
+|  |w4 |            |
+|  | - |------------|
+|  |w2 |    w3      |
 */
 
 // call at some later time, eg. after window fully inited
@@ -302,8 +304,8 @@ fn create_flowt_minibuf(e &emacs.Env) {
 		w3.set_window_parameter(e, 'mini', emacs.bool2el(true))
 		// e.set_minibuffer_window(w3)
 		// if e.nle_check() != .return_ {
-		// 	vcp.error('somerr')
-		// 	return
+		//  vcp.error('somerr')
+		//  return
 		// }
 	}
 	if false { // use c create minibuffer frame
@@ -417,7 +419,7 @@ fn run_window_setup_hook(e &emacs.Env) {
 }
 
 fn run_window_configuration_change_hook(e &emacs.Env) {
-	// 	vcp.info('...')
+	//  vcp.info('...')
 	// tv := e.intval(123)
 	// e.nle_clear_indeep()
 	// tv.tostr(e)
