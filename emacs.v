@@ -51,7 +51,7 @@ fn eminit(rt &Runtime) int {
 	refvar2mut(emvs).elvoid = env.globref(env.intern('void'))
 	// refvar2mut(emvs).rt = rt
 	// refvar2mut(emvs).env = env
-	sockfile := os.join_path(env.getvar('server-socket-dir').tostr(env), 'socket')
+	sockfile := os.join_path(env.getvar('server-socket-dir').tostr(env), 'server')
 	ref2mut(emvs).servsockfile = sockfile
 	env.defun('emacs-runon-uithread', emacs_runon_uithread, '')
 

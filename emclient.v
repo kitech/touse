@@ -88,7 +88,7 @@ pub fn runon_uithread(proc UifuncType, nowait bool, args ...Anyer) {
 		sockfile = '/run/user/1000/emacsv/server'
 	}
 	c := unix.connect_stream(sockfile) or {
-		vcp.error(err.str())
+		vcp.error(err.str(), sockfile)
 		return
 	}
 	defer { c.close() or { panic(err) } }
@@ -169,6 +169,7 @@ pub fn runon_uithread(proc UifuncType, nowait bool, args ...Anyer) {
 		}
 		kv := line.split(' ')
 		k, v := kv[0], unquote(kv[1])
+
 		vcp.info('<<<', idx.str(), 'k', k, 'v', v, time.since(btime).str())
 	}
 }

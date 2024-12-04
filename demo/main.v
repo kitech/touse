@@ -416,6 +416,9 @@ fn run_window_setup_hook(e &emacs.Env) {
 	create_float_window(e)
 	create_flowt_minibuf(e)
 	create_fixed_buffers(e)
+
+	vcp.dodelay(1 * time.second / 1, load_notes, 123)
+	vcp.dotick(17 * time.second / 1, emacs_tick, 123)
 }
 
 fn run_window_configuration_change_hook(e &emacs.Env) {
@@ -466,4 +469,14 @@ fn run_md2jpl(bfile string) {
 		return
 	}
 	vcp.info('mated', bfile)
+}
+
+fn emacs_tick(x int) {
+	vcp.info('hhhhh', x)
+	emacs.runon_uithread('prin1-to-string', false, 123)
+}
+
+fn load_notes(x int) {
+	vcp.info('hhhhh', x)
+	emacs.runon_uithread('prin1-to-string', false, 123)
 }
