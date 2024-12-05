@@ -26,11 +26,19 @@ fn init() {
 	// C.infolm(c'...')
 }
 
+// https://www.gnu.org/software/emacs/manual/html_node/elisp/Command_002dLine-Arguments.html
+struct Config {
+pub mut:
+	basett   bool
+	relayout bool
+	asyncbkd bool // sptaskd, emacs process
+}
+
 // this is first called, even before emacs.init()
 
 // noexcept: orcrash
 @[export: 'emacs_module_init']
-fn eminitc(rtx &C.emacs_runtime) int {
+fn eminit4c(rtx &C.emacs_runtime) int {
 	// C.infolm(c'...')
 	vcp.fixvsogc()
 	vcp.fixvsoinit()
