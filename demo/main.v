@@ -6,6 +6,7 @@ import time
 import rand
 import vcp
 import mkuse.emacs
+import mkuse.joplin
 
 fn main() {
 	vcp.info(int(emacs.MAJOR_VERION))
@@ -418,7 +419,9 @@ fn run_window_setup_hook(e &emacs.Env) {
 	create_fixed_buffers(e)
 
 	vcp.dodelay(1 * time.second / 1, load_notes, 123)
-	vcp.dotick(17 * time.second / 1, emacs_tick, 123)
+	if false {
+		vcp.dotick(17 * time.second / 1, emacs_tick, 123)
+	}
 }
 
 fn run_window_configuration_change_hook(e &emacs.Env) {
@@ -479,4 +482,79 @@ fn emacs_tick(x int) {
 fn load_notes(x int) {
 	vcp.info('hhhhh', x)
 	emacs.runon_uithread('prin1-to-string', false, 123)
+	jlo := joplin.Jldata.new()
+	jlo.set_token(os.getenv('JLTOKEN'))
+	notes := jlo.notes() or { vcp.error(err.str()) }
+	vcp.info(notes.len, notes.str(), notes.len)
+	vcp.info(notes.data, notes.len)
+	arr := carr2varr[joplin.Jlnote](notes.data, notes.len)
+	vcp.info(arr.len, arr.str())
+
+	prm := Fcparam.new(notes)
+	prm.vecptr = notes.data
+	prm.veccnt = notes.len
+	prm.arrptr = &notes
+	emacs.runon_uithread(load_notes_done, true, prm.asptr())
+	vcp.dodelay(9 * time.second, voidptr(fn (_ voidptr) {}), prm.asptr())
+	vcp.info('caller', prm.len, prm.args.len, prm.asptr())
 }
+
+pub fn Fcparam.new(args ...Anyer) &Fcparam {
+	me := &Fcparam{}
+	me.args = args
+	me.len = args.len
+
+	return me
+}
+
+pub fn (me &Fcparam) asptr() voidptr {
+	return voidptr(me)
+}
+
+pub struct Fcparam {
+pub mut:
+	args []Anyer
+	len  int
+
+	arrptr voidptr
+
+	vecptr voidptr
+	veccnt int
+}
+
+fn load_notes_done(e &emacs.Env, args []emacs.Value) emacs.Value {
+	vcp.info('hehehhe', args.len)
+	// &[]joplin.Jlnote
+	notesptr := emacs.ofptrstr(args[0].tostr(e))
+	// vcp.info(notesptr)
+	vcp.info(notesptr, sizeof(joplin.Jlnote))
+	// notes := vcp.carr2varr_sized(notesptr, sizeof(joplin.Jlnote), int(args[1].toint(e)))
+	// notes := vcp.carr2varrg[joplin.Jlnote](notesptr, int(args[1].toint(e)))
+	// vcp.info(notes.str())
+	prm := castptr[Fcparam](notesptr)
+	vcp.info(prm == vnil)
+	vcp.info(prm.len, prm.args.len, notesptr, args[0].tostr(e))
+	vcp.info(prm.args.len, prm.args.str())
+	arg0 := prm.args[0]
+	match arg0 {
+		[]joplin.Jlnote {
+			notes := arg0
+			vcp.info(notes.len, notes.str())
+		}
+		else {
+			vcp.info('nocat')
+		}
+	}
+
+	arr := carr2varr[joplin.Jlnote](prm.vecptr, prm.veccnt)
+	vcp.info('ca2va', arr.len, arr.str())
+	// arr2 := []joplin.Jlnote	(prm.arrptr)
+	arr2 := derefvar[[]joplin.Jlnote](prm.arrptr)
+	vcp.info('deref[[]T]', prm.arrptr, arr2.len, arr2.str())
+
+	return emacs.elnil()
+}
+
+// fn vecptrof[T](ptr voidptr) []T{
+
+// }

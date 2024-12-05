@@ -225,6 +225,14 @@ pub fn (me &Env) asptr() voidptr {
 	return voidptr(me)
 }
 
+pub fn elnil() Value {
+	return emvs.elnil
+}
+
+pub fn eltrue() Value {
+	return emvs.eltrue
+}
+
 pub fn (me &Env) chkeq(o &Env) {
 	eq := voidptr(me) == unsafe { nil }
 	if !eq {

@@ -78,6 +78,7 @@ pub fn runon_uithread_nowait(proc UifuncType, args ...Anyer) {
 	runon_uithread(proc, false, ...args)
 }
 
+// function addr not need deref, arg need deref!!!
 // 1ms-30ms+
 // also means emacs main thread
 pub fn runon_uithread(proc UifuncType, nowait bool, args ...Anyer) {
@@ -88,7 +89,7 @@ pub fn runon_uithread(proc UifuncType, nowait bool, args ...Anyer) {
 		sockfile = '/run/user/1000/emacsv/server'
 	}
 	c := unix.connect_stream(sockfile) or {
-		vcp.error(err.str(), sockfile)
+		vcp.error(err.str(), sockfile, '/')
 		return
 	}
 	defer { c.close() or { panic(err) } }
@@ -98,51 +99,42 @@ pub fn runon_uithread(proc UifuncType, nowait bool, args ...Anyer) {
 	// cmd = 'emacs-runon-uithread ${mypid} ${usize(proc)} ${args.len}'
 	cmd = 'emacs-runon-uithread ${mypid}'
 	match proc {
-		string { cmd += ' "${proc}"' }
-		Funcur { cmd += ' "0x${voidptr(proc)}"' }
-		voidptr { cmd += ' "0x${voidptr(proc)}"' }
+		string {
+			cmd += ' "${proc}"'
+		}
+		// 	Funcur {
+		// 		cmd += ' "0x${voidptr(proc)}"'
+		// 		vcp.info(proc, voidptr(proc).str())
+		// 		vcp.info(cmd)
+		// 	}
+		// 	voidptr {
+		// 		cmd += ' "0x${voidptr(proc)}"'
+		// 	}
+		else {
+			procin := itface2struct(&proc)
+			// vcp.info(proc.str(), procin.ptr, derefvar[voidptr](procin.ptr))
+			// vcp.info(proc.str(), itfptrof(&proc), derefvar[voidptr](itfptrof(&proc)))
+			cmd += ' "0x${procin.ptr}"'
+		}
 	}
 	cmd += ' ${args.len}'
 	for idx, arg in args {
-		itfin := itface2struct(&arg)
-		val := match arg {
-			int, i32, usize, isize, i64, u64 {
-				tv := derefvar[u64](itfin.ptr)
-				'${tv}'
-			}
-			f32 {
-				if arg.str().contains('.') {
-					'${arg}'
-				} else {
-					'${arg}.'
-				}
-			}
-			f64 {
-				if arg.str().contains('.') {
-					'${arg}'
-				} else {
-					'${arg}.'
-				}
-			}
-			string {
-				'"${arg}"'
-			}
-			else {
-				'"${arg}"'
-			}
-		}
+		itfin := itface2struct(&args[idx])
+		val := anyer_strfy(arg)
+		// match arg { }
 		cmd += ' ${val}'
 	}
-	// vcp.info(cmd)
+
 	cmd = quote(cmd)
 	prm := ifelse(nowait, '-nowait', '')
-	// vcp.info(prm, cmd)
+	vcp.info(prm, cmd)
 	n := c.write_string('${prm} -eval (${cmd})\n') or { panic(err) }
 	// vcp.info(n, cmd, voidptr(proc))
 
 	// vcp.info('write used', time.since(btime).str()) // 150us
 	// todo how
 	if nowait {
+		vcp.info('todo -nowait', nowait)
 		// return
 	}
 
@@ -172,6 +164,68 @@ pub fn runon_uithread(proc UifuncType, nowait bool, args ...Anyer) {
 
 		vcp.info('<<<', idx.str(), 'k', k, 'v', v, time.since(btime).str())
 	}
+}
+
+pub fn anyer_strfy(arg Anyer) string {
+	itfin := itface2struct(&arg)
+	val := match arg {
+		int {
+			'${arg}'
+		}
+		i32 {
+			'${arg}'
+		}
+		usize {
+			'${arg}'
+		}
+		isize {
+			'${arg}'
+		}
+		i64 {
+			'${arg}'
+		}
+		u64 {
+			'${arg}'
+		}
+		f32 {
+			if arg.str().contains('.') {
+				'${arg}'
+			} else {
+				'${arg}.'
+			}
+		}
+		f64 {
+			if arg.str().contains('.') {
+				'${arg}'
+			} else {
+				'${arg}.'
+			}
+		}
+		string {
+			'"${arg}"'
+		}
+		// Funcur{}
+		voidptr {
+			tv := derefvar[voidptr](itfin.ptr)
+			'"0x${tv}"'
+		}
+		else {
+			'"${arg}"' // Anyer(foo)
+		}
+	}
+	return val
+}
+
+// must 0x12345abc format
+pub fn ofptrstr(s string) voidptr {
+	ptrx := s[2..].parse_uint(16, 64) or { 0 }
+	assert ptrx != 0, s
+	ptr := voidptr(usize(ptrx))
+	return ptr
+}
+
+pub fn toptrstr(v voidptr) string {
+	return '0x${v}'
 }
 
 fn tt_runonth(e &Env, args []Value) Value {
