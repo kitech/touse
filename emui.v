@@ -45,8 +45,19 @@ pub fn (e &Env) select_window(w Value) {
 	rv := e.fcall2(funame2el(@FN), w)
 }
 
-pub fn (e &Env) window_list() []Value {
-	wins := e.fcall2('window-list') // cons
+pub fn (e &Env) window_list(frm ...Value) []Value {
+	frm0 := elnil()
+	if frm.len > 0 {
+		frm0 = frm[0]
+	}
+	wins := e.fcall2('window-list', frm0) // cons
+	// vcp.info(wins.strfy(e), wins.typof(e).strfy(e))
+	rv := e.cons2arr(wins)
+	return rv
+}
+
+pub fn (e &Env) frame_list() []Value {
+	wins := e.fcall2(funame2el(@FN)) // cons
 	// vcp.info(wins.strfy(e), wins.typof(e).strfy(e))
 	rv := e.cons2arr(wins)
 	return rv
@@ -64,6 +75,12 @@ pub fn (w Value) window_name(e &Env) string {
 }
 
 pub fn (w Value) window_frame(e &Env) Value {
+	// window-frame
+	rv := e.fcall2(funame2el(@FN), w)
+	return rv
+}
+
+pub fn (w Value) window_buffer(e &Env) Value {
 	// window-frame
 	rv := e.fcall2(funame2el(@FN), w)
 	return rv

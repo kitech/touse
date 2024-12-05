@@ -76,13 +76,26 @@ pub mut:
 	left1 emacs.Value
 	left2 emacs.Value
 
+	// dont save emacs.Value unless it global
+	// cannot use that value in other callback
+	btnbar_name string
+	dirwin_name string
+	symwin_name string
+	msgwin_name string
+	bigwin_name string
+
+	minibufwin emacs.Value
+
+	popwin_pkginst_name string
+}
+
+struct EnvContext {
+pub mut:
 	btnbar emacs.Value
 	dirwin emacs.Value
 	symwin emacs.Value
 	msgwin emacs.Value
 	bigwin emacs.Value
-
-	minibufwin emacs.Value
 
 	popwin_pkginst emacs.Value
 }
@@ -248,15 +261,54 @@ fn eminit_resize_mainwin_ifneed(e &emacs.Env) {
 	e.chkret()
 
 	///
-	refvar2mut(emmw).bigwin = w0
-	refvar2mut(emmw).msgwin = w3
-	refvar2mut(emmw).symwin = w2
-	refvar2mut(emmw).dirwin = w4
-	refvar2mut(emmw).btnbar = w1
+	ref2mut(emmw).bigwin_name = w0.window_name(e)
+	ref2mut(emmw).msgwin_name = w3.window_name(e)
+	ref2mut(emmw).symwin_name = w2.window_name(e)
+	ref2mut(emmw).dirwin_name = w4.window_name(e)
+	ref2mut(emmw).btnbar_name = w1.window_name(e)
 }
 
-fn create_btnwin_content(e &emacs.Env) {
-	btnbar := emmw.btnbar
+fn EnvContext.new(e &emacs.Env) &EnvContext {
+	ctx := &EnvContext{}
+
+	frms := e.frame_list()
+	vcp.info('frms', frms.len, frms.str())
+	for i, frm in frms {
+		// vcp.info(i.str(), frm.strfy(e))
+
+		wins := e.window_list(frm)
+		// vcp.info('wins', wins.len, wins.str())
+		for j, win in wins {
+			// vcp.info(j.str(), win.strfy(e), win.window_name(e))
+			wname := win.window_name(e)
+			wstr := win.strfy(e)
+
+			match wname {
+				emmw.dirwin_name {
+					ctx.dirwin = win
+				}
+				emmw.btnbar_name {
+					ctx.btnbar = win
+				}
+				emmw.msgwin_name {
+					ctx.msgwin = win
+				}
+				emmw.symwin_name {
+					ctx.symwin = win
+				}
+				emmw.bigwin_name {
+					ctx.bigwin = win
+				}
+				else {}
+			}
+		}
+	}
+
+	return ctx
+}
+
+fn create_btnwin_content(e &emacs.Env, ctx &EnvContext) {
+	btnbar := ctx.btnbar // emmw.btnbar
 
 	e.select_window(btnbar)
 	eb1 := e.get_buffer_create('test222')
@@ -292,8 +344,8 @@ fn create_btnwin_content(e &emacs.Env) {
 	e.chkret()
 }
 
-fn create_flowt_minibuf(e &emacs.Env) {
-	w3 := emmw.msgwin
+fn create_flowt_minibuf(e &emacs.Env, ctx &EnvContext) {
+	w3 := ctx.msgwin // emmw.msgwin
 
 	// some about minibuffer
 	oldmbwin := e.minibuffer_window()
@@ -330,7 +382,7 @@ fn create_flowt_minibuf(e &emacs.Env) {
 	}
 }
 
-fn create_float_window(e &emacs.Env) {
+fn create_float_window(e &emacs.Env, ctx &EnvContext) {
 	topfrm := e.getframe(vnil)
 	frm := e.make_child_frame(topfrm)
 	vcp.info(frm.strfy(e))
@@ -357,12 +409,12 @@ fn create_float_window(e &emacs.Env) {
 
 	// save some
 	mw := emmw
-	mw.popwin_pkginst = frm
+	ctx.popwin_pkginst = frm
 }
 
-fn create_fixed_buffers(e &emacs.Env) {
+fn create_fixed_buffers(e &emacs.Env, ctx &EnvContext) {
 	mw := emmw
-	frm := mw.popwin_pkginst
+	frm := ctx.popwin_pkginst
 	frm.raise_frame(e)
 	frm.select_frame(e)
 	frm.select_frame_set_input_focus(e)
@@ -412,11 +464,12 @@ fn run_window_setup_hook(e &emacs.Env) {
 	vcp.info('...')
 	e.chkret()
 	eminit_resize_mainwin_ifneed(e)
+	ctx := EnvContext.new(e)
 
-	create_btnwin_content(e)
-	create_float_window(e)
-	create_flowt_minibuf(e)
-	create_fixed_buffers(e)
+	create_btnwin_content(e, ctx)
+	create_float_window(e, ctx)
+	create_flowt_minibuf(e, ctx)
+	create_fixed_buffers(e, ctx)
 
 	vcp.dodelay(1 * time.second / 1, load_notes, 123)
 	if false {
@@ -488,7 +541,8 @@ fn load_notes(x int) {
 	arradr := voidptr(&notes)
 
 	emacs.runon_uithread(load_notes_done, true, arradr)
-	vcp.dodelay(9 * time.second, voidptr(fn (_ voidptr) {}), arradr)
+	// vcp.dodelay(9 * time.second, voidptr(fn (_ voidptr) {}), arradr)
+	vcp.dorefer(9 * time.second, arradr)
 	vcp.info('caller', arradr)
 }
 
@@ -502,5 +556,65 @@ fn load_notes_done(e &emacs.Env, args []emacs.Value) emacs.Value {
 
 	arr2 := derefvar[[]joplin.Jlnote](notesptr)
 	vcp.info('deref[[]T]', notesptr, arr2.len, arr2.str())
+
+	// edit emacs buffer now
+	dirwin := find_emwin(e, emmw.dirwin_name)
+	genbuf_notes(e, arr2)
+
+	bufs := e.buffer_list()
+	vcp.info('bufs', bufs.len, bufs.str())
+	for i, buf in bufs {
+		vcp.info(i.str(), buf.strfy(e))
+	}
+
+	return emacs.elnil()
+}
+
+fn genbuf_notes(e &emacs.Env, notes []joplin.Jlnote) {
+	dirwin := find_emwin(e, emmw.dirwin_name)
+	frm := dirwin.window_frame(e)
+
+	frm.raise_frame(e)
+	frm.select_frame(e)
+	frm.select_frame_set_input_focus(e)
+	e.select_window(dirwin)
+
+	eb1 := e.get_buffer_create('Notelist')
+	// eb1 = dirwin.window_buffer(e)
+	dirwin.set_window_dedicated_p(e, false)
+	e.switch_to_buffer(eb1)
+	dirwin.set_window_dedicated_p(e, true)
+
+	eb1.insert(e, 'Notelist, ${notes.len}\n')
+	for idx, note in notes {
+		btn := e.insert_button('${idx} ${note.title}')
+		eb1.insert(e, '\n')
+		// vcp.info(btn.typof(e).strfy(e))
+		note2 := &notes[idx]
+		fn1 := fn [note2] (e &emacs.Env) {
+			vcp.info('btn clicked', note2.id, note2.title)
+		}
+		fnv1 := e.funval(fn1)
+		btn.button_put(e, 'mouse-action', fnv1)
+	}
+}
+
+fn find_emwin(e &emacs.Env, name string) emacs.Value {
+	frms := e.frame_list()
+	vcp.info('frms', frms.len, frms.str())
+	for i, frm in frms {
+		vcp.info(i.str(), frm.strfy(e))
+
+		wins := e.window_list(frm)
+		vcp.info('wins', wins.len, wins.str())
+		for j, win in wins {
+			vcp.info(j.str(), win.strfy(e), win.window_name(e))
+			wname := win.window_name(e)
+			wstr := win.strfy(e)
+			if wname == name {
+				return win
+			}
+		}
+	}
 	return emacs.elnil()
 }
