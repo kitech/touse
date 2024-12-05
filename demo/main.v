@@ -546,6 +546,12 @@ fn load_notes(x int) {
 	vcp.info('caller', arradr)
 }
 
+fn newjlapi() &joplin.Jldata {
+	jlo := joplin.Jldata.new()
+	jlo.set_token(os.getenv('JLTOKEN'))
+	return jlo
+}
+
 //  unlock []T slice's addr and pass by pointer and deref !!!
 
 fn load_notes_done(e &emacs.Env, args []emacs.Value) emacs.Value {
@@ -593,10 +599,51 @@ fn genbuf_notes(e &emacs.Env, notes []joplin.Jlnote) {
 		note2 := &notes[idx]
 		fn1 := fn [note2] (e &emacs.Env) {
 			vcp.info('btn clicked', note2.id, note2.title)
+			// onclick_note_title(e, note2)
+			vcp.dotask(onclick_note_title, voidptr(note2))
 		}
 		fnv1 := e.funval(fn1)
 		btn.button_put(e, 'mouse-action', fnv1)
 	}
+}
+
+fn onclick_note_title(note &joplin.Jlnote) {
+	vcp.info(note.id, note.title)
+	jlo := newjlapi()
+	note2 := jlo.note(note.id) or { vcp.error(err.str()) }
+	note3 := voidptr(&note2)
+	emacs.runon_uithread(emwin_show_note, false, note3)
+}
+
+fn emwin_show_note(e &emacs.Env, args []emacs.Value) emacs.Value {
+	argptr := emacs.ofptrstr(args[0].tostr(e))
+	note := castptr[joplin.Jlnote](argptr)
+	vcp.info(note.str())
+
+	ctx := EnvContext.new(e)
+	bigwin := ctx.bigwin
+	frm := bigwin.window_frame(e)
+
+	frm.raise_frame(e)
+	frm.select_frame(e)
+	frm.select_frame_set_input_focus(e)
+	e.select_window(bigwin)
+
+	bufname := 'Note ${note.id}'
+	eb1 := e.get_buffer_create(bufname)
+	// eb1 = dirwin.window_buffer(e)
+	// dirwin.set_window_dedicated_p(e, false)
+	e.switch_to_buffer(eb1) // why tab not show?
+	// e.fcall2('pop-to-buffer', eb1)
+	// e.fcall2('set-buffer', eb1)
+	// e.fcall2('display-buffer-in-tab', eb1, emacs.elnil()) // this is tab-bar, not tab-line
+	// e.fcall2('switch-to-buffer-other-tab', eb1)
+	// dirwin.set_window_dedicated_p(e, true)
+
+	// eb1.insert(e, 'Notelist, ${notes.len}\n')
+	eb1.insert(e, note.body)
+
+	return emacs.elnil()
 }
 
 fn find_emwin(e &emacs.Env, name string) emacs.Value {

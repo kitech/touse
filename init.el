@@ -10,7 +10,7 @@
 ;; (jit-lock-debug-mode nil)
 ;; (tab-line-mode)
 (global-tab-line-mode)
-
+(setq  tab-line-exclude-modes nil)
 
 (defun veopen-file-dialog()
   (interactive)
