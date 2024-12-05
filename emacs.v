@@ -324,16 +324,19 @@ pub fn (me &Env) toel(arg Anyer) Value {
 			}
 			rv = me.intval(tv)
 		}
-		f64, f32 {
-			dptr := usize(arg)
-			tv := f64(arg)
-			tv2 := derefvar[f64](itfin.ptr)
-			if tv != tv2 {
-				assert dptr == itfin.ptr
-				// vcp.info(tv, itfin.typ, tv2)
-				tv = tv2
-			}
-			rv = me.realval(tv)
+		f64 {
+			rv = me.realval(arg)
+		}
+		f32 {
+			// dptr := usize(arg)
+			// tv := f64(arg)
+			tv2 := derefvar[f32](itfin.ptr)
+			// if tv != tv2 {
+			// 	// assert dptr == itfin.ptr
+			// 	// vcp.info(tv, itfin.typ, tv2)
+			// 	tv = tv2
+			// }
+			rv = me.realval(tv2)
 		}
 		// ???
 		bool {
