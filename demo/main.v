@@ -143,8 +143,9 @@ fn eminit_resize_mainwin_ifneed(e &emacs.Env) {
 	dw, dh := e.display_pixel_width(), e.display_pixel_height()
 	w := e.window_pixel_width(vnil)
 	h := e.window_pixel_height(vnil)
-	vcp.info('size: ${w}x${h}, dsp: ${dw}x${dh}')
 	w0 := e.getwin(vnil)
+	vcp.info('size: ${w}x${h}, dsp: ${dw}x${dh}')
+	sendto_msgbuf(e, 'size: ${w}x${h}, dsp: ${dw}x${dh}')
 
 	// cannot resize a root window of a frame
 	// e.window_resize(vnil, 200, true, true)
@@ -153,13 +154,15 @@ fn eminit_resize_mainwin_ifneed(e &emacs.Env) {
 	frmheight := dh * 5 / 6
 
 	rgtwinwidth := frmwidth * 3 / 4
-	topleftheight := frmheight * 3 / 5
+	topleftheight := frmheight * 72 / 100
+	bigwin_height := frmheight * 83 / 100
 
 	// vcp.info(rgtwinwidth, topleftheight)
 	// some times, split too small error???
 	minw := e.window_min_size(vnil, true, true)
 	// vcp.info(minw)
 
+	e.set_frame_height(vnil, frmheight, true)
 	e.set_frame_width(vnil, frmwidth, true)
 
 	emui_waitcond(e, 99, fn [e, rgtwinwidth] () bool {
@@ -192,7 +195,7 @@ fn eminit_resize_mainwin_ifneed(e &emacs.Env) {
 	}
 	refvar2mut(emmw).left2 = w2
 
-	w3 := e.split_window(w0, 480, .below, true)
+	w3 := e.split_window(w0, bigwin_height, .below, true)
 	if w3.isnil(e) {
 		vcp.info(111, w1.isnil(e), minw, cwwidth, rgtwinwidth)
 		e.chkret()
@@ -226,6 +229,10 @@ fn eminit_resize_mainwin_ifneed(e &emacs.Env) {
 	w2.set_window_parameter(e, 'no-delete-other-windows', emacs.bool2el(true))
 	w3.set_window_parameter(e, 'no-delete-other-windows', emacs.bool2el(true))
 	w4.set_window_parameter(e, 'no-delete-other-windows', emacs.bool2el(true))
+
+	// set-window-scroll-bars
+	// w1.set_window_parameter(e, 'vertical-scroll-bars', emacs.elnil()) // not work
+	// e.fcall2('scroll-bar-mode', e.intval(0)) // works but all window
 
 	// 为什么在这个循环里设置就不管用???
 	buflst := e.buffer_list()
@@ -269,6 +276,12 @@ fn eminit_resize_mainwin_ifneed(e &emacs.Env) {
 	ref2mut(emmw).symwin_name = w2.window_name(e)
 	ref2mut(emmw).dirwin_name = w4.window_name(e)
 	ref2mut(emmw).btnbar_name = w1.window_name(e)
+
+	if true {
+		w = e.window_pixel_width(vnil)
+		h = e.window_pixel_height(vnil)
+		sendto_msgbuf(e, 'size: ${w}x${h}, dsp: ${dw}x${dh}')
+	}
 }
 
 fn EnvContext.new(e &emacs.Env) &EnvContext {
@@ -547,7 +560,7 @@ fn run_md2jpl(bfile string) {
 
 fn emacs_tick(x int) {
 	vcp.info('hhhhh', x)
-	emacs.runon_uithread('prin1-to-string', false, 123)
+	emacs.runon_uithread('prin1-to-string', false, 123) or { vcp.error(err.str()) }
 }
 
 // used for visited file
@@ -589,13 +602,13 @@ fn sendto_msgbuf(e &emacs.Env, msg string) {
 
 fn load_notes(x int) {
 	vcp.info('hhhhh', x)
-	emacs.runon_uithread('prin1-to-string', false, 123)
+	emacs.runon_uithread('prin1-to-string', false, 123) or { vcp.error(err.str()) }
 	jlo := joplin.Jldata.new()
 	jlo.set_token(os.getenv('JLTOKEN'))
 	notes := jlo.notes() or { vcp.error(err.str()) }
 	arradr := voidptr(&notes)
 
-	emacs.runon_uithread(load_notes_done, true, arradr)
+	emacs.runon_uithread(load_notes_done, true, arradr) or { vcp.error(err.str()) }
 	// vcp.dodelay(9 * time.second, voidptr(fn (_ voidptr) {}), arradr)
 	vcp.dorefer(9 * time.second, arradr)
 	vcp.info('caller', arradr)
@@ -667,7 +680,7 @@ fn onclick_note_title(note &joplin.Jlnote) {
 	jlo := newjlapi()
 	note2 := jlo.note(note.id) or { vcp.error(err.str()) }
 	note3 := voidptr(&note2)
-	emacs.runon_uithread(emwin_show_note, false, note3)
+	emacs.runon_uithread(emwin_show_note, false, note3) or { vcp.error(err.str()) }
 }
 
 fn emwin_show_note(e &emacs.Env, args []emacs.Value) emacs.Value {

@@ -11,12 +11,12 @@
 - [ ] minibuffer不应该占全部宽度
 - [ ] 像firefox/vscode那种tab切换,非全循环,有一种栈结构
         https://github.com/plexus/chemacs2
-- [ ] 滚动条的宽度
-- [ ] window title bar, hide/height
+- [x] 滚动条的宽度
+- [x] window title bar, hide/height
 - [ ] tab line 最右,显示关闭窗口?
-- [ ] 像sublime安装插件的浮动窗口
+- [+] 像sublime安装插件的浮动窗口
 - [ ] 扩展管理
-- [ ] vscode右侧工具按钮,文件,扩展,...
+- [+] vscode右侧工具按钮,文件,扩展,...
 - [ ] 遵循先启动再配置的原则.
         现有的好多是先配置,有问题无法正常启动
 - [ ] 应该有emacs的全局搜索,文档,代码,api

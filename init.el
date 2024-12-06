@@ -11,6 +11,24 @@
 ;; (tab-line-mode)
 (global-tab-line-mode)
 (setq  tab-line-exclude-modes nil)
+(scroll-bar-mode 0)
+
+(set-frame-font "Source Code Pro 12" nil t)
+;; Older versions of Emacs 23.1
+;; (set-default-font "Source Code Pro 13" nil t)
+
+(defun update-scroll-bars ()
+  (interactive)
+  (mapc (lambda (win)
+          (set-window-scroll-bars win nil))
+        (window-list))
+  ;; (message "%sx%s" (window-width (selected-window) t) (window-height (selected-window)))
+  (if (and (> (window-width (selected-window) t) 500)
+           (> (window-height (selected-window)) 15))
+      (set-window-scroll-bars (selected-window) 7 'right)))
+
+(add-hook 'window-configuration-change-hook 'update-scroll-bars)
+(add-hook 'buffer-list-update-hook 'update-scroll-bars)
 
 (defun veopen-file-dialog()
   (interactive)
@@ -54,6 +72,7 @@
 ;; (module-load "emdemo.so")
 ;; (load-file "emdemo.so")
 (load-file-samedir  "emdemo.so")
+;; (load-file-samedir  "emjoplin.so")
 
 (custom-set-variables
  ;; custom-set-variables was added by Custom.

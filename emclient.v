@@ -74,14 +74,14 @@ pub fn unquote_(v string) string {
 pub type UifuncType = string | Funcur | voidptr
 
 //  proc can also be elisp symbol
-pub fn runon_uithread_nowait(proc UifuncType, args ...Anyer) {
-	runon_uithread(proc, false, ...args)
+pub fn runon_uithread_nowait(proc UifuncType, args ...Anyer) ! {
+	runon_uithread(proc, false, ...args)!
 }
 
 // function addr not need deref, arg need deref!!!
 // 1ms-30ms+
 // also means emacs main thread
-pub fn runon_uithread(proc UifuncType, nowait bool, args ...Anyer) {
+pub fn runon_uithread(proc UifuncType, nowait bool, args ...Anyer) ! {
 	btime := time.now()
 	mypid := os.getpid() // sender
 	sockfile := emvs.servsockfile
@@ -90,7 +90,7 @@ pub fn runon_uithread(proc UifuncType, nowait bool, args ...Anyer) {
 	}
 	c := unix.connect_stream(sockfile) or {
 		vcp.error(err.str(), sockfile, '/')
-		return
+		return err
 	}
 	defer { c.close() or { panic(err) } }
 
