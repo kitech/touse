@@ -648,6 +648,22 @@ pub fn (me &Env) should_quit() bool {
 	return me.vm.should_quit_(me)
 }
 
+pub fn (me &Env) set_user_ptr(v Value, ptr voidptr) {
+	me.vm.set_user_ptr_(me, v, ptr)
+}
+
+pub fn (me &Env) get_user_ptr(v Value) voidptr {
+	return me.vm.get_user_ptr_(me, v)
+}
+
+pub fn (v Value) set_user_ptr(me &Env, ptr voidptr) {
+	me.set_user_ptr(v, ptr)
+}
+
+pub fn (v Value) get_user_ptr(me &Env) voidptr {
+	return me.get_user_ptr(v)
+}
+
 ///
 
 pub struct Envheader {
@@ -704,8 +720,8 @@ pub:
 
 	make_user_ptr fn (env voidptr, fin fn (voidptr), ptr voidptr) voidptr = vnil
 
-	get_user_ptr fn (env voidptr, arg voidptr) voidptr      = vnil
-	set_user_ptr fn (env voidptr, arg voidptr, ptr voidptr) = vnil
+	get_user_ptr_ fn (env voidptr, arg Value) voidptr      = vnil
+	set_user_ptr_ fn (env voidptr, arg Value, ptr voidptr) = vnil
 
 	get_user_finalizer_ fn (env voidptr, arg Value) voidptr = vnil
 

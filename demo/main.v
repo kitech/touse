@@ -88,6 +88,8 @@ pub mut:
 	minibufwin emacs.Value
 
 	popwin_pkginst_name string
+
+	notes1 map[string]&joplin.Jlnote // id =>
 }
 
 struct EnvContext {
@@ -561,11 +563,17 @@ fn write_contents_func1(e &emacs.Env, args []emacs.Value) emacs.Value {
 	vcp.info(111)
 	ebuf := e.orbuffer(emacs.elnil())
 	ebname := ebuf.buffer_name(e)
+	noteid := ebname.all_after(' ')
+	// ebcc := ebuf.buffer_string(e)
+	ebcc := e.buffer_string()
 	bfile := e.buffer_file_name(vnil)
 	vcp.info('savewt', bfile, ebuf.strfy(e), ebname)
+	note := emmw.notes1[noteid]
 
 	if ebname.starts_with('Note ') {
-		sendto_msgbuf(e, 'Saved ${ebname}')
+		jlo := newjlapi()
+		ok := jlo.save(noteid, note, ebcc) or { vcp.error(err.str()) }
+		sendto_msgbuf(e, ifelse(ok, 'Success', 'Failed') + ' saved ${ebname}: ${note.title}')
 		return emacs.eltrue()
 	}
 
@@ -666,6 +674,7 @@ fn emwin_show_note(e &emacs.Env, args []emacs.Value) emacs.Value {
 	argptr := emacs.ofptrstr(args[0].tostr(e))
 	note := castptr[joplin.Jlnote](argptr)
 	vcp.info(note.str())
+	ref2mut(emmw).notes1[note.id] = note
 
 	ctx := EnvContext.new(e)
 	bigwin := ctx.bigwin
@@ -683,6 +692,7 @@ fn emwin_show_note(e &emacs.Env, args []emacs.Value) emacs.Value {
 	// dirwin.set_window_dedicated_p(e, false)
 	e.switch_to_buffer(eb1) // why tab not show?
 	e.fcall2('tab-line-mode', e.intval(1)) // works
+	e.fcall2('markdown-mode') // in case markdown package not installed???
 	// e.fcall2('buffer-offer-save', emacs.elnil())
 	// e.fcall2('pop-to-buffer', eb1)
 	// e.fcall2('set-buffer', eb1)

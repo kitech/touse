@@ -403,7 +403,13 @@ pub fn (e &Env) kill_buffer(b Value) {
 }
 
 pub fn (v Value) buffer_string(e &Env) string {
-	rv := e.fcall2(funame2el(@FN), v)
+	// rv := e.fcall2(funame2el(@FN), v)
+	rv := e.fcall2(funame2el(@FN))
+	return rv.tostr(e)
+}
+
+pub fn (e &Env) buffer_string() string {
+	rv := e.fcall2(funame2el(@FN))
 	return rv.tostr(e)
 }
 
