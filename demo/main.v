@@ -22,6 +22,7 @@ fn emuser_init(e &emacs.Env) {
 	eminit_hooks(e)
 	eminit_shotkeys(e)
 	eminit_peekvars(e)
+	eminit_setvars(e)
 
 	eminit_uis(e)
 
@@ -451,6 +452,12 @@ fn eminit_peekvars(e &emacs.Env) {
 	}
 }
 
+fn eminit_setvars(e &emacs.Env) {
+	e.fcall2('add-to-list', e.intern('write-file-functions'), e.funvalx(write_file_func1))
+	// this is local variable, set here not work
+	// e.fcall2('add-to-list', e.intern('write-contents-functions'), e.funvalx(write_contents_func1))
+}
+
 fn run_minibuffer_setup_hook(e &emacs.Env) {
 	vcp.info('...')
 }
@@ -500,6 +507,15 @@ fn run_after_save_hook(e &emacs.Env) {
 	run_md2jpl(bfile)
 }
 
+fn run_before_save_hook(e &emacs.Env) {
+	vcp.info(111)
+	e.fcall2('add-to-list', e.intern('write-contents-functions'), e.funvalx(write_contents_func1))
+	// bfile := e.buffer_file_name(vnil)
+	// vcp.info('savewt', bfile)
+
+	// run_md2jpl(bfile)
+}
+
 fn md2jpl_match(bfile string) (string, bool) {
 	dir := ''
 	extok := false
@@ -531,6 +547,37 @@ fn emacs_tick(x int) {
 	vcp.info('hhhhh', x)
 	emacs.runon_uithread('prin1-to-string', false, 123)
 }
+
+// used for visited file
+fn write_file_func1(e &emacs.Env, args []emacs.Value) emacs.Value {
+	vcp.info(111)
+	// bfile := e.buffer_file_name(vnil)
+	// vcp.info('savewt', bfile)
+	return emacs.elnil()
+}
+
+// used for visited/non-visited file
+fn write_contents_func1(e &emacs.Env, args []emacs.Value) emacs.Value {
+	vcp.info(111)
+	ebuf := e.orbuffer(emacs.elnil())
+	ebname := ebuf.buffer_name(e)
+	bfile := e.buffer_file_name(vnil)
+	vcp.info('savewt', bfile, ebuf.strfy(e), ebname)
+
+	if ebname.starts_with('Note ') {
+		sendto_msgbuf(e, 'Saved ${ebname}')
+		return emacs.eltrue()
+	}
+
+	return emacs.elnil()
+}
+
+fn sendto_msgbuf(e &emacs.Env, msg string) {
+	ebuf := e.get_buffer_create('*Message')
+	e.fcall2('message', e.strval(msg))
+}
+
+///
 
 fn load_notes(x int) {
 	vcp.info('hhhhh', x)
@@ -629,19 +676,26 @@ fn emwin_show_note(e &emacs.Env, args []emacs.Value) emacs.Value {
 	frm.select_frame_set_input_focus(e)
 	e.select_window(bigwin)
 
+	// 这种创建的buffer叫,not visiting file
 	bufname := 'Note ${note.id}'
 	eb1 := e.get_buffer_create(bufname)
 	// eb1 = dirwin.window_buffer(e)
 	// dirwin.set_window_dedicated_p(e, false)
 	e.switch_to_buffer(eb1) // why tab not show?
+	e.fcall2('tab-line-mode', e.intval(1)) // works
+	// e.fcall2('buffer-offer-save', emacs.elnil())
 	// e.fcall2('pop-to-buffer', eb1)
 	// e.fcall2('set-buffer', eb1)
 	// e.fcall2('display-buffer-in-tab', eb1, emacs.elnil()) // this is tab-bar, not tab-line
 	// e.fcall2('switch-to-buffer-other-tab', eb1)
 	// dirwin.set_window_dedicated_p(e, true)
 
+	e.fcall2('erase-buffer')
 	// eb1.insert(e, 'Notelist, ${notes.len}\n')
 	eb1.insert(e, note.body)
+
+	// digest buffer
+	eb2 := e.get_buffer_create('jldigest')
 
 	return emacs.elnil()
 }

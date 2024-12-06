@@ -195,6 +195,12 @@ pub type Funcin = fn (env &Env, nargs isize, args &Value, data voidptr) Value
 
 pub type Funcur = fn (env &Env, args []Value) Value
 
+pub type FuncurNoret = fn (env &Env, args []Value)
+
+pub type FuncurNoarg = fn (env &Env)
+
+pub type FuncurAll = Funcin | Funcur | FuncurNoret | FuncurNoarg
+
 pub type Finalin = fn (data voidptr)
 
 pub enum FcallExit {
@@ -462,11 +468,13 @@ pub fn (me Value) tostr(env &Env) string {
 	return env.tostr(me)
 }
 
+pub const evtostr_nil0 = 'elvtostr(nil0)'
+
 // must string type or fail
 pub fn (env &Env) tostr(me Value) string {
-	// if me.isnil(env) {
-	// 	return 'elvtostr(nil0)'
-	// }
+	if me.isnil(env) { // check avoid report error
+		return 'elvtostr(nil0)'
+	}
 	// bvx := env.vm.funcall(env, env.intern('stringp'), 1, &me)
 	// if bvx.isnil(env) {
 	// 	vcp.warn('notstr, should', me.typof(env).strfy(env), me)
@@ -511,7 +519,7 @@ fn elmodfunfwder(e &Env, nargs isize, args &Value, data voidptr) Value {
 	if data == vnil {
 		vcp.warn(e, nargs, data)
 	}
-	vcp.trueprt(nargs > 0, nargs, 'todo')
+	vcp.trueprt(nargs > 0, nargs, 'use funvalx instead')
 	for idx in 0 .. nargs {
 		item := args[idx]
 		aty := item.typof(e)
@@ -524,6 +532,56 @@ fn elmodfunfwder(e &Env, nargs isize, args &Value, data voidptr) Value {
 
 pub fn (me &Env) funval(cb fn (e &Env)) Value {
 	elfn := me.vm.make_function_(me, 0, 16, elmodfunfwder, vnil, voidptr(cb))
+	me.nle_check()
+	return elfn
+}
+
+// data is real callback fnptr
+fn elmodfunfwderx(e &Env, nargs isize, args &Value, data voidptr) Value {
+	if data == vnil {
+		vcp.warn(e, nargs, data)
+	}
+	argv := []Value{len: int(nargs)}
+	for idx in 0 .. nargs {
+		item := args[idx]
+		aty := item.typof(e)
+		argv[idx] = item
+		// vcp.info(idx.str(), item, aty.strfy(e), item.strfy(e))
+	}
+
+	cb := derefvar[FuncurAll](data) //  work
+	rv := emvs.elnil
+	matval := ''
+	match cb {
+		Funcin {
+			matval = 'Funcin'
+			rv = cb(e, nargs, args, data)
+		}
+		Funcur {
+			matval = 'Funcur'
+			rv = cb(e, argv)
+		}
+		FuncurNoret {
+			matval = 'FuncurNoret'
+			cb(e, argv)
+		}
+		FuncurNoarg {
+			matval = 'FuncurNoarg'
+			cb(e)
+		}
+		// else {}
+	}
+	if matval == '' {
+		vcp.warn('nomat', matval, cb.str(), data)
+	}
+	return rv
+}
+
+pub fn (me &Env) funvalx(cb FuncurAll) Value {
+	adr := &cb // stack addr, invalid when use
+	adr = vardup(cb)
+	vcp.info(voidptr(adr))
+	elfn := me.vm.make_function_(me, 0, 16, elmodfunfwderx, vnil, voidptr(adr))
 	me.nle_check()
 	return elfn
 }
