@@ -293,7 +293,7 @@ pub fn (me &Env) fcall2(funame string, args ...Value) Value {
 	return rv
 }
 
-// todo
+// todo return value, or return Value?
 pub fn (me &Env) fcall3(funame string, args ...Anyer) Anyer {
 	fun := me.intern(funame)
 	nargs := isize(args.len)
@@ -305,7 +305,7 @@ pub fn (me &Env) fcall3(funame string, args ...Anyer) Anyer {
 	}
 	rv := me.vm.funcall(me, fun, nargs, arr.data)
 	me.chkret()
-	vcp.info(funame, rv.strfy(me))
+	// vcp.info(funame, rv.strfy(me))
 	// 	return rv
 	return zeroof[Anyer]()
 }

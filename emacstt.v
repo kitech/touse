@@ -35,6 +35,10 @@ fn basictt(env &Env) {
 	vcp.info(ty.strfy(env))
 	env.chkret()
 
+	// this test code, move here
+	tcons := env.cons2(1, 1.2, '3.4')
+	vcp.info(tcons.strfy(env))
+
 	// todo --module-assertions failed
 	// env.fcall3('set', Symbol('tool-bar-mode'), vnil)
 	// env.fcall3('setq-local', Symbol('tool-bar-mode'), 'off')

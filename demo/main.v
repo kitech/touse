@@ -216,7 +216,7 @@ fn eminit_resize_mainwin_ifneed(e &emacs.Env) {
 
 	wins := e.window_list()
 	for idx, wx in wins {
-		vcp.info(wx.window_name(e), w0.window_name(e))
+		// vcp.info(wx.window_name(e), w0.window_name(e))
 		e.select_window(wx)
 		if e.eq(wx, w0) {
 		} else if e.eq(wx, w1) {
@@ -249,7 +249,6 @@ fn eminit_resize_mainwin_ifneed(e &emacs.Env) {
 	buflst := e.buffer_list()
 	for b in buflst {
 		name := b.buffer_name(e)
-		vcp.info(name)
 		match name {
 			// seems not work
 			'*scratch*' {
@@ -474,7 +473,7 @@ fn eminit_peekvars(e &emacs.Env) {
 		val := e.getvar(vn)
 		str := val.strfy(e)
 		vty := val.typof(e)
-		vcp.info(idx.str(), vn.str(), vty.strfy(e), str)
+		// vcp.info(idx.str(), vn.str(), vty.strfy(e), str)
 	}
 }
 
@@ -516,9 +515,6 @@ fn run_window_configuration_change_hook(e &emacs.Env) {
 	// e.nle_clear_indeep()
 	// tv.tostr(e)
 	// e.chkret()
-
-	tcons := e.cons2(1, 1.2, '3.4')
-	vcp.info(tcons.strfy(e))
 
 	vcp.info(999)
 }
@@ -640,7 +636,10 @@ fn load_notes_done(e &emacs.Env, args []emacs.Value) emacs.Value {
 	vcp.info(notesptr, sizeof(joplin.Jlnote))
 
 	arr2 := derefvar[[]joplin.Jlnote](notesptr)
-	vcp.info('deref[[]T]', notesptr, arr2.len, arr2.str())
+	// vcp.info('deref[[]T]', notesptr, arr2.len, arr2.str())
+	if arr2.len == 0 {
+		vcp.warn('nodat?', notesptr, args.len)
+	}
 
 	// edit emacs buffer now
 	dirwin := find_emwin(e, emmw.dirwin_name)
@@ -649,7 +648,7 @@ fn load_notes_done(e &emacs.Env, args []emacs.Value) emacs.Value {
 	bufs := e.buffer_list()
 	vcp.info('bufs', bufs.len, bufs.str())
 	for i, buf in bufs {
-		vcp.info(i.str(), buf.strfy(e))
+		// vcp.info(i.str(), buf.strfy(e))
 	}
 
 	return emacs.elnil()
@@ -738,12 +737,12 @@ fn find_emwin(e &emacs.Env, name string) emacs.Value {
 	frms := e.frame_list()
 	vcp.info('frms', frms.len, frms.str())
 	for i, frm in frms {
-		vcp.info(i.str(), frm.strfy(e))
+		// vcp.info(i.str(), frm.strfy(e))
 
 		wins := e.window_list(frm)
-		vcp.info('wins', wins.len, wins.str())
+		// vcp.info('wins', wins.len, wins.str())
 		for j, win in wins {
-			vcp.info(j.str(), win.strfy(e), win.window_name(e))
+			// vcp.info(j.str(), win.strfy(e), win.window_name(e))
 			wname := win.window_name(e)
 			wstr := win.strfy(e)
 			if wname == name {
