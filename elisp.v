@@ -140,3 +140,11 @@ pub fn (v Value) symbol_name(e &Env) string {
 	rv := e.fcall2(funame2el(@FN), v)
 	return rv.tostr(e)
 }
+
+pub fn (e &Env) eval_expression(code string) {
+	code2 := '(progn ${code})'
+	rv := e.fcall2('read-from-string', e.strval(code2))
+	rv = e.fcall2('car', rv)
+	rv = e.fcall2(funame2el(@FN), rv)
+	e.chkret()
+}

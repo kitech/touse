@@ -1,5 +1,4 @@
-module main
-
+// module main
 import dl
 import os
 import time
@@ -19,6 +18,8 @@ fn init() {
 fn emuser_init(e &emacs.Env) {
 	vcp.info(e != vnil)
 
+	emcore_init(e)
+
 	eminit_hooks(e)
 	eminit_shotkeys(e)
 	eminit_peekvars(e)
@@ -26,6 +27,8 @@ fn emuser_init(e &emacs.Env) {
 
 	eminit_uis(e)
 
+	// blocking!!!
+	// e.fcall2('read-event', emacs.elnil(), emacs.elnil(), emacs.elnil())
 	vcp.info('done')
 }
 
@@ -53,11 +56,17 @@ const hooks = ['after-change-major-mode-hook', 'after-init-hook', 'emacs-startup
 	'buffer-list-update-hook', 'buffer-quit-function', 'focus-in-hook', 'focus-out-hook',
 	'window-setup-hook', 'after-save-hook', 'before-save-hook', 'quit-window-hook', 'post-gc-hook',
 	'window-configuration-change-hook', 'after-setting-font-hook', 'suspend-hook',
-	'suspend-resume-hook', 'minibuffer-setup-hook', 'minibuffer-with-setup-hook']
+	'suspend-resume-hook', 'minibuffer-setup-hook', 'minibuffer-with-setup-hook',
+	'post-self-insert-hook', 'pre-command-hook', 'post-command-hook']
 
 fn eminit_hooks(e &emacs.Env) {
 	for idx_, hook_ in hooks {
 		idx := idx_
+		name4v := '${@MOD}__run_' + emacs.nameofel(hook_, false)
+		sym4v := vcp.dlsym0(name4v)
+		if sym4v != vnil {
+			ref2mut(emmw).hookfuncs[hook_] = sym4v
+		}
 		e.add_hook(hook_, fn [idx] (e &emacs.Env) {
 			hook := hooks[idx]
 			name4v := '${@MOD}__run_' + emacs.nameofel(hook, false)
@@ -74,6 +83,8 @@ fn eminit_hooks(e &emacs.Env) {
 
 struct MainWin {
 pub mut:
+	hookfuncs map[string]voidptr // hook name => func ptr
+
 	left1 emacs.Value
 	left2 emacs.Value
 
@@ -89,6 +100,7 @@ pub mut:
 
 	popwin_pkginst_name string
 
+	// move to joplin.v itself file
 	notes1 map[string]&joplin.Jlnote // id =>
 }
 

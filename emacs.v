@@ -572,17 +572,34 @@ fn elmodfunfwderx(e &Env, nargs isize, args &Value, data voidptr) Value {
 		// else {}
 	}
 	if matval == '' {
-		vcp.warn('nomat', matval, cb.str(), data)
+		itfin := castptr[Itfacein](data)
+		vcp.warn('nomat', matval, cb.str(), data, itfin.typ)
 	}
 	return rv
 }
 
+struct Refvars {
+mut:
+	refs map[string]voidptr // ptr.str()=>ptr
+}
+
+const refvars = &Refvars{}
+
 pub fn (me &Env) funvalx(cb FuncurAll) Value {
 	adr := &cb // stack addr, invalid when use
 	adr = vardup(cb)
-	vcp.info(voidptr(adr))
+	itfin := itface2struct(&cb)
+	itfin = castptr[Itfacein](adr)
+	vcp.info(voidptr(adr), itfin.typ)
+	// avoid gc adr
+	ref2mut(refvars).refs['${voidptr(adr)}'] = adr
+
 	elfn := me.vm.make_function_(me, 0, 16, elmodfunfwderx, vnil, voidptr(adr))
 	me.nle_check()
+	// wrong-type-argument: (user-ptrp)
+	// me.vm.set_user_finalizer_(me, elfn, fn (val voidptr) {
+	// 	vcp.info('emvalfin', val)
+	// })
 	return elfn
 }
 

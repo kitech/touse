@@ -119,9 +119,27 @@ pub fn (me &Env) defun2(funame string, fun Funcin, doc string) {
 	}
 }
 
+pub fn (me &Env) defcmd(cmdname string, fun FuncurAll, doc string) {
+	funame := cmdname + '-inner-dontuse'
+	fnobj := me.funvalx(fun)
+
+	// set function name
+	me.fcall2('defalias', me.intern(funame), fnobj)
+
+	// make command
+	me.eval_expression('(defun ${cmdname}() (interactive)(${funame}))')
+}
+
 pub fn (me &Env) global_set_key(keys string, funame string) {
 	rv1 := me.fcall2('kbd', me.strval(keys))
 	me.fcall3(funame2el(@FN), rv1, Symbol(funame))
+	me.nle_check()
+}
+
+pub fn (me &Env) global_set_keyx(keys string, funobj FuncurAll) {
+	rv1 := me.fcall2('kbd', me.strval(keys))
+	funval := me.funvalx(funobj)
+	me.fcall3('global-set-key', rv1, funval)
 	me.nle_check()
 }
 
