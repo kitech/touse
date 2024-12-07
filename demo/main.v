@@ -18,8 +18,6 @@ fn init() {
 fn emuser_init(e &emacs.Env) {
 	vcp.info(e != vnil)
 
-	emcore_init(e)
-
 	eminit_hooks(e)
 	eminit_shotkeys(e)
 	eminit_peekvars(e)
@@ -27,6 +25,7 @@ fn emuser_init(e &emacs.Env) {
 
 	eminit_uis(e)
 
+	emcore_init(e)
 	// blocking!!!
 	// e.fcall2('read-event', emacs.elnil(), emacs.elnil(), emacs.elnil())
 	vcp.info('done')

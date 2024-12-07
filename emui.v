@@ -95,6 +95,11 @@ pub fn (w Value) set_frame_parameter(e &Env, prm string, val Value) {
 	// e.fcall2(funame2el(@FN), w, e.strval(prm), val)
 }
 
+pub fn (w Value) frame_parameter(e &Env, prm string) Value {
+	rv := e.fcall2(funame2el(@FN), w, e.intern(prm))
+	return rv
+}
+
 pub fn (w Value) set_window_dedicated_p(e &Env, val bool) {
 	e.fcall2(funame2el(@FN), w, bool2el(val))
 }
