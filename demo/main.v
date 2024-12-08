@@ -2,6 +2,7 @@
 import dl
 import os
 import time
+import flag
 import rand
 import vcp
 import mkuse.emacs
@@ -17,6 +18,7 @@ fn init() {
 
 fn emuser_init(e &emacs.Env) {
 	vcp.info(e != vnil)
+	ref2mut(emmw).emtid = vcp.gettid()
 
 	eminit_hooks(e)
 	eminit_shotkeys(e)
@@ -82,6 +84,8 @@ fn eminit_hooks(e &emacs.Env) {
 
 struct MainWin {
 pub mut:
+	emtid u64
+
 	hookfuncs map[string]voidptr // hook name => func ptr
 
 	left1 emacs.Value
@@ -601,15 +605,29 @@ fn write_contents_func1(e &emacs.Env, args []emacs.Value) emacs.Value {
 }
 
 fn sendto_msgbuf(e &emacs.Env, msg string) {
-	ebuf := e.get_buffer_create('*Message')
+	ebuf := e.get_buffer_create('*Message*')
 	e.fcall2('message', e.strval(msg))
 }
 
 ///
+pub fn joplin_init(e &emacs.Env) {
+	cfg, nomats := emacs.parse_flags[JoplinConfig](e) or { panic(err) }
+	ref2mut(jlvs).cfg = cfg
+}
+
+const jlvs = &JoplinVars{}
+
+struct JoplinVars {
+pub mut:
+	cfg JoplinConfig
+}
+
+struct JoplinConfig {
+	jlsrv   string = 'http://localhost:41184'
+	jltoken string
+}
 
 fn load_notes(x int) {
-	vcp.info('hhhhh', x)
-	emacs.runon_uithread('prin1-to-string', false, 123) or { vcp.error(err.str()) }
 	jlo := joplin.Jldata.new()
 	jlo.set_token(os.getenv('JLTOKEN'))
 	notes := jlo.notes() or { vcp.error(err.str()) }
@@ -630,7 +648,6 @@ fn newjlapi() &joplin.Jldata {
 //  unlock []T slice's addr and pass by pointer and deref !!!
 
 fn load_notes_done(e &emacs.Env, args []emacs.Value) emacs.Value {
-	vcp.info('hehehhe', args.len)
 	// &[]joplin.Jlnote
 	notesptr := emacs.ofptrstr(args[0].tostr(e))
 	vcp.info(notesptr, sizeof(joplin.Jlnote))
@@ -696,7 +713,7 @@ fn onclick_note_title(note &joplin.Jlnote) {
 fn emwin_show_note(e &emacs.Env, args []emacs.Value) emacs.Value {
 	argptr := emacs.ofptrstr(args[0].tostr(e))
 	note := castptr[joplin.Jlnote](argptr)
-	vcp.info(note.str())
+	// vcp.info(note.str())
 	ref2mut(emmw).notes1[note.id] = note
 
 	ctx := EnvContext.new(e)

@@ -1,6 +1,7 @@
 module emacs
 
 import dl
+import flag
 import vcp
 import time
 import os
@@ -26,14 +27,6 @@ fn init() {
 	// C.infolm(c'...')
 }
 
-// https://www.gnu.org/software/emacs/manual/html_node/elisp/Command_002dLine-Arguments.html
-struct Config {
-pub mut:
-	basett   bool
-	relayout bool
-	asyncbkd bool // sptaskd, emacs process
-}
-
 // this is first called, even before emacs.init()
 
 // noexcept: orcrash
@@ -53,6 +46,8 @@ fn eminit(rt &Runtime) int {
 	env := rt.getenv()
 	emcheckenv(env)
 	assert env.nle_check() == .return_
+	cfg, nomats := parse_flags[Config](env) or { vcp.error(err.str()) }
+	ref2mut(emvs).cfg = cfg
 
 	refvar2mut(emvs).elnil = env.globref(env.intern('nil'))
 	refvar2mut(emvs).eltrue = env.globref(env.intern('t'))
@@ -63,7 +58,9 @@ fn eminit(rt &Runtime) int {
 	ref2mut(emvs).servsockfile = sockfile
 	env.defun('emacs-runon-uithread', emacs_runon_uithread, '')
 
-	basictt(env)
+	if cfg.basett {
+		basictt(env)
+	}
 
 	if emvs.emuser_init != vnil {
 		emvs.emuser_init(env)
@@ -88,11 +85,42 @@ pub fn reginiter(cb fn (e &Env)) {
 	refvar2mut(emvs).emuser_init = cb
 }
 
+// args from emacs command-line-args
+pub fn parse_flags[T](e &Env) !(T, []string) {
+	argevs := e.symbol_value('command-line-args').cons2arr(e)
+	if argevs.len <= 1 {
+		// only ./exe
+		// return // sofork of vlang syntax, cannot dirrect return
+	}
+
+	args := []string{len: argevs.len}
+	for idx, ev in argevs {
+		args[idx] = ev.tostr(e)
+	}
+
+	cfg, nomats := flag.to_struct[T](args) or { return err }
+	// ref2mut(emcvs).cfg = cfg
+	return cfg, nomats
+}
+
+// https://www.gnu.org/software/emacs/manual/html_node/elisp/Command_002dLine-Arguments.html
+struct Config {
+	// sofork, emacs: Option '-t' requires an argument
+	// use -t=on for short
+	basett   bool   @[desc: 'if call basictt test func'; short: t]
+	relayout bool   @[desc: 're layout ui'; short: y]
+	asyncbkd string @[desc: 'sptaskd, emacs process'] //
+	vemver   bool
+	loglvl   string @[desc: 'warn,info,debug,error']
+}
+
 // todo what will happend if load to .so use this library
 const emvs = &Emvars{}
 
 struct Emvars {
 pub mut:
+	cfg Config
+
 	callcnt int = 0 // maybe call multiple times by emacs???
 	elnil   Value
 	eltrue  Value
@@ -578,6 +606,10 @@ fn elmodfunfwderx(e &Env, nargs isize, args &Value, data voidptr) Value {
 	return rv
 }
 
+// todo when remove item in this refs
+// elisp cannot correct ref native pointer
+// native gc will collect that only in elisp,
+// so this fixsom
 struct Refvars {
 mut:
 	refs map[string]voidptr // ptr.str()=>ptr

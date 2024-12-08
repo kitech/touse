@@ -3,6 +3,7 @@ import dl
 import os
 import sync
 import time
+import flag
 import arrays
 import rand
 import vcp
@@ -11,6 +12,9 @@ import mkuse.xlibv
 
 // 不影响任何emacs第三方包的部分
 pub fn emcore_init(e &emacs.Env) {
+	cfg, nomats := emacs.parse_flags[VemcoreConfig](e) or { panic(err) }
+	ref2mut(emcvs).cfg = cfg
+
 	emcore_set_hotkeys(e)
 	frm := e.getframe(vnil)
 	rv := frm.frame_parameter(e, 'window-id')
@@ -22,11 +26,20 @@ pub fn emcore_init(e &emacs.Env) {
 	go vemcore_x11proc()
 }
 
+struct VemcoreConfig {
+	xkbhook bool = true     @[desc: 'x11 hook kb for ctrl hold']
+	apps    []string @[desc: 'enabled apps, joplin, pkgman']
+	// disapps []string @[desc: 'disabled apps']
+	testopt bool @[desc: 'hhhehe']
+}
+
 const emcvs = &EmcoreVars{}
-const tsstk = &TabswiStack{}
 
 struct EmcoreVars {
 pub mut:
+	cfg    VemcoreConfig
+	knapps []string
+
 	x11proconce sync.Once
 	name        string
 
@@ -42,6 +55,8 @@ pub mut:
 
 	tsstk &TabswiStack = vnil
 }
+
+const tsstk = &TabswiStack{}
 
 // emulate firefox's tabswitch logic
 pub struct TabswiStack {

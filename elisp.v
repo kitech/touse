@@ -47,6 +47,10 @@ pub fn (e &Env) cons2arr(v Value) []Value {
 	return rv
 }
 
+pub fn (v Value) cons2arr(e &Env) []Value {
+	return e.cons2arr(v)
+}
+
 pub fn (e &Env) mapcar(v Value, cb fn (Value) Value) []Value {
 	rv := []Value{}
 	t := v

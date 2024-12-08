@@ -78,18 +78,21 @@ pub fn runon_uithread_nowait(proc UifuncType, args ...Anyer) ! {
 	runon_uithread(proc, false, ...args)!
 }
 
+// dont run in emacs thread
 // function addr not need deref, arg need deref!!!
 // 1ms-30ms+
 // also means emacs main thread
 pub fn runon_uithread(proc UifuncType, nowait bool, args ...Anyer) ! {
 	btime := time.now()
 	mypid := os.getpid() // sender
+	mytid := vcp.gettid()
 	sockfile := emvs.servsockfile
 	if sockfile == '' {
 		sockfile = '/run/user/1000/emacsv/server'
 	}
+
 	c := unix.connect_stream(sockfile) or {
-		vcp.error(err.str(), sockfile, '/')
+		vcp.error(err.str(), os.last_error().str(), sockfile, '/')
 		return err
 	}
 	defer { c.close() or { panic(err) } }
@@ -140,12 +143,16 @@ pub fn runon_uithread(proc UifuncType, nowait bool, args ...Anyer) ! {
 
 	res := ''
 	btime = time.now()
-	c.set_read_timeout(time.millisecond * 500)
-	for {
+	// seem timeout/deadline not work
+	exptmo := time.millisecond * 500
+	c.set_read_timeout(exptmo)
+	c.set_read_deadline(btime.add(exptmo))
+	for i in 0 .. 99 {
 		mut buf := []u8{len: 128}
+		// why read solong sometimes, about 3s+
 		n = c.read(mut buf) or {
 			if err.str() != 'none' {
-				vcp.error(err.str())
+				vcp.error(err.str(), os.last_error().str(), time.since(btime).str(), i.str())
 			}
 			break
 		}
@@ -153,6 +160,7 @@ pub fn runon_uithread(proc UifuncType, nowait bool, args ...Anyer) ! {
 		res += buf[..n].bytestr()
 	}
 	etime := time.now()
+	vcp.trueprt(time.since(btime) > exptmo, 'why read solong', time.since(btime).str())
 	// parse result
 	lines := res.split('\n')
 	for idx, line in lines {
@@ -228,6 +236,8 @@ pub fn toptrstr(v voidptr) string {
 	return '0x${v}'
 }
 
+// emacs.runon_uithread('prin1-to-string', false, 123) or { vcp.error(err.str()) }
+// emacs.runon_uithread(tt_runonth, false, 123) or { vcp.error(err.str()) }
 fn tt_runonth(e &Env, args []Value) Value {
 	vcp.info('ehehe', e.asptr(), args.len, args.str())
 	return emvs.eltrue
