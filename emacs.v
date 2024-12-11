@@ -69,10 +69,10 @@ fn eminit(rt &Runtime) int {
 }
 
 fn emcheckenv(e &Env) {
-	expsz := 0
+	expsz := u32(0)
 	if MAJOR_VERION == 29 {
 		expsz = sizeof(Env29)
-	} else if MAJOR_VERION == 29 {
+	} else if MAJOR_VERION == 25 {
 		expsz = sizeof(Env25)
 	}
 	if e.vh.size != expsz {
