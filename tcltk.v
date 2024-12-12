@@ -484,6 +484,8 @@ pub struct Menu {
 // bool -opt, or omit
 // 还是不能用?int这种字段
 // 即使不用?int,还是无法通用实现
+// trailing struct literal arguments
+@[params]
 pub struct MenuOptions {
 	TkOptions
 pub mut:
