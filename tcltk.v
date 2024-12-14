@@ -485,6 +485,7 @@ pub struct Menu {
 // 还是不能用?int这种字段
 // 即使不用?int,还是无法通用实现
 // trailing struct literal arguments
+// by this property, easy call toline(label:'aaa',cascade:true,...)
 @[params]
 pub struct MenuOptions {
 	TkOptions
