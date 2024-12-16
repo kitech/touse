@@ -34,21 +34,46 @@ pub mut:
 
 const gvars = &Globvars{}
 
+pub struct App {
+    pub mut:
+    ir voidptr
+}
+
+pub fn App.new() &App {
+    return &App{}
+}
+
+pub fn (app&App)exec(uinitfn fn(_ voidptr)) {
+    // tk_main2("${os.args[0]}.tcl")
+    args := os.args
+    args  << "${os.args[0]}.tcl"
+    tk_main(args, fn  [uinitfn](ir voidptr) int {
+        uinitfn(ir)
+        return 0
+    })
+}
+pub fn (app&App)exit() {
+    exit(0)
+}
+
 pub fn tk_main2(init_tcl_file string) {
 	args := [os.base(init_tcl_file), init_tcl_file]
 	tk_main(args, vnil)
 }
 
 // ui event look, will block forever
+// args[0] exe, args[1] initfile
 pub fn tk_main(args []string, init_done fn (ir voidptr) int) {
 	mut gvs := refvar2mut(gvars)
 	for arg in args {
 		gvs.argv << (arg.clone().str)
 	}
+    assert args.len > 1
 	if !os.exists(args[1]) {
 		tmpfile := os.join_path(os.temp_dir(), os.base(args[1]))
 		initcode := 'package require Tk\ntk systray exists;'
-		os.write_file(tmpfile, '') or { panic(err) }
+        // initcode := ''
+		os.write_file(tmpfile, initcode) or { panic(err) }
 		vcp.warn('file404', args[1], '=>', tmpfile)
 		gvs.argv[1] = tmpfile.str
 	}
@@ -91,7 +116,7 @@ pub fn eval(s string) int {
 }
 
 pub fn call(s string) int {
-	// vcp.info("calling", s)
+	// vcp.info("calling", s, gvars.tclirp)
 	rc := C.Tcl_Eval(gvars.tclirp, s.str)
 	if rc != tclok {
 		// emsg := posix_error()
@@ -231,10 +256,12 @@ pub interface Tkobjitf {
 
 ///
 
+// with container/layout feature
 pub struct Labelframe {
 	Tkobject
 }
 
+// parent empty for toplevel
 pub fn Labelframe.new(txt string, parent Tkobjitf) Labelframe {
 	vn := parent.name() + nextvarname('lbf')
 	cmd := 'labelframe ${vn} -text "${txt}"'
@@ -244,6 +271,7 @@ pub fn Labelframe.new(txt string, parent Tkobjitf) Labelframe {
 	}
 }
 
+@[params]
 pub struct PackOptions {
 pub mut:
 	side   string
@@ -381,6 +409,7 @@ pub struct Frame {
 	Tkobject
 }
 
+// parent empty for toplevel
 pub fn Frame.new(parent Tkobjitf) Frame {
 	vn := parent.name() + nextvarname('frm')
 	cmd := 'frame ${vn} -container true -width 300 -height 300'
