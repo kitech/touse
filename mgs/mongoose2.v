@@ -12,6 +12,7 @@ c99 {
     typedef struct mg_connection mg_connection;
     typedef struct mg_iobuf mg_iobuf;
     typedef struct mg_http_message mg_http_message;
+    typedef struct mg_ws_message mg_ws_message;
     typedef struct mg_http_serve_opts mg_http_serve_opts;
 }
 
@@ -65,8 +66,14 @@ pub struct C.mg_http_message{
     head Str
     message Str // Request + headers + body
 }
-pub type ReqType = HttpMsg | usize
-pub type ProcFunc = fn(c &Conn, ev Ev, evdata voidptr)
+
+pub type WsMsg = C.mg_ws_message
+pub struct C.mg_ws_message {
+    pub mut:
+    data Str
+    flags u8
+}
+
 struct C.mg_str{
     pub mut:
     buf charptr
@@ -93,8 +100,10 @@ pub fn (r &Mgr) free() { C.mg_mgr_free(&r) }
 fn C.mg_http_listen(...voidptr) &Conn
 fn C.mg_listen(...voidptr) &Conn
 
+pub type RawFunc = fn(c &Conn, ev Ev, evdata voidptr)
+
 // addr http://ip:port/
-pub fn (r &Mgr) http_listen(url string, evproc ProcFunc, cbval voidptr) &Conn {
+pub fn (r &Mgr) http_listen(url string, evproc RawFunc, cbval voidptr) &Conn {
     c := C.mg_http_listen(r, url.str, voidptr(evproc), cbval)
     return c
 }
@@ -189,13 +198,37 @@ pub fn (c &Conn) set_resp() {
 
 fn C.mg_send(... voidptr) cint
 
-pub fn (c &Conn) send(data voidptr, len usize) bool {
+pub fn (c &Conn) send0(data voidptr, len usize) bool {
     rv := C.mg_send(c, data, len)
     return rv.ok()
 }
-pub fn (c &Conn) send1(data string) bool {
-    return c.send(data.str, usize(data.len))
+pub fn (c &Conn) send(data string) bool {
+    return c.send0(data.str, usize(data.len))
 }
+
+pub fn (c &Conn) ws_upgrade(req &HttpMsg) {
+    C.mg_ws_upgrade(c, req, vnil)
+}
+
+pub fn (c &Conn) ws_send0(data voidptr, len isize, op int) isize {
+    return C.mg_ws_send(c, data, len, op)
+}
+pub fn (c &Conn) ws_send(data string, op int) isize {
+    return c.ws_send0(data.str, data.len, op)
+}
+
+pub fn (c &Conn) ws_wrap(len isize, op int) isize {
+    return C.mg_ws_wrap(c, len, op)
+}
+
+pub fn (c &Conn) ws_printf() {
+    
+}
+
+pub fn (C &Conn) ws_vprintf() {
+    
+}
+
 
 pub enum Ev  {
     error = C.MG_EV_ERROR      // Error                        char *error_message
@@ -222,6 +255,7 @@ pub enum Ev  {
 }
 
 pub enum Protocol {
+    raw
     http 
     websocket 
     arp
@@ -252,3 +286,10 @@ fn C.mg_http_send_redirect(...voidptr)
 fn C.mbuf_remove(...voidptr)
 fn C.mg_http_serve_dir(...voidptr)
 fn C.mg_http_serve_file(...voidptr)
+
+fn C.mg_ws_connect(...voidptr) &Conn
+fn C.mg_ws_upgrade(...voidptr)
+fn C.mg_ws_send(...voidptr) isize
+fn C.mg_ws_wrap(...voidptr) isize
+fn C.mg_ws_printf(...voidptr) isize
+fn C.mg_ws_vprintf(...voidptr) isize

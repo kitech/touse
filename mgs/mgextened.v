@@ -32,43 +32,76 @@ struct Globvars {
 const mgv = &Globvars{}
 
 pub type HttpFunc = fn (&Conn, &HttpMsg, voidptr)
-pub type HandleFunc = fn(&Conn, &HttpMsg, voidptr) | fn(&Conn, Ev, voidptr)
+pub type WsFunc = fn(&Conn, &WsMsg, voidptr)
+pub type HandleFunc = fn(&Conn, &HttpMsg, voidptr) | fn(&Conn, &WsMsg, voidptr) | fn(&Conn, Ev, voidptr)
 
 struct Funwrap {
     pub mut:
-    fun HandleFunc
-    cbval voidptr
     proto Protocol
+    opts ListenOption
 }
 
-pub fn (r &Mgr) listen(url string, fun HandleFunc, cbval voidptr) {
-    info := &Funwrap{fun:fun, cbval:cbval}
-    match fun {
-        fn(&Conn, &HttpMsg, voidptr) {
-            info.proto = .http
-            c := r.http_listen(url, event_proc, voidptr(info))
-            mgv.funs[u64(c.id)] = info
-        }
-        fn(&Conn, Ev, voidptr) {
-            c := C.mg_listen(r, url.str, event_proc, voidptr(info))
-            mgv.funs[u64(c.id)] = info
-        }
+@[params]
+pub struct ListenOption {
+    pub mut:
+    cbval voidptr
+    wsuri string
+    ssl bool
+    ca string 
+    key string 
+    cert string
+    
+    rawfunc RawFunc
+    httpfunc HttpFunc
+    wsfunc WsFunc
+}
+
+pub fn (r &Mgr) listen(url string, opts ListenOption) {
+    info := &Funwrap{opts: opts}
+
+    if opts.wsfunc != vnil || opts.httpfunc != vnil{
+        info.proto = if opts.wsfunc!=vnil { .websocket } else { .http }
+        c := r.http_listen(url, event_proc, voidptr(info))
+        mgv.funs[u64(c.id)] = info
+    } else if opts.rawfunc != vnil {
+        c := C.mg_listen(r, url.str, event_proc, voidptr(info))
+        mgv.funs[u64(c.id)] = info
+    } else {
+        assert false, "Handler cannot all nil"
     }
 }
 
 fn event_proc(c &Conn, ev Ev, evdata voidptr) {
     info := unsafe { &Funwrap(c.fn_data) }
-    fun := info.fun
-    match fun{
-        fn(&Conn, &HttpMsg,voidptr) {
-            if ev == .http_msg {
-                fun(c, &HttpMsg(evdata), info.cbval)
-            }
+    
+    if info.proto == .websocket && ev == .http_msg {
+        req := &HttpMsg(evdata)
+        upgrade := true
+        if info.opts.wsuri != "" && !req.uri.matchv(info.opts.wsuri) {
+            // check http below
+            upgrade = false
         }
-        fn(&Conn, Ev, voidptr) {
+        if upgrade {
+            c.ws_upgrade(req)
+            return
+        }
+    }
+    
+    match ev {
+        .ws_msg {
+            fun := info.opts.wsfunc
+            fun(c, &WsMsg(evdata), info.opts.cbval)
+        }
+        .http_msg {
+            fun := info.opts.httpfunc
+            fun(c, &HttpMsg(evdata), info.opts.cbval)
+        }
+        else {
+            fun := info.opts.rawfunc
             fun(c, ev, evdata)
         }
     }
+    
     if c.is_listening == ctrue && ev == .close {
         mgv.funs.delete(u64(c.id))
     }
