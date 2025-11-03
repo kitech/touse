@@ -3,6 +3,7 @@ module mgs
 import log
 import time
 import sync
+import os
 import arrays
 
 pub fn (r &Mgr) runloop(interval ... int) {
@@ -71,4 +72,41 @@ fn event_proc(c &Conn, ev Ev, evdata voidptr) {
     if c.is_listening == ctrue && ev == .close {
         mgv.funs.delete(u64(c.id))
     }
+}
+
+pub struct HttpServeRewriteOpts {
+    HttpServeOpts
+    pub mut:
+    index bool = false
+    baseuri string // trimmed part
+}
+
+pub fn (c &Conn) http_serve_dir_rewrite(req &HttpMsg, opts &HttpServeRewriteOpts) {
+    requri := req.uri.tov()
+    rootdir := tos3(opts.root_dir)
+    path := opts.baseuri
+    
+    if opts.baseuri == "" {
+        c.http_serve_dir(req, &HttpServeOpts(opts))
+        return
+    }
+    
+    dstfile := http_rewrite(path, requri, rootdir)
+    // log.info("Rewrite ${requri} => ${dstfile} \t:${@FILE_LINE}")
+    if dstfile == "" || !os.exists(dstfile) {
+        c.http_reply(404, "")
+    }else{
+    // c.http_serve_dir(req, &opts)
+    c.http_serve_file(req, dstfile, &HttpServeOpts(opts))
+    }
+}
+
+pub fn http_rewrite(baseuri string, requri string, rootdir string) string {
+    assert requri.starts_with(baseuri), baseuri+" "+requri
+    dstfile := os.join_path(rootdir, requri[baseuri.len..])
+    // log.info("rewrite222 dstfile \t:${@FILE_LINE}")
+    if !os.exists(dstfile) { return dstfile }
+    if os.real_path(dstfile).starts_with(os.real_path(rootdir)) { return dstfile }
+    // maybe ../../ like 
+    return ""
 }

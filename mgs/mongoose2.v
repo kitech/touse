@@ -12,6 +12,7 @@ c99 {
     typedef struct mg_connection mg_connection;
     typedef struct mg_iobuf mg_iobuf;
     typedef struct mg_http_message mg_http_message;
+    typedef struct mg_http_serve_opts mg_http_serve_opts;
 }
 
 pub type Mgr = C.mg_mgr
@@ -123,6 +124,26 @@ pub fn (s0 Str) matchv(s string) bool {
     return rv == 1
 }
 
+pub type HttpServeOpts = C.mg_http_serve_opts
+// @[typedef]
+pub struct C.mg_http_serve_opts {
+    pub mut:
+    root_dir charptr
+    ssi_pattern charptr
+    extra_headers charptr
+    mime_types charptr
+    page404 charptr
+    fs voidptr // &FS // struct mg_fs
+}
+
+// static site
+pub fn (c &Conn) http_serve_dir(htmsg &HttpMsg, opts &HttpServeOpts) {
+    C.mg_http_serve_dir(c, htmsg, opts)
+}
+pub fn (c &Conn) http_serve_file(htmsg &HttpMsg, path string, opts &HttpServeOpts) {
+    C.mg_http_serve_file(c, htmsg, path.str, opts)
+}
+
 /////////
 
 // void mg_http_reply(struct mg_connection *, int status_code, const char *headers,
@@ -229,3 +250,5 @@ fn C.mg_send_response_line(...voidptr)
 fn C.mg_http_send_error(...voidptr)
 fn C.mg_http_send_redirect(...voidptr)
 fn C.mbuf_remove(...voidptr)
+fn C.mg_http_serve_dir(...voidptr)
+fn C.mg_http_serve_file(...voidptr)
