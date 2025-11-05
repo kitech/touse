@@ -90,15 +90,21 @@ fn event_proc(c &Conn, ev Ev, evdata voidptr) {
     match ev {
         .ws_msg {
             fun := info.opts.wsfunc
-            fun(c, &WsMsg(evdata), info.opts.cbval)
+            if fun != vnil {
+                fun(c, &WsMsg(evdata), info.opts.cbval)
+            }
         }
         .http_msg {
             fun := info.opts.httpfunc
-            fun(c, &HttpMsg(evdata), info.opts.cbval)
+            if fun != vnil {
+                fun(c, &HttpMsg(evdata), info.opts.cbval)
+            }
         }
         else {
             fun := info.opts.rawfunc
-            fun(c, ev, evdata)
+            if fun != vnil {
+                fun(c, ev, evdata)
+            }
         }
     }
     
