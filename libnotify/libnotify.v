@@ -115,7 +115,7 @@ pub fn (nty mut Notify) replace(summary string, body string, icon string, timeou
 		nty.add(summary, body, icon, timeoutms)
 		return
 	}
-	nterx := nty.nters[nty.nters.len-1]
+	mut nterx := nty.nters[nty.nters.len-1]
 	mut nter := nterx
 	nter.update(summary, body, icon)
 	nter.show()
@@ -131,7 +131,7 @@ fn (nty mut Notify) clear_expires() {
 	nowt := time.now()
 
 	mut news := []&Notification{}
-	for nterx in nty.nters {
+	for mut nterx in nty.nters {
         mut nter := nterx
 		if nowt.unix() - nter.ctime.unix() > 2*nter.timeout/1000 {
 			nter.close()

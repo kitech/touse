@@ -51,9 +51,9 @@ pub struct ListenOption {
     key string 
     cert string
     
-    rawfunc RawFunc
-    httpfunc HttpFunc
-    wsfunc WsFunc
+    rawfunc RawFunc = vnil
+    httpfunc HttpFunc = vnil
+    wsfunc WsFunc = vnil
 }
 
 pub fn (r &Mgr) listen(url string, opts ListenOption) {

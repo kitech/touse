@@ -191,7 +191,9 @@ fn atypes2obj(atypes []int) []&Type {
 	return res
 }
 
-// for qt.qtrt
+///// ffi easy wrap
+
+// call in one step, by pass fnptr, arg types and values
 pub fn call3(f voidptr, atypes []int, avalues []voidptr) u64 {
 	assert atypes.len == avalues.len
 
@@ -222,99 +224,94 @@ pub fn call3(f voidptr, atypes []int, avalues []voidptr) u64 {
 	return rvalue
 }
 
-pub fn callfca6[T](sym voidptr, args ...Any) T {
+fn init() {
+    if false {
+        callany[int]("")
+        callany[f64](voidptr(0))
+    }
+}
+
+pub type Symbol = string | charptr | voidptr | usize
+
+// call in one step, by pass fnptr or fnname, and use native args syntax
+pub fn callany[T](symoradr Symbol, args ...Anyer) T {
+    mut adr := vnil 
+    match symoradr {
+        string { adr = C.dlsym(C.RTLD_DEFAULT, symoradr.str) }
+        charptr { adr = C.dlsym(C.RTLD_DEFAULT, symoradr) }
+        voidptr { adr = symoradr }
+        usize { adr = voidptr(symoradr) }
+    }
+    return callfca6[T](adr, ...args)
+}
+
+pub fn callfca6[T](sym voidptr, args ...Anyer) T {
 	// const array must unsafe, it's compiler's fault
 	mut argctys := unsafe { [9]int{} }
-	mut argotys := unsafe { [9]&int{} }
+	mut argotys := unsafe { [9]voidptr{} }
 	mut argvals := unsafe { [9]voidptr{} }
 
 	for i, arg in args {
 		mut fficty := 0
-		mut ffioty := nilof[int]()
-		mut argadr := vnil
 
 		match arg {
 			f32 {
 				fficty = ctype_float
-				ffioty = type_float
-				argadr = voidptr(&arg)
 			}
 			f64 {
 				fficty = ctype_double
-				ffioty = type_double
-				argadr = voidptr(&arg)
 			}
 			int {
 				fficty = ctype_int
-				ffioty = type_int
-				argadr = voidptr(&arg)
 			}
 			usize {
 				fficty = ctype_pointer
-				ffioty = type_pointer
-				argadr = voidptr(&arg)
 			}
 			i64 {
 				fficty = ctype_sint64
-				ffioty = type_sint64
-				argadr = voidptr(&arg)
 			}
 			u64 {
 				fficty = ctype_uint64
-				ffioty = type_uint64
-				argadr = voidptr(&arg)
 			}
 			u32 {
 				fficty = ctype_sint32
-				ffioty = type_uint32
-				argadr = voidptr(&arg)
 			}
 			i16 {
 				fficty = ctype_int
-				ffioty = type_int
-				argadr = voidptr(&arg)
 			}
 			i8 {
 				fficty = ctype_int
-				ffioty = type_int
-				argadr = voidptr(&arg)
 			}
 			// C 中没有bool类型，是整数类型，所以对C函数应该可能。
 			// 但是对V的bool并不适用。需要V打开开关-d 4bytebool。
 			bool {
 				fficty = ctype_int
-				ffioty = type_int
-				argadr = voidptr(&arg)
 			}
 			voidptr {
 				fficty = ctype_pointer
-				ffioty = type_pointer
-				argadr = voidptr(&arg)
 			}
 			charptr {
 				fficty = ctype_pointer
-				ffioty = type_pointer
-				argadr = voidptr(&arg)
 			}
 			byteptr {
 				fficty = ctype_pointer
-				ffioty = type_pointer
-				argadr = voidptr(&arg)
 			}
 			string {
 				fficty = ctype_pointer
-				ffioty = type_pointer
-				argadr = voidptr(&arg.str)
 			}
 			else {
-				log.warn('${@LOCATION} not support a${i} ${arg}')
+				log.warn('${@FILE_LINE} not support a${i} ${arg}')
 			}
 		}
 		argctys[i] = fficty
-		argotys[i] = ffioty
-		argvals[i] = argadr
 	}
 
+	for idx in 0..args.len {
+	    argotys[idx] = get_type_obj2(argctys[idx])
+		argvals[idx] = get_anyer_data(args[idx])
+		// log.info("$idx ty ${argctys[idx]}, adr ${argvals[idx]} ${@FILE_LINE}")
+	}
+	
 	///
 	retoty := match typeof[T]().idx {
 		typeof[f64]().idx { type_double }
@@ -335,4 +332,17 @@ pub fn callfca6[T](sym voidptr, args ...Any) T {
 		return *(&T(rv))
 	}
 	return T{}
+}
+
+// V orignal interface struct
+pub struct Itfacein {
+pub mut:
+	ptr voidptr // union with valptrs
+	typ int     // kind or index??? index in current interface, not global
+}
+
+// return ffi data
+pub fn get_anyer_data(arg Anyer) voidptr {
+    ptr := unsafe { &Itfacein(voidptr(&arg)) }
+    return ptr.ptr
 }
