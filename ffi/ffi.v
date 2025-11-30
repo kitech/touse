@@ -147,6 +147,7 @@ pub fn call(cif &Cif, f voidptr, rvalue voidptr, avalues []voidptr) voidptr {
 	return voidptr(rvalue)
 }
 
+$if !macos {
 @[typedef]
 pub struct C.ffi_go_closure {}
 
@@ -165,6 +166,7 @@ pub fn prep_go_closure(clos &Goclos, cif &Cif, fun voidptr) int {
 
 pub fn call_go(cif &Cif, fun voidptr, rvalue voidptr, avalues &voidptr, clos &Goclos) {
 	C.ffi_call_go(cif, fun, rvalue, avalues, clos)
+}
 }
 
 // not exist
