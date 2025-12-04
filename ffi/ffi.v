@@ -327,11 +327,11 @@ pub fn callfca6[T](sym voidptr, args ...Anyer) T {
 	assert stv == ok
 
 	retval := Cif{}
-	assert sizeof(retval) >= 16
+	assert sizeof(retval) >= sizeof(T)
 	rv := call(&cif, sym, &retval, argvals[..args.len])
 	// assert rv == &retval
 	if true {
-		return *(&T(rv))
+		return unsafe { *(&T(rv)) }
 	}
 	return T{}
 }
