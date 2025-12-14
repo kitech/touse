@@ -227,7 +227,7 @@ pub fn call3(f voidptr, atypes []int, avalues []voidptr) u64 {
 }
 
 fn init() {
-    if false {
+    if abs0() {
         callany[int]("")
         callany[f64](voidptr(0))
     }
@@ -330,7 +330,7 @@ pub fn callfca6[T](sym voidptr, args ...Anyer) T {
 	assert sizeof(retval) >= sizeof(T)
 	rv := call(&cif, sym, &retval, argvals[..args.len])
 	// assert rv == &retval
-	if true {
+	if abs1() {
 		return unsafe { *(&T(rv)) }
 	}
 	return T{}
