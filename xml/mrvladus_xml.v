@@ -50,7 +50,32 @@ pub fn (l &XMLList) data[T]() []&T {
     return carr2varr[&T](l.data, int(l.len))
     // return arrays.carray_to_varray[voidptr](l.data, int(l.len))
 }
-pub fn (l &XMLList) add(data voidptr) { C.xml_list_add(l, data) }
+pub fn XMLList.new() &XMLList {
+    return C.xml_list_new()
+}
+pub fn (l &XMLList) add(data voidptr) {
+    assert data != vnil
+    C.xml_list_add(l, data)
+}
+pub fn (l &XMLList) del(idx usize) {
+    c99 {
+        XMLList* list = l;
+        usize oldlen = list->len;
+        void* oldval = list->data[idx];
+        for (int i = idx; i < oldlen; i++) {
+            if (i==0) {}
+            else{list->data[i-1]=list->data[i];}
+        }
+        list->data[oldlen-1] = 0;
+        list->len --;
+    }
+}
+pub fn (l &XMLList) free() {
+    c99 {
+        free(l->data);
+        free(l);
+    }
+}
 
 pub fn parse_string(xml_ string) &XMLNode {
     return C.xml_parse_string(xml_.str)
@@ -77,6 +102,13 @@ pub fn (node &XMLNode) attr(attr_key string) string {
     return C.xml_node_attr(node, attr_key.str).tosdup()
 }
 
+pub fn (node &XMLNode) serialize() string {
+    str := C.xml_string_new()
+    C.xml_node_serialize(node, str)
+    res := str.str.tosdup()
+    C.xml_string_free(str)
+    return res
+}
 
 // Parse XML string and return root XMLNode.
 // Returns NULL for error.
@@ -101,8 +133,30 @@ pub fn C.xml_node_find_tag(node &XMLNode, tag charptr, exact bool) &XMLNode
 // Returns NULL if not found.
 // XML_H_API const char *xml_node_attr(XMLNode *node, const char *attr_key);
 pub fn C.xml_node_attr(node &XMLNode, attr_key charptr) charptr
+// Serialize `XMLNode` into `XMLString`.
+// XML_H_API void xml_node_serialize(XMLNode *node, XMLString *str);
+pub fn C.xml_node_serialize(node &XMLNode, str &XMLString);
 // Cleanup node and all it's children.
 // XML_H_API void xml_node_free(XMLNode *node);
 pub fn C.xml_node_free(node &XMLNode)
 
+pub fn C.xml_list_new() &XMLList
 pub fn C.xml_list_add(l &XMLList, data voidptr)
+
+// XML_H_API XMLString *xml_string_new();
+pub fn C.xml_string_new()  &XMLString
+// Append string to the end of the `XMLString`.
+// XML_H_API void xml_string_append(XMLString *str, const char *append);
+pub fn C.xml_string_append(str &XMLString, append charptr);
+// Free `XMLString`.
+// XML_H_API void xml_string_free(XMLString *str);
+pub fn C.xml_string_free(str &XMLString)
+
+pub type XMLString = C.XMLString
+@[typedef]
+pub struct C.XMLString {
+pub mut:
+    len usize 
+    size usize 
+    str charptr
+}
