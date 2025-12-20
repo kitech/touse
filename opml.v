@@ -58,12 +58,24 @@ pub fn Opml.new(title string) &Opml {
     return op
 }
 pub fn (op &Opml) save(file string) ! {
-    scc := op.dump()
+    scc := op.dump(true)
     os.write_file(file, scc) !
 }
 // todo reformat with indent
-pub fn (op &Opml) dump() string {
-    return xml.header + "\n" + op.root.serialize()
+pub fn (op &Opml) dump(refmt bool) string {
+    res := xml.header + "\n" + op.root.serialize()
+    res = op.reformat(res)
+    return res
+}
+
+fn (op &Opml) reformat(s string) string {
+    res := s
+    res = res.replace('><head>', '>\n  <head>')
+    res = res.replace('><title>', '>\n    <title>')
+    res = res.replace('><body>', '>\n  <body>')
+    res = res.replace('><outline ', '>\n    <outline ')
+    res = res.replace('></body>', '>\n  </body>')
+    return res
 }
 
 pub fn (op &Opml) add(text string, title string, typ string, url string) bool {

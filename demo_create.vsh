@@ -23,7 +23,9 @@ fn create_xmldoc() {
 fn create_opmldoc() {
     op := feedut.Opml.new('demooo')
     op.add('text111', 'title111', 'bookmark111', 'https://111')
-    dump(op.dump())
+    dump(op.dump(true))
+
+    op.save('hehhe.opml') or {vcp.error(err.str())}
 
     assert op.count()==1
     assert op.remove(5) == false
@@ -32,9 +34,9 @@ fn create_opmldoc() {
     
     op.set_title('demo222')
     assert op.title() == 'demo222'
-    dump(op.dump())
+    dump(op.dump(true))
     
-    op.save('hehhe.opml') or {vcp.error(err.str())}
+    // op.save('hehhe.opml') or {vcp.error(err.str())}
 }
 
 create_xmldoc()
