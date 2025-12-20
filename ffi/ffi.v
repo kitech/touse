@@ -234,9 +234,7 @@ fn init() {
 }
 
 pub type Symbol = string | charptr | voidptr | usize
-
-// call in one step, by pass fnptr or fnname, and use native args syntax
-pub fn callany[T](symoradr Symbol, args ...Anyer) T {
+pub fn (symoradr Symbol) resolve() voidptr {
     mut adr := vnil 
     match symoradr {
         string { adr = C.dlsym(C.RTLD_DEFAULT, symoradr.str) }
@@ -244,7 +242,12 @@ pub fn callany[T](symoradr Symbol, args ...Anyer) T {
         voidptr { adr = symoradr }
         usize { adr = voidptr(symoradr) }
     }
-    return callfca6[T](adr, ...args)
+    if adr == vnil {log.warn("adr nil for sym $symoradr")}
+    return adr
+}
+// call in one step, by pass fnptr or fnname, and use native args syntax
+pub fn callany[T](symoradr Symbol, args ...Anyer) T {
+    return callfca6[T](symoradr.resolve(), ...args)
 }
 
 pub fn callfca6[T](sym voidptr, args ...Anyer) T {
@@ -252,65 +255,22 @@ pub fn callfca6[T](sym voidptr, args ...Anyer) T {
 	mut argctys := unsafe { [9]int{} }
 	mut argotys := unsafe { [9]voidptr{} }
 	mut argvals := unsafe { [9]voidptr{} }
+	mut argadrs := unsafe { [9]voidptr{} }
 
 	for i, arg in args {
-		mut fficty := 0
-
-		match arg {
-			f32 {
-				fficty = ctype_float
-			}
-			f64 {
-				fficty = ctype_double
-			}
-			int {
-				fficty = ctype_int
-			}
-			usize {
-				fficty = ctype_pointer
-			}
-			i64 {
-				fficty = ctype_sint64
-			}
-			u64 {
-				fficty = ctype_uint64
-			}
-			u32 {
-				fficty = ctype_sint32
-			}
-			i16 {
-				fficty = ctype_int
-			}
-			i8 {
-				fficty = ctype_int
-			}
-			// C 中没有bool类型，是整数类型，所以对C函数应该可能。
-			// 但是对V的bool并不适用。需要V打开开关-d 4bytebool。
-			bool {
-				fficty = ctype_int
-			}
-			voidptr {
-				fficty = ctype_pointer
-			}
-			charptr {
-				fficty = ctype_pointer
-			}
-			byteptr {
-				fficty = ctype_pointer
-			}
-			string {
-				fficty = ctype_pointer
-			}
-			else {
-				log.warn('${@FILE_LINE} not support a${i} ${arg}')
-			}
-		}
+		mut fficty := ffity_ofany(arg)
 		argctys[i] = fficty
 	}
 
 	for idx in 0..args.len {
 	    argotys[idx] = get_type_obj2(argctys[idx])
-		argvals[idx] = get_anyer_data(args[idx])
+		if args[idx].isptr() {
+	        assert argotys[idx]==type_pointer
+			argadrs[idx] = get_anyer_data(args[idx])
+			argvals[idx] = &argadrs[idx]
+		}else{
+		    argvals[idx] = get_anyer_data(args[idx])
+		}
 		// log.info("$idx ty ${argctys[idx]}, adr ${argvals[idx]} ${@FILE_LINE}")
 	}
 	
@@ -334,6 +294,118 @@ pub fn callfca6[T](sym voidptr, args ...Anyer) T {
 		return unsafe { *(&T(rv)) }
 	}
 	return T{}
+}
+
+// usage: slen := ffi.callfca8('strlen', 0, c'abc')
+// used for manual call, not auto call
+// ar is retval
+pub fn callfca8[R,S,T,U,V,W,X,Y,Z](symoradr Symbol, ar R, as_ S, at_ T, au U, av V, aw W, ax X, ay Y, az Z) R {
+    sym := symoradr.resolve()
+        
+	// const array must unsafe, it's compiler's fault
+	mut argctys := unsafe { [9]int{} }
+	mut argotys := unsafe { [9]voidptr{} }
+	mut argvals := unsafe { [9]voidptr{} }
+	mut cnter := 0
+	
+	argctys[cnter++] = ffity_oftmpl(as_)
+	argctys[cnter++] = ffity_oftmpl(at_)
+	argctys[cnter++] = ffity_oftmpl(au)
+	argctys[cnter++] = ffity_oftmpl(av)
+	argctys[cnter++] = ffity_oftmpl(aw)
+	argctys[cnter++] = ffity_oftmpl(ax)
+	argctys[cnter++] = ffity_oftmpl(ay)
+	argctys[cnter++] = ffity_oftmpl(az)
+
+	cnter = 0
+	argvals[cnter++] = &as_
+	argvals[cnter++] = &at_
+	argvals[cnter++] = &au
+	argvals[cnter++] = &av
+	argvals[cnter++] = &aw
+	argvals[cnter++] = &ax
+	argvals[cnter++] = &ay
+	argvals[cnter++] = &az
+	
+	for idx in 0..argctys.len {
+	    argotys[idx] = get_type_obj2(argctys[idx])
+		// argvals[idx] = get_anyer_data(args[idx])
+		// log.info("$idx ty ${argctys[idx]}, adr ${argvals[idx]} ${@FILE_LINE}")
+	}
+	
+	retoty := get_type_obj2(ffity_oftmpl(ar))
+	
+	///
+	cif := Cif{}
+	stv := prep_cif0(&cif, retoty, argotys[..])
+	assert stv == ok
+
+	retval := Cif{}
+	assert sizeof(retval) >= sizeof(R)
+	rv := call(&cif, sym, &retval, argvals[..])
+	// assert rv == &retval
+	if abs1() {
+		return unsafe { *(&R(rv)) }
+	}
+	return ar
+	// $if ar is $pointer { return ar } $else { return R{} }
+}
+
+pub fn ffity_oftmpl[T](t T) int {
+	$if t is int {  return ctype_int
+	} $else $if t is bool {	    return ctype_int
+	} $else $if t is i8 {	    return ctype_sint8
+	} $else $if t is u32 {	    return ctype_uint32
+	} $else $if t is f32 {      return ctype_float
+	} $else $if t is f64 {	    return ctype_double
+	} $else $if t is usize {	    return ctype_pointer
+	} $else $if t is i64 {	    return ctype_sint64
+	} $else $if t is u64 {	    return ctype_uint64
+	} $else $if t is $pointer {	    return ctype_pointer
+	} $else {
+	    println("${@FILE_LINE}: unknown ${typeof(t).name}")
+	    return -1
+	}
+}
+pub fn ffity_ofany(arg Anyer) int {
+    mut fficty := ctype_int
+  
+	match arg {
+		f32 { fficty = ctype_float }
+		f64 { fficty = ctype_double }
+		int { fficty = ctype_int }
+		usize { fficty = ctype_pointer }
+		i64 { fficty = ctype_sint64 }
+		u64 { fficty = ctype_uint64 }
+		u32 { fficty = ctype_sint32 }
+		i16 { fficty = ctype_int }
+		i8 { fficty = ctype_int }
+		// C 中没有bool类型，是整数类型，所以对C函数应该可能。
+		// 但是对V的bool并不适用。需要V打开开关-d 4bytebool。
+		bool { fficty = ctype_int }
+		voidptr { fficty = ctype_pointer }
+		charptr { fficty = ctype_pointer }
+		byteptr { fficty = ctype_pointer }
+		string { fficty = ctype_pointer }
+		else {
+		    warnit := true
+		    tyname := arg.tyname()
+			if tyname.starts_with('[]') {
+			
+			} else if tyname.starts_with('map[') {
+			
+			} else if tyname.count('.') > 0 { // non builtin struct or ref
+			    if arg.isptr() {
+					warnit=false
+					fficty = ctype_pointer
+				}
+			} else if tyname.count('.') == 0 { // builtin struct or ref
+			
+			}
+			if warnit { log.warn('not support ${arg}, $tyname') }
+		}
+	}
+    return fficty
 }
 
 // V orignal interface struct
