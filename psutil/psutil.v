@@ -27,3 +27,17 @@ pub fn children(pid int, recu bool) []int{
     }
     return res
 }
+
+pub fn cmdline(pid int) string {
+    file := "/proc/$pid/cmdline"
+    return os.read_file(file) or {vcp.error(err.str())}
+}
+pub fn executable(pid int) string {
+    file := "/proc/$pid/exe"
+    return os.real_path(file)
+}
+
+pub fn wkdir(pid int) string {
+    file := "/proc/$pid/cwd"
+    return os.real_path(file)
+}
