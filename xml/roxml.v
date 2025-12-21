@@ -23,35 +23,6 @@ $if prod || prodrc ? {
     #flag -lroxml
 }
 
-// + 400KB
-// #flag -I @DIR/libroxml/src/
-// #flag -DCONFIG_XML_THREAD_SAFE=1
-// #flag -DIGNORE_EMPTY_TEXT_NODES -DCONFIG_XML_CONTENT -DCONFIG_XML_NAV -DCONFIG_XML_BUFF
-
-// #flag @DIR/libroxml/src/roxml_core.c
-// #flag @DIR/libroxml/src/roxml_parser.c
-// #flag @DIR/libroxml/src/roxml_buff.c
-// #flag @DIR/libroxml/src/roxml_nav.c
-// #flag @DIR/libroxml/src/roxml_content.c
-// #flag @DIR/libroxml/src/roxml_mem.c
-// #flag @DIR/libroxml/src/roxml_stub.c
-
-// #flag -DCONFIG_XML_FILE -DCONFIG_XML_EDIT -DCONFIG_XML_COMMIT
-// #flag -DCONFIG_XML_XPATH
-// #flag @DIR/libroxml/src/roxml_file.c
-// #flag @DIR/libroxml/src/roxml_edit.c
-// #flag @DIR/libroxml/src/roxml_commit.c
-// #flag @DIR/libroxml/src/roxml_xpath.c
-
-// #include "roxml_core.h"
-// #include "roxml_buff.h"
-// #include "roxml_internal.h"
-// #include "roxml_mem.h"
-// #include "roxml_parser.h"
-// #include "roxml_tune.h"
-// #include "roxml_defines.h"
-// #include "roxml_types.h"
-// #include "roxml_xpath.h"
 
 #include "roxml.h"
 
@@ -71,8 +42,9 @@ pub fn (node &Node) str() string {
 pub enum NodeType {
     elm = C.ROXML_ELM_NODE
     attr = C.ROXML_ATTR_NODE
-    cmd = C.ROXML_CMT_NODE
+    cmt = C.ROXML_CMT_NODE
     txt = C.ROXML_TXT_NODE
+    ns = C.ROXML_NS_NODE 
 }
 
 pub union Retval {
@@ -81,7 +53,10 @@ pub union Retval {
 }
 
 fn function_missing(fnname string, args ...Anyer) Retval {
-    vcp.info(fnname, args.str())
+    if !fnname.starts_with('roxml_') {
+        vcp.warn('invalid fnname, must prefix roxml_', fnname)
+    }
+    // vcp.info(fnname, args.str())
     return ffi.callany[Retval](fnname, ...args)
 }
 
@@ -127,7 +102,7 @@ pub fn Node.new_root(name string) &Node {
 pub fn (node &Node) del() {
     roxml_del_node(node)
 }
-pub fn (node &Node) attr_del(key string) {
+pub fn (node &Node) del_attr(key string) {
     n := roxml_get_attr(node, charptr(key.str), 0).node
     n.del()
 }
@@ -137,7 +112,6 @@ pub fn (node &Node) chld_nb() int {
     return roxml_get_chld_nb(node).int
 }
 pub fn (node &Node) at(idx int) &Node { return node.chld(idx) }
-pub fn (node &Node) child_at(idx int) &Node { return node.chld(idx) }
 pub fn (node &Node) chld(idx int) &Node {
     return roxml_get_chld(node, vnil, idx).node
 }
