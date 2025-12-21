@@ -38,12 +38,7 @@ pub fn opml_parse(s string) &Opml {
 
 pub fn opml_file(file string) &Opml {
     n := xml.parse_file(file)
-    s := n.serialize()
-    if s.contains('></outline ') {
-        dump(n)
-        dump(n.at(0))
-        vcp.error("parser errored", s)
-    }
+    if n==vnil { return vnil }
     
     assert n.tag() == 'documentRoot'
     assert n.count()==1 // opml child
@@ -87,7 +82,7 @@ pub fn (op &Opml) dump(refmt bool) string {
         res = xml.header + "\n" + res
     } 
     // res = op.reformat(res)
-    vcp.info(res.len, res, res.len)
+    // vcp.info(res.len, res, res.len)
     return res
 }
 
