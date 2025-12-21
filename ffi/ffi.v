@@ -402,7 +402,7 @@ pub fn ffity_ofany(arg Anyer) int {
 			} else if tyname.count('.') == 0 { // builtin struct or ref
 			
 			}
-			if warnit { log.warn('not support ${arg}, $tyname') }
+			if warnit { log.warn('not support ${arg}, $tyname, isptr ${arg.isptr()}') }
 		}
 	}
     return fficty

@@ -1,5 +1,7 @@
 module xml
 
+import vcp
+
 fn test_1() {}
 
 fn test_invalid_str() {
