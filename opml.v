@@ -1,6 +1,7 @@
 module feedut
 
 import os
+import time
 import vcp
 import touse.xml
 
@@ -17,10 +18,14 @@ pub struct OpmlKeyword {
     title string = 'title'
     type string = 'type'
     url string = 'xmlUrl'
+    
+    // extended
+    ctime string
 }
 
 pub struct Opml {
 pub mut:
+    doc &xml.Node = vnil
     root &xml.Node = vnil
     head &xml.Node = vnil
     body &xml.Node = vnil
@@ -33,28 +38,41 @@ pub fn opml_parse(s string) &Opml {
 
 pub fn opml_file(file string) &Opml {
     n := xml.parse_file(file)
-    assert n.tag() == 'opml'
-    assert n.children.len==2
-    assert n.child_at(0).tag() == 'head'
-    assert n.child_at(1).tag() == 'body'
+    s := n.serialize()
+    if s.contains('></outline ') {
+        dump(n)
+        dump(n.at(0))
+        vcp.error("parser errored", s)
+    }
+    
+    assert n.tag() == 'documentRoot'
+    assert n.count()==1 // opml child
 
     op := &Opml{}
-    op.root = n
-    op.head = n.child_at(0)
-    op.body = n.child_at(1)
+    op.doc = n
+    op.root = n.at(0)
+    op.head = op.root.at(0)
+    op.body = op.root.at(1)
+    
+        assert op.root.tag() == 'opml'
+        assert op.root.count()>0
+        assert op.root.at(0).tag() == 'head'
+        assert op.root.at(1).tag() == 'body'
+        
+    
     return op
 }
 
 pub fn Opml.new(title string) &Opml {
     op := &Opml{}
-    op.root = xml.Node.new(vnil, 'opml', '')
-    op.root.attrs.add(xml.Attr.new('version', "1.0"))
+    // op.doc = xml.Node.new(vnil, '', '')
+    op.root = xml.Node.new_root('opml')
+    op.root.add_attr('version', "1.0")
     
-    op.head = xml.Node.new(op.root, 'head', '')
-    xml.Node.new(op.head, 'title', title)
+    op.head = op.root.add_elem('head')
+    op.head.add_elem('title')
     
-    op.body = xml.Node.new(op.root, 'body', '')
-    
+    op.body = op.root.add_elem('body')
     return op
 }
 pub fn (op &Opml) save(file string) ! {
@@ -63,48 +81,57 @@ pub fn (op &Opml) save(file string) ! {
 }
 // todo reformat with indent
 pub fn (op &Opml) dump(refmt bool) string {
-    res := xml.header + "\n" + op.root.serialize()
-    res = op.reformat(res)
+    n := if op.doc==vnil{op.root} else {op.doc}
+    res := n.serialize()
+    if !res.starts_with(xml.header) {
+        res = xml.header + "\n" + res
+    } 
+    // res = op.reformat(res)
+    vcp.info(res.len, res, res.len)
     return res
 }
 
 fn (op &Opml) reformat(s string) string {
     res := s
     res = res.replace('><head>', '>\n  <head>')
+    res = res.replace('></head>', '>\n  </head>')
     res = res.replace('><title>', '>\n    <title>')
     res = res.replace('><body>', '>\n  <body>')
     res = res.replace('><outline ', '>\n    <outline ')
     res = res.replace('></body>', '>\n  </body>')
+    res = res.replace('></opml>', '>\n</opml>')
     return res
 }
 
 pub fn (op &Opml) add(text string, title string, typ string, url string) bool {
-    n := xml.Node.new(op.body, 'outline', '')
+    n := op.body.add_elem('outline')
 
     n.add_attr('text', text)
     n.add_attr('title', title)
     n.add_attr('type', typ)
     n.add_attr('xmlUrl', url)
+    
+    n.add_attr('ctime', time.now().str())
 
     return true
 }
 
 pub fn (op &Opml) remove(idx int) bool {
     if idx >= 0 && idx < op.count() {
-        op.body.children.del(idx.usize())
+        op.body.at(idx).del()
         return true
     }
     return false
 }
 
 pub fn (op &Opml) count() int {
-    return op.body.children.len.int()
+    return op.body.count()
 }
 
 pub fn (op &Opml) find_byurl(url string) int {
     count := op.count()
     for i in 0..count {
-        n := op.body.child_at(i)
+        n := op.body.at(i)
         u := n.attr('xmlUrl')
         if u == url {
             return i
@@ -117,7 +144,7 @@ pub fn (op &Opml) search(keyword string) []int {
     res := []int{}
     count := op.count()
     for i in 0..count {
-        n := op.body.child_at(i)
+        n := op.body.at(i)
         text := n.attr('text')
         title := n.attr('title')
         if text.contains(keyword) || title.contains(keyword) {
@@ -129,9 +156,9 @@ pub fn (op &Opml) search(keyword string) []int {
 }
 
 pub fn (op &Opml) set_title(title string) {
-    xml.Node.new(op.head, 'title', title)
-    op.head.children.del(0)
+    op.head.add_elem('title').add_text(title)
+    op.head.at(0).del()
 }
 pub fn (op &Opml) title() string {
-    return op.head.child_at(0).text()
+    return op.head.at(0).content()
 }
