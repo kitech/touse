@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<items>
+  <item>
+    <name title="日本語">日本語</name>
+    <description>これはテストです</description>
+  </item>
+  <item>
+    <name text="中文">中文</name>
+    <description>这是一个测试</description>
+  </item>
+</items>

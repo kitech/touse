@@ -3,7 +3,7 @@ module xml
 import vcp
 
 fn test_roxml_build() {
-    n := roxml_file('xpibm.opml')
+    n := roxml_file('cjk.xml')
     defer {n.close()}
     dump(n.str())
     dump(n.chld_nb())
