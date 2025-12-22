@@ -64,21 +64,13 @@ pub const (
     ok = C.FSW_OK
 )
 
-// typedef struct fsw_cevent
-//  {
-//    char * path;
-//    time_t evt_time;
-//    enum fsw_event_flag * flags;
-//    unsigned int flags_num;
-//  } fsw_cevent;
-
 @[typedef]
 pub struct C.fsw_cevent {
     pub mut:
     path charptr
     // evt_time C.time_t
     evt_time usize
-    flags &u32 = vnil
+    flags &Flag = vnil
     flags_num int
 }
 
@@ -87,24 +79,45 @@ pub type CEvent = C.fsw_cevent
 
 pub struct Event {
     pub:
-    path string
+    orig string
+    name string
+    mask Flag
     flags []Flag
-    ctime time.Time    
+    // ctime time.Time
 }
 
-fn c2v_event(evt &CEvent) &Event {
+fn c2v_event(evt &CEvent, wtdirs []string) &Event {
     res := &Event{}
-    res.path = evt.path.tosdup()
-    res.ctime = time.unix(i64(evt.evt_time))
-    res.flags = carr2varr[Flag](evt.flags, evt.flags_num)
+    path := evt.path.tosdup()
+    for wtdir in wtdirs {
+        if path.starts_with(wtdir) {
+            res.orig = wtdir
+            res.name = path[wtdir.len+1..]
+            break
+        }
+    }
+    assert res.orig != ""
+    assert res.name != ""
+        
+    if evt.flags_num > 1 {
+        res.flags = carr2varr[Flag](evt.flags, evt.flags_num)
+    }
+    res.mask = evt.flags[0]
+
+    ctime := time.unix(i64(evt.evt_time))
+    if time.since(ctime) > 5*time.second {
+        vcp.warn("solong???", ctime)
+        //     res.ctime = ctime
+    }
     return res
 }
 
 type CEventCallback4c = fn(&CEvent, int, voidptr)
-pub type CEventCallback = fn([]Event, voidptr)
+pub type CEventCallback = fn(Event, voidptr)
 
 struct Globvars {
     pub mut:
+    watch_dirs map[string]int
     callbacks map[Handle][]Tuple3[Handle,voidptr,voidptr] // => (Handle, cbdata, cbfn)
 }
 const gvs = &Globvars{}
@@ -112,16 +125,18 @@ const gvs = &Globvars{}
 // evts is a array of len evnum!!!
 fn on_cevent_callback(evts &CEvent, evnum int, data voidptr) {
     // vcp.info('evnum', evnum, data)
-    
+    wtdirs := gvs.watch_dirs.keys()
     arr1 := carr2varr[CEvent](evts, evnum)
     arr2 := []Event{}
-    for e in arr1 { arr2 << c2v_event(e) }
+    for e in arr1 { arr2 << c2v_event(e, wtdirs) }
     
     h := Handle(data)
     lst := gvs.callbacks[h]
     for t in lst {
         f := CEventCallback(t.third)
-        f(arr2, t.second)
+        for ev in arr2 {
+            f(ev, t.second)
+        }
     }
 }
 
@@ -138,6 +153,7 @@ fn (h Handle) set_callback() int {
 pub fn (h Handle) add_path(path string) int {
     // path4c := path.str
     c99 { int rv = fsw_add_path(h, path.str); }
+    gvs.watch_dirs[path] = C.rv
     return C.rv
 }
 pub fn (h Handle) add_property(name string, value string) int {
@@ -147,15 +163,16 @@ pub fn (h Handle) add_property(name string, value string) int {
 }
 
 pub fn (h Handle) start_monitor() int {
-    // path4c := path.str
     c99 { int rv = fsw_start_monitor(h); }
     return C.rv
 }
-
 pub fn (h Handle) stop_monitor() int {
-    // path4c := path.str
     c99 { int rv = fsw_stop_monitor(h); }
     return C.rv
+}
+pub fn (h Handle) is_running() bool {
+    c99 { int rv = fsw_is_running(h); }
+    return C.rv != 0
 }
 
 pub fn (h Handle) destroy() int {
@@ -172,4 +189,21 @@ pub fn last_error() int {
 pub fn flag_name(flag Flag) string {
     c99 { char* name = fsw_get_event_flag_name(flag); }
     return charptr(C.name).tosref()
+}
+
+pub fn (h Handle) set_follow_symlinks(v bool) int {
+    c99 { int rv = fsw_set_follow_symlinks(h, bv); }
+    return C.rv
+}
+pub fn (h Handle) set_recursive(v bool) int {
+    c99 { int rv = fsw_set_recursive(h, v); }
+    return C.rv
+}
+pub fn (h Handle) set_directory_only(bv bool) int {
+    c99 { int rv = fsw_set_directory_only(h, bv); }
+    return C.rv
+}
+pub fn (h Handle) set_latency(v f64) int {
+    c99 { int rv = fsw_set_latency(h, v); }
+    return C.rv
 }

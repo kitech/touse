@@ -63,6 +63,8 @@ fn function_missing(fnname string, args ...Anyer) Retval {
 
 pub fn parse_file(file string) &Node { return roxml_file(file) }
 
+// seems toxml not support parse CJK attr value!!!
+// but support save CJK xml
 pub fn roxml_file(file string) &Node {
     scc := os.read_file(file) or {panic(err)}
     return roxml_load_buf(charptr(scc.str)).node
