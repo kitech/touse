@@ -8,6 +8,8 @@ import touse.ffi
 
 // libroxml-3.0.2-76e6f42
 // cmake ../ -DCMAKE_INSTALL_PREFIX:PATH=/opt/devsys -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -DBUILD_TESTING=off
+// on macos sed 's/ ROXML_PARSE //g'
+// mach-o section specifier requires a segment and section separated by a comma
 
 $if prod || prodrc ? {
     // this module use function_missing feat, cannot static link

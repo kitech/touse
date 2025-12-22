@@ -21,8 +21,8 @@ fn test_simstr() {
     node := parse_document('<123foo/>')
     defer {node.free()}
     assert node!=vnil
-    dump(node.root().children())
-    dump(node.root().attributes())
+    dump(node.root().count())
+    dump(node.root().attr_count())
     dump(node.root().name())
     // dump(node.attrs)
     // dump(node.children.data[voidptr]())
