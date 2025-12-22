@@ -36,7 +36,69 @@ pub fn opml_parse(s string) &Opml {
     return Opml.new('')
 }
 
+// if no all method works, only can use json
+
 pub fn opml_file(file string) &Opml {
+    return opml_file_xmlc_to_roxml(file)
+    // return opml_file_nocjk_attr_value(file)
+}
+
+// since roxml parse CJK crash,
+// use xmlc parse and copy to roxml
+// !!! but xmlc cannot parse attr/content value with white space
+pub fn opml_file_xmlc_to_roxml(file string) &Opml {
+    scc := os.read_file(file) or {panic(err)}
+    if scc.starts_with(xml.header) {
+        scc = scc[xml.header.len..] // xmlc cannot parse xml header line
+    }
+
+    doc := xml.parse_document(scc)
+    if doc==vnil { panic('parse failed') }
+    defer { doc.free() }
+
+    droot := doc.root()
+    headnode := droot.at(0)
+    bodynode := droot.at(1)
+    // opml, head, body
+    // vcp.info(droot.name(), headnode.name(), bodynode.name())
+    assert droot.name() == 'opml'
+    assert headnode.name() == 'head'
+    assert bodynode.name() == 'body'
+        
+    titlenode := headnode.at(0)
+    titlecc := titlenode.content()
+    // vcp.info('title', titlecc)
+    
+    op := Opml.new(titlecc)
+    
+    for idx in 0..bodynode.count() {
+        nn := bodynode.at(idx)
+        text, title, typ, url, ctime := '', '', '', '', ''
+
+        for j in 0..nn.attr_count() {
+            aname := nn.attr_name(j)
+            avalue := nn.attr_value(j)
+            // vcp.info(idx.str(), j.str(), aname, avalue)
+            
+            match aname {
+                'text' { text = avalue }
+                'title' { title = avalue }
+                'type' { typ = avalue }
+                'xmlUrl' { url = avalue }
+                'ctime' { ctime = avalue }
+                else {}
+            }
+        }
+        
+        // vcp.info('adding', idx.str(), text, title, typ, url, ctime)
+        op.add(text, title, typ, url)
+    }
+
+    return op
+}
+
+// wait and cannot use, until roxml support cjk...
+pub fn opml_file_nocjk_attr_value(file string) &Opml {
     n := xml.parse_file(file)
     if n==vnil { return vnil }
     
@@ -100,13 +162,15 @@ fn (op &Opml) reformat(s string) string {
 
 pub fn (op &Opml) add(text string, title string, typ string, url string) bool {
     n := op.body.add_elem('outline')
-
-    n.add_attr('text', text)
-    n.add_attr('title', title)
-    n.add_attr('type', typ)
-    n.add_attr('xmlUrl', url)
     
-    n.add_attr('ctime', time.now().str())
+    strfix := fn (s string) string { return s.replace(' ', '+') }
+
+    n.add_attr('text', strfix(text))
+    n.add_attr('title', strfix(title))
+    n.add_attr('type', strfix(typ))
+    n.add_attr('xmlUrl', strfix(url))
+    
+    n.add_attr('ctime', strfix(time.now().str()))
 
     return true
 }

@@ -3,19 +3,12 @@ import touse.xml
 import mkuse.feedut
 
 fn create_xmldoc() {
-    o := xml.parse_string("<bookmark>hhh</bookmark>")
+    // <?xml version="1.0" encoding="UTF-8"?>
+    o := xml.parse_document('<items><item><name title="日本語">日本語</name><description>これはテストです</description></item><item><name text="中文">中文</name><description>这是一个测试</description></item></items>')
     dump(o)
-    // o2 := xml.parse_string('<outline text="" title="" type="rss" xmlUrl="></outline>')
-    // dump(o2)
-    // dump(o2.child_at(0).attrs)
-    // o.children.add(o2.child_at(0))
     
-    n3 := xml.Node.new(o, "outline", "hehhee")
-    n3.attrs.add(xml.Attr.new("text", "itt中ext"))
-    n3.attrs.add(xml.Attr.new("type", "rss"))
-    n3.attrs.add(xml.Attr.new("xmlUrl", "https://ccc"))
-    s := o.serialize()
-    dump(s)
+    root := o.root()
+    dump(root.name())
     
     o.free()
 }
@@ -38,6 +31,11 @@ fn create_opmldoc() {
     
     // op.save('hehhe.opml') or {vcp.error(err.str())}
 }
+fn parse_cjkxml() {
+    o := feedut.opml_file('../xpimerge/xpibmrss.opml')
+    assert o!= vnil
+}
 
 create_xmldoc()
 create_opmldoc()
+parse_cjkxml()
