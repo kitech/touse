@@ -15,8 +15,8 @@ ffi_type* ffi_get_type_obj(int ty) {
     case FFI_TYPE_DOUBLE:
         tyobj = & ffi_type_double;
         break;
-    case FFI_TYPE_LONGDOUBLE:
-        break;
+    // case FFI_TYPE_LONGDOUBLE:
+    //     break;
         //    case FFI_TYPE_LONGDOUBLE FFI_TYPE_DOUBLE:
         // break:
     case FFI_TYPE_UINT8:

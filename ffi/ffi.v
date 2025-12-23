@@ -5,16 +5,17 @@ import log
 // error: Cannot find "libffi" pkgconfig file
 // #pkgconfig linux libffi
 #flag -DFFI_GO_CLOSURES=1
-#flag linux -lffi
+#flag -lffi
 // #flag darwin  -lffi-trampolines //
 #flag -I@DIR/
 #flag @DIR/ffiv.o
 #flag darwin -I/Library/Developer/CommandLineTools/SDKs/MacOSX11.sdk/usr/include/ffi
-$if macos {
-#flag darwin -lffi -L @DIR/../../.nix-profile/lib/
-} $else {
-#flag -lffi -Wl,-rpath=@DIR/../../.nix-profile/lib/
-}
+// for github CI
+#flag darwin -L $env('HOME')/vcpkg/installed/arm64-osx/lib
+#flag darwin -I $env('HOME')/vcpkg/installed/arm64-osx/include
+#flag -L $env('HOME')/.nix-profile/lib -Wl,-rpath,$env('HOME')/.nix-profile/lib
+#flag -I $env('HOME')/.nix-profile/include
+
 // #include "@DIR/ffiv.h"
 #include <ffi.h>
 
