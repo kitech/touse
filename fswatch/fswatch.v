@@ -5,6 +5,16 @@ import time
 import vcp
 import vcp.venv
 
+// fswatch-1.18.3
+// patch, inotify_monitor.cpp:236, add flow line
+/*
+    if (event->mask & IN_MOVED_TO) flags.push_back(fsw_event_flag::MovedTo);
+	if (event->mask & IN_MOVED_FROM) flags.push_back(fsw_event_flag::MovedFrom);
+	
+	if ((event->mask & IN_MOVED_TO) || (event->mask & IN_MOVED_FROM)) {
+		impl->events.clear();
+	} */
+
 // #pkgconfig libfswatch
 #flag -lfswatch
 #flag -I /opt/devsys/include/libfswatch/c/
@@ -92,12 +102,12 @@ fn c2v_event(evt &CEvent, wtdirs []string) &Event {
     for wtdir in wtdirs {
         if path.starts_with(wtdir) {
             res.orig = wtdir
-            res.name = path[wtdir.len+1..]
+            res.name = if path==wtdir {""} else { path[wtdir.len+1..] }
             break
         }
     }
     assert res.orig != ""
-    assert res.name != ""
+    // assert res.name != ""
         
     if evt.flags_num > 1 {
         res.flags = carr2varr[Flag](evt.flags, evt.flags_num)
@@ -109,6 +119,7 @@ fn c2v_event(evt &CEvent, wtdirs []string) &Event {
         vcp.warn("solong???", ctime)
         //     res.ctime = ctime
     }
+    // if res.name == "" {vcp.warn(evt.str(), res.str())}
     return res
 }
 
