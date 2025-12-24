@@ -111,7 +111,7 @@ pub fn (nty mut Gnotify) replace(summary string, body string, icon string, timeo
 }
 
 fn (nty mut Gnotify) clear_expires() {
-	if false {
+	if abs0_ {
 		nty.timeoutms = nty.timeoutms
 	}
 	n := nty.nters.len
@@ -138,5 +138,3 @@ fn (nty mut Gnotify) clear_expires() {
 		news.free()
 	}
 }
-
-

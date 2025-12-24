@@ -1,11 +1,18 @@
 module libnotify
 
 import time
-// import mkuse.vpp.xlog
 import vcp
+import vcp.venv
 
-#flag -lnotify
-#flag -I/usr/include/glib-2.0 -I/usr/lib/glib-2.0/include -I/usr/include/gdk-pixbuf-2.0
+// PKG_CONFIG_PATH=path1:path2:...
+$if $pkgconfig('libnotify') {
+    #pkgconfig --cflags --libs libnotify
+}$else{
+    #flag -I /nix/store/sw8ym0cz8wbw4z89wk5xfgvqjxrgi4hy-libnotify-0.8.7-dev/include
+}
+
+
+// #flag -lnotify
 #include "libnotify/notify.h"
 #include "libnotify/notification.h"
 
@@ -123,7 +130,7 @@ pub fn (nty mut Notify) replace(summary string, body string, icon string, timeou
 }
 
 fn (nty mut Notify) clear_expires() {
-	if false {
+	if abs0_ {
 		nty.timeoutms = nty.timeoutms
 	}
 	n := nty.nters.len
