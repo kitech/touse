@@ -40,10 +40,10 @@ $if windows {
 const argv4c = [9]charptr{}
 
 fn C.main_aslib(...voidptr) int
-pub fn main_demo() {
-    for i, arg in os.args {
+pub fn main_demo(args ... string) {
+    for i, arg in args {
         if i >= 9 { break }
         argv4c[i] = arg.str
     }
-	C.main_aslib(os.args.len, &argv4c[0])
+	C.main_aslib(args.len, &argv4c[0])
 }

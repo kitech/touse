@@ -34,7 +34,7 @@ static GtkMenuShell *_tray_menu(struct tray_menu_item *m) {
   GtkMenuShell *menu = (GtkMenuShell *)gtk_menu_new();
   for (; m != NULL && m->text != NULL; m++) {
     GtkWidget *item;
-    printf("create menu item %s %s ...\n", m->text, currentTrayStruct->icon_filepath);
+    // printf("create menu item %s %s ...\n", m->text, currentTrayStruct->icon_filepath);
     if (strcmp(m->text, "-") == 0) {
       item = gtk_separator_menu_item_new();
     } else {
