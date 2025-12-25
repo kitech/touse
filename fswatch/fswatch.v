@@ -203,15 +203,15 @@ pub fn flag_name(flag Flag) string {
 }
 
 pub fn (h Handle) set_follow_symlinks(v bool) int {
-    c99 { int rv = fsw_set_follow_symlinks(h, bv); }
+    c99 { int rv = fsw_set_follow_symlinks(h, v); }
     return C.rv
 }
 pub fn (h Handle) set_recursive(v bool) int {
     c99 { int rv = fsw_set_recursive(h, v); }
     return C.rv
 }
-pub fn (h Handle) set_directory_only(bv bool) int {
-    c99 { int rv = fsw_set_directory_only(h, bv); }
+pub fn (h Handle) set_directory_only(v bool) int {
+    c99 { int rv = fsw_set_directory_only(h, v); }
     return C.rv
 }
 pub fn (h Handle) set_latency(v f64) int {

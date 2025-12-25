@@ -65,6 +65,7 @@ void submenu_cb(struct tray_menu_item *item) {
 
 // Test tray init
 struct tray tray = {
+    // absolute path works
     .icon_filepath = TRAY_ICON1,
     .tooltip = "Tray",
     .cb = window_cb,
@@ -101,15 +102,29 @@ struct tray tray = {
             {.text = NULL}},
 };
 
+///
+// argv[1] icon path
+#ifdef PFTRAY_INLIB
+int main_aslib(int argc, char **argv) {
+#else
 int main(int argc, char **argv) {
-  if (tray_init(&tray) < 0) {
+#endif
+    if (argc>1) tray.icon_filepath = argv[1];
+    if (tray_init(&tray) < 0) {
     printf("failed to create tray\n");
     return 1;
   }
   int blocking = 0;
+  int cnter = 9;
+  char buf[99] = {0};
   while (tray_loop(blocking) == 0) {
     if (!blocking) usleep(100000);
-    printf("iteration\n");
+
+    memset(buf, '\b', strlen(buf)); printf(buf);
+    memset(buf, 0, sizeof(buf)-1);
+    snprintf(buf, sizeof(buf)-1, "iteration %d", cnter++);
+    printf(buf); fflush(stdout);
+    // printf("iteration\n");
   }
   return 0;
 }
