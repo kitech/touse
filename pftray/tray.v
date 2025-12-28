@@ -40,6 +40,7 @@ $if windows {
 const argv4c = [9]charptr{}
 
 fn C.main_aslib(...voidptr) int
+// must run on main thread on macos
 pub fn main_demo(args ... string) {
     for i, arg in args {
         if i >= 9 { break }

@@ -12,10 +12,9 @@ $if $pkgconfig('libnotify') {
     #flag -I /nix/store/zfisjzkl8qcznwyaql80dfgkjazfsndr-glib-2.86.1-dev/include/glib-2.0/
     #flag -I /nix/store/qdhb5960ii9q94nhgx0pgds55n53czpy-glib-2.86.1/lib/glib-2.0/include/
     #flag -I /nix/store/qhw6kisvywifg06ss32hxqk308kqq5m7-gdk-pixbuf-2.44.3-dev/include/gdk-pixbuf-2.0/    
+    #flag -lnotify
 }
 
-
-// #flag -lnotify
 #include "libnotify/notify.h"
 #include "libnotify/notification.h"
 
