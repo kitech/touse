@@ -19,7 +19,7 @@ $if windows {
         #flag @DIR/tray_linux.o
     } $else $if withgtk3 ? {
         // #pkgconfig gtk+-3.0
-        #flag -layatana-appindicator3
+        #flag -layatana-appindicator3 -lgtk-3
         #flag -I /usr/include/libayatana-appindicator3-0.1/
         // TODO libayatana-appindicator
         #flag @DIR/tray_linux_gtk3.o
@@ -27,7 +27,8 @@ $if windows {
         // #flag @DIR/systray_linux.o
     } $else $if withgtk3_appindicator3 ? {
         // on my system, appindicator3 depend gtk3
-        #pkgconfig appindicator3-0.1
+        // #pkgconfig appindicator3-0.1
+        #flag -lappindicator3 -lgtk-3
         // TODO
     } $else $if withgtk2_appindicator3 ? {
         #pkgconfig appindicator3-0.1
@@ -35,8 +36,8 @@ $if windows {
     } $else {
         // appindicator1 for gtk2
         // #pkgconfig gtk+-2.0
-        #pkgconfig appindicator-0.1
-        // #flag -lappindicator
+        // #pkgconfig appindicator-0.1
+        #flag -lappindicator -lgtk-x11-2.0
         #flag @DIR/tray_linux_gtk2.o
     }
 }
@@ -79,6 +80,7 @@ fn C.tray_init(&Tray)
 fn C.tray_loop(blocking int) int
 fn C.tray_update(&Tray)
 fn C.tray_exit()
+fn C.tray_get_instance() &Tray
 
 pub fn (t &Tray) init() { C.tray_init(t) }
 pub fn (t &Tray) loop(blocking bool) bool {
@@ -86,6 +88,17 @@ pub fn (t &Tray) loop(blocking bool) bool {
 }
 pub fn (t &Tray) update() { C.tray_update(t) }
 pub fn (t &Tray) exit() { C.tray_exit() }
+
+pub fn (t &Tray) set_icon(iconpath string) {
+    t.icon_filepath = iconpath.str
+}
+pub fn (t &Tray) set_tooltip(tip string) {
+    t.tooltip = tip.str
+}
+pub fn get_instance() &Tray { return C.tray_get_instance() }
+
+@[unsafe]
+pub fn get_demo_tray() &Tray
 
 // usage: t := &Tray{...}
 // t.init()

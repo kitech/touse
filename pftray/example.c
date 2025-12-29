@@ -102,6 +102,8 @@ struct tray tray = {
             {.text = NULL}},
 };
 
+struct tray* touse__pftray__get_demo_tray() { return &tray; }
+
 ///
 // argv[1] icon path
 #ifdef PFTRAY_INLIB
