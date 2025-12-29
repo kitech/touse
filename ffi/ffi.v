@@ -287,9 +287,10 @@ pub fn callfca6[T](sym voidptr, args ...Anyer) T {
 	stv := prep_cif0(&cif, retoty, argotys[..args.len])
 	assert stv == ok
 
-	retval := Cif{}
+	struct DerefMem {data0 [2]Cif} // max 32, or return value invalid
+	retval := DerefMem {}
 	assert sizeof(retval) >= sizeof(T)
-	rv := call(&cif, sym, &retval, argvals[..args.len])
+	rv := call(&cif, sym, retval, argvals[..args.len])
 	// assert rv == &retval
 	if abs1() {
 		return unsafe { *(&T(rv)) }

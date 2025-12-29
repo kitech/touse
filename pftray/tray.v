@@ -18,16 +18,23 @@ $if windows {
     $if withqt6 ? {
         #flag @DIR/tray_linux.o
     } $else $if withgtk3 ? {
-        #pkgconfig gtk+-3.0
+        // #pkgconfig gtk+-3.0
         #flag -layatana-appindicator3
         #flag -I /usr/include/libayatana-appindicator3-0.1/
         // TODO libayatana-appindicator
         #flag @DIR/tray_linux_gtk3.o
         // TODO from getlantern/systray, go version
         // #flag @DIR/systray_linux.o
+    } $else $if withgtk3_appindicator3 ? {
+        // on my system, appindicator3 depend gtk3
+        #pkgconfig appindicator3-0.1
+        // TODO
+    } $else $if withgtk2_appindicator3 ? {
+        #pkgconfig appindicator3-0.1
+        // TODO
     } $else {
-        // appindicator for gtk2
-        #pkgconfig gtk+-2.0
+        // appindicator1 for gtk2
+        // #pkgconfig gtk+-2.0
         #pkgconfig appindicator-0.1
         // #flag -lappindicator
         #flag @DIR/tray_linux_gtk2.o
@@ -36,7 +43,56 @@ $if windows {
 
 #flag -DPFTRAY_INLIB -I@DIR/
 #flag @DIR/example.o
+#include "tray.h"
 
+////////////
+
+pub type Tray = C.tray
+pub struct C.tray {
+    pub mut:
+    icon_filepath charptr
+    tooltip charptr
+    cb  fn(Tray) = nil
+    menu &Item = nil // C array of Item, last item must zeroed
+}
+
+pub type Item = C.tray_menu_item
+pub struct C.tray_menu_item {
+    text charptr = nil
+    disabled int
+    checked  int
+    cb  fn(&Item) = nil
+    submenu  &Item = nil // C array of Item, last item must zeroed
+}
+
+// example Tray instance in V
+// see example.c
+const tray = &Tray {
+    icon_filepath: c'icon2.png', tooltip: c'Pftray',
+    cb: nil,
+    menu: [Item{}, Item{}].data
+    // menu: menu.data // if created other place
+}
+const menu = [Item{}, Item{}]
+
+fn C.tray_init(&Tray)
+fn C.tray_loop(blocking int) int
+fn C.tray_update(&Tray)
+fn C.tray_exit()
+
+pub fn (t &Tray) init() { C.tray_init(t) }
+pub fn (t &Tray) loop(blocking bool) bool {
+    return C.tray_loop(blocking.toc()) == 0
+}
+pub fn (t &Tray) update() { C.tray_update(t) }
+pub fn (t &Tray) exit() { C.tray_exit() }
+
+// usage: t := &Tray{...}
+// t.init()
+// for t.loop(false) { time.sleep(100*time.millisecond) }
+// or in other loop, call with timer 100ms, t.loop(false)
+
+////////////
 const argv4c = [9]charptr{}
 
 fn C.main_aslib(...voidptr) int
