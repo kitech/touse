@@ -1,7 +1,6 @@
 module xml
 
-#flag -I@DIR/
-#include "xmlc.h"
+#include "@DIR/xmlc.h"
 #flag @DIR/xmlc.o
 
 pub type Doc = C.xml_document

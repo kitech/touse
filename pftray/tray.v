@@ -27,24 +27,27 @@ $if windows {
         // #flag @DIR/systray_linux.o
     } $else $if withgtk3_appindicator3 ? {
         // on my system, appindicator3 depend gtk3
-        // #pkgconfig appindicator3-0.1
+        #pkgconfig --cflags gtk-3
+        #pkgconfig --cflags appindicator3-0.1
         #flag -lappindicator3 -lgtk-3
         // TODO
     } $else $if withgtk2_appindicator3 ? {
-        #pkgconfig appindicator3-0.1
+        #pkgconfig --cflags gtk+-2.0
+        #pkgconfig --cflags appindicator3-0.1
+        #flag -lappindicator3 -lgtk-x11-2.0
         // TODO
     } $else {
         // appindicator1 for gtk2
-        // #pkgconfig gtk+-2.0
-        // #pkgconfig appindicator-0.1
+        #pkgconfig --cflags gtk+-2.0
+        #pkgconfig --cflags appindicator-0.1
         #flag -lappindicator -lgtk-x11-2.0
         #flag @DIR/tray_linux_gtk2.o
     }
 }
 
-#flag -DPFTRAY_INLIB -I@DIR/
+#flag -DPFTRAY_MAIN_ASLIB -DVCPMODPFX=touse__pftray
 #flag @DIR/example.o
-#include "tray.h"
+#include "@DIR/tray.h"
 
 ////////////
 

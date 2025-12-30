@@ -7,7 +7,7 @@ import log
 #flag -DFFI_GO_CLOSURES=1
 #flag -lffi
 // #flag darwin  -lffi-trampolines //
-#flag -I@DIR/
+
 #flag @DIR/ffiv.o
 #flag darwin -I/Library/Developer/CommandLineTools/SDKs/MacOSX11.sdk/usr/include/ffi
 // for github CI

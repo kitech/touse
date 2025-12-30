@@ -4,8 +4,7 @@ import vcp.venv
 
 
 #flag -lreproc
-#flag -I @DIR/
-#include "reproc_p.h"
+#include "@DIR/reproc_p.h"
 
 
 $if windows {

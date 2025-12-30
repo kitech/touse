@@ -103,10 +103,12 @@ struct tray tray = {
 };
 
 struct tray* touse__pftray__get_demo_tray() { return &tray; }
+// #include "../../vcp/ns.h"
+// struct tray* VNS(get_demo_tray_p1)() { return &tray; }
 
-///
+////
 // argv[1] icon path
-#ifdef PFTRAY_INLIB
+#ifdef PFTRAY_MAIN_ASLIB
 int main_aslib(int argc, char **argv) {
 #else
 int main(int argc, char **argv) {
