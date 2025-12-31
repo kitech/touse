@@ -26,8 +26,8 @@ fn demo_ffi_util() {
     assert(slen==3)
 }
     
-recut.init_()
-    
+
+fn demo_mset() {
     set := recut.new()
     vcp.info(set)
     assert set!=vnil
@@ -48,6 +48,40 @@ recut.init_()
     
     set.destroy()
     
-    // recut.fini()
+    // recut.fini()    
+}
 
-    demo_ffi_util()
+fn demo_db() ! {
+    db := recut.DB.new()
+    db.int_check() !
+    db.insert('Zero', 0) !
+
+    rec := recut.Record.new()
+    rec.set_source('cmdli')
+    rec.set_location(0)
+    fld := recut.Field.new('Foo', 'bar')
+    rec.mset().append(recut.Type(1), fld.vptr())
+    
+    dump(rec.source())
+    dump(rec.num_fields())
+    dump(rec.location_str())
+
+    db.int_check() !
+    db.insert('Note', rec) !
+    db.int_check() !
+
+    wrs := recut.Writer.new()
+    // wrs.write_str() !
+    // wrs.write_field(fld) !
+    // println("ff")
+    // wrs.write_record(rec) !
+    println("======== db dump...")
+    wrs.write_db(db) !
+    println("======== db dump done")
+    // dump(recut.wrbuf.tosdup())
+}
+
+recut.init_()
+demo_ffi_util()
+demo_mset()
+demo_db() or { panic(err) }
