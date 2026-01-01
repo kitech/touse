@@ -19,7 +19,7 @@ $if windows {
         #flag @DIR/tray_linux.o
     } $else $if withgtk3 ? {
         // #pkgconfig gtk+-3.0
-        #flag -layatana-appindicator3 -lgtk-3
+        #flag -layatana-appindicator3 -lgtk-3 -lgobject-2.0
         #flag -I /usr/include/libayatana-appindicator3-0.1/
         // TODO libayatana-appindicator
         #flag @DIR/tray_linux_gtk3.o
@@ -29,18 +29,18 @@ $if windows {
         // on my system, appindicator3 depend gtk3
         #pkgconfig --cflags gtk-3
         #pkgconfig --cflags appindicator3-0.1
-        #flag -lappindicator3 -lgtk-3
+        #flag -lappindicator3 -lgtk-3 -lgobject-2.0
         // TODO
     } $else $if withgtk2_appindicator3 ? {
         #pkgconfig --cflags gtk+-2.0
         #pkgconfig --cflags appindicator3-0.1
-        #flag -lappindicator3 -lgtk-x11-2.0
+        #flag -lappindicator3 -lgtk-x11-2.0 -lgobject-2.0
         // TODO
     } $else {
         // appindicator1 for gtk2
         #pkgconfig --cflags gtk+-2.0
         #pkgconfig --cflags appindicator-0.1
-        #flag -lappindicator -lgtk-x11-2.0
+        #flag -lappindicator -lgtk-x11-2.0 -lgobject-2.0
         #flag @DIR/tray_linux_gtk2.o
     }
 }

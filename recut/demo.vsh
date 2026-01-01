@@ -1,3 +1,5 @@
+import time
+
 import vcp
 import touse.recut
 import touse.ffi
@@ -70,13 +72,16 @@ fn demo_db() ! {
     db.insert('Note', rec) !
     db.int_check() !
 
-    wrs := recut.Writer.new()
+    wrs := recut.Writer.new(voidptr(C.stdout))
     // wrs.write_str() !
     // wrs.write_field(fld) !
     // println("ff")
     // wrs.write_record(rec) !
     println("======== db dump...")
     wrs.write_db(db) !
+    println("======== db dump done")
+    println("======== db dump...")
+    dump(db.dump()!)
     println("======== db dump done")
     // dump(recut.wrbuf.tosdup())
 }

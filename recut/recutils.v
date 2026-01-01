@@ -8,6 +8,9 @@ import touse.ffi
 
 #include <rec.h>
 
+pub const version_major = 1
+pub const version_minor = 0
+
 pub fn init_() {
     // rtld.add_libpath("")
     rtld.link('rec') or { vcp.error(err.str()) }
@@ -45,7 +48,7 @@ pub struct C.rec_mset_iterator_t {
 
 pub type Mset = usize
 pub type MsetElem = usize
-pub type Buf = usize
+// pub type Buf = usize
 pub type Fex = usize
 pub type FexElem = usize
 pub type Field = usize
@@ -81,7 +84,7 @@ pub:
     set Mset
     elem MsetElem
     
-    buf Buf
+    // buf Buf
     fld Field
     rset Rset
     rec Record
@@ -225,7 +228,32 @@ pub fn (rec Record) mset() Mset {
 }
 /*************** Managing mset elements ******************************/
 
+pub struct Buf {
+    pub mut:
+    cbuf voidptr
 
+    data charptr // C.malloc memory, need free manual
+    size usize    
+}
+pub fn Buf.new() &Buf {
+    buf := &Buf{}
+    uv := rec_buf_new(voidptr(&buf.data), voidptr(&buf.size))
+    buf.cbuf = uv.vptr
+    return buf
+}
+pub fn (buf &Buf) close() { rec_buf_close(buf.cbuf) }
+pub fn (buf &Buf) rewind(n int) { rec_buf_rewind(buf.cbuf, n) }
+pub fn (buf &Buf) string() string {
+    return buf.data.tosref(int(buf.size))
+}
+pub fn (buf &Buf) put[T](v T) !{
+    match v {
+        i8 { rec_buf_putc(v, buf.cbuf) }
+        string { rec_buf_puts(v.str.cptr(), buf.cbuf) }
+        charptr { rec_buf_putc(v, buf.cbuf) }
+        else{ return error("not impl ${typeof(v).name}")}
+    }
+}
 
 /*************** DB/parser/writer ******************************/
 pub fn DB.new() DB {
@@ -246,13 +274,27 @@ pub fn (db DB) insert(typ string, rec Record) ! {
 }
 
 pub fn (db DB) int_check() ! {
-    uv := rec_int_check_db(voidptr(db), 1, 1, nil)
-    if uv.int > 0 { return errorwc('some error', uv.int) }
+    ebuf := Buf.new()
+    defer { ebuf.close() }
+    defer { dump(ebuf.string()) }
+    
+    uv := rec_int_check_db(voidptr(db), 1, 1, ebuf.cbuf)
+    if uv.int > 0 { return errorwc('some error: ${ebuf.string()}', uv.int) }
 }
 
-pub fn Writer.new() Writer {
-    uv := rec_writer_new(voidptr(C.stdout))
-    // uv := rec_writer_new_str(voidptr(&wrbuf), voidptr(&bufsz))
+pub fn Writer.new(fp &C.FILE) Writer {
+    uv := rec_writer_new(voidptr(fp))
+    return uv.wrs
+}
+
+// usage: buf, size := charptr(0), usize(0)
+// Writer.new_str(&buf, &size)
+// 
+// both two are out param
+// buf and size will fill when Writer.destroy
+pub fn Writer.new_str(buf &charptr, size &usize) Writer {
+    // !!! the second size param, must voidptr(size)
+    uv := rec_writer_new_str(voidptr(buf), voidptr(size))
     return uv.wrs
 }
 pub fn (wrs Writer) destroy()  { rec_writer_destroy(wrs.vptr()) }
@@ -273,3 +315,50 @@ pub fn (wrs Writer) write_str() ! {
     uv := rec_write_string(wrs.vptr(), c'ademo: strrr'.cptr())
     if !uv.bool { return error ("some error str") }
 }
+
+
+pub fn Parser.new(infile &C.FILE, source string) Parser {
+    
+    return 0
+}
+// for not nulled buffer
+pub fn Parser.new_mem(buf charptr, size usize, source string) Parser {
+    
+    return 0
+}
+pub fn Parser.new_str(buf string, source string) Parser {
+    
+    return 0
+}
+pub fn (prs Parser) destroy() { rec_parser_destroy(prs.vptr()) }
+pub fn (prs Parser) reset() { rec_parser_reset(prs.vptr()) }
+pub fn (prs Parser) error() bool { return rec_parser_error(prs.vptr()).bool }
+pub fn (prs Parser) perror()  { rec_parser_perror(prs.vptr(), nil) }
+
+pub fn Parser.record_str(str string) !Record {
+    uv := rec_parse_record_str(str.str.cptr())
+    if uv.rec == 0 { return error('@STRUCT.@FN error') }
+    return uv.rec
+}
+pub fn (prs Parser) record_str(str string) !Record {
+    return Parser.record_str(str) !
+}
+pub fn (prs Parser) record() !Record {
+    rec := Record(0)
+    uv := rec_parser_record(prs.vptr(), voidptr(&rec))
+    if !uv.bool { return error("@STRUCT.@FN error") }
+    return rec
+}
+pub fn (prs Parser) db() !DB {
+    db := DB(0)
+    uv := rec_parser_db(prs.vptr(), voidptr(&db))
+    if !uv.bool { return error("@STRUCT.@FN error") }
+    return db
+}
+
+
+/**************** Creating and destroying sexes ******************/
+
+
+
+/**************** Encryption routines *******************************/
