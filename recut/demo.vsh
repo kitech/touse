@@ -36,7 +36,7 @@ fn demo_ffi_util() {
     
 
 fn demo_mset() {
-    set := recut.new()
+    set := recut.Mset.new()
     vcp.info(set)
     assert set!=vnil
     

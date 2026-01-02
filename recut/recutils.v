@@ -1,6 +1,7 @@
 module recut
 
 import vcp
+import vcp.xdl
 import vcp.rtld
 import vcp.ircpp
 import touse.ffi
@@ -22,15 +23,6 @@ pub fn fini() {
     rec_fini()
     // vcp.call_vatmpl(dlsym0('rec_fini'), 0)
 }
-
-
-// pub type Mset = C.rec_mset_s
-// // @[typedef]
-// pub struct C.rec_mset_s {}
-
-// pub type MsetElem = C.rec_mset_elem_s
-// // @[typedef]
-// pub struct C.rec_mset_elem_s {}
 
 pub type MsetListIter = C.rec_mset_list_iter_t
 @[typedef]
@@ -129,7 +121,7 @@ pub enum RsetType {
     record = 1 // C.MSET_RECORD
 }
 
-pub fn new() Mset { return rec_mset_new().mset }
+pub fn Mset.new() Mset { return rec_mset_new().mset }
 pub fn (set Mset) destroy() { rec_mset_destroy(set.vptr()) }
 pub fn (set Mset) dup() Mset { return rec_mset_dup(set.vptr()).mset }
 
@@ -347,7 +339,10 @@ pub fn Parser.new_str(buf string, source string) Parser {
 pub fn (prs Parser) destroy() { rec_parser_destroy(prs.vptr()) }
 pub fn (prs Parser) reset() { rec_parser_reset(prs.vptr()) }
 pub fn (prs Parser) error() bool { return rec_parser_error(prs.vptr()).bool }
-pub fn (prs Parser) perror()  { rec_parser_perror(prs.vptr(), '${@FILE_LINE}'.str.cptr()) }
+pub fn (prs Parser) perror()  {
+    caller_names := xdl.get_caller_names(true)
+    rec_parser_perror(prs.vptr(), '${@FILE_LINE} <= ${caller_names[1]}'.str.cptr())
+}
 
 pub fn Parser.record_str(str string) !Record {
     uv := rec_parse_record_str(str.str.cptr())
@@ -364,15 +359,13 @@ pub fn (prs Parser) record() !Record {
     return rec
 }
 pub fn (prs Parser) db() !DB {
-    db_ := DB(nil)
-    db_ = DB.new()
-    dump(db_)
-    uv := rec_parse_db(prs.vptr(), voidptr(&db_))
-    dump(db_)
-    prs.perror()
-    if !uv.bool { return error("${@FILE_LINE}: ${@STRUCT}.${@FN} error") }
-    dump(db_)
-    return db_
+    db := DB(nil)
+    uv := rec_parse_db(prs.vptr(), voidptr(&db))
+    if !uv.bool {
+        prs.perror()
+        return error("${@FILE_LINE}: ${@STRUCT}.${@FN} error")
+    }
+    return db
 }
 
 
