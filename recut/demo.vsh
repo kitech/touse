@@ -55,6 +55,7 @@ fn demo_mset() {
 
 fn demo_db() ! {
     db := recut.DB.new()
+    defer { db.destroy() }
     db.int_check() !
     db.insert('Zero', 0) !
 
@@ -86,7 +87,40 @@ fn demo_db() ! {
     // dump(recut.wrbuf.tosdup())
 }
 
+fn demo_db_load_save() ! {
+    file := 'tst.rec'
+    db := recut.DB.from_file(file) or { omitor(err) }
+    assert db==0
+    
+    db = recut.DB.new()
+    defer { db.destroy() }
+    for i in 0..3 {
+        rec := recut.Record.new()
+        fname, fval := 'Name $i', 'cool name: 写什么，\'刷什么" $i'
+        fname2, fval2 := 'Value $i', 'lonnnnnn\nnnnng写什么，刷什么 value $i with <html/'
+        fname3, fval3 := 'Ctime $i', '@$i@$#^&!~() ${time.now().str()}'
+        
+        fld := recut.Field.new(fname, fval)
+        fld2 := recut.Field.new(fname2, fval2)
+        fld3 := recut.Field.new(fname3, fval3)
+
+        rec.mset().append(recut.Type(1), fld)
+        rec.mset().append(recut.Type(1), fld2)
+        rec.mset().append(recut.Type(1), fld3)
+        assert rec.mset().count(0) == 3
+            
+        db.insert('Manor-$i', rec) !
+        db.int_check() !
+        assert db.size()==usize(i+1)
+    }
+
+    println("======== db dump ${db.size()} ...")
+    dump(db.dump()!)
+    println("======== db dump done")
+}
+
 recut.init_()
 demo_ffi_util()
 demo_mset()
 demo_db() or { panic(err) }
+demo_db_load_save() or {panic(err)}

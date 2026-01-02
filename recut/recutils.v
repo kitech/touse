@@ -46,18 +46,18 @@ pub struct C.rec_mset_iterator_t {
     list_iter MsetListIter
 }
 
-pub type Mset = usize
-pub type MsetElem = usize
-// pub type Buf = usize
-pub type Fex = usize
-pub type FexElem = usize
-pub type Field = usize
-pub type Record = usize
-pub type Rset = usize
-pub type Sex = usize
-pub type DB = usize
-pub type Parser = usize
-pub type Writer = usize
+pub type Mset = voidptr
+pub type MsetElem = voidptr
+// pub type Buf = voidptr
+pub type Fex = voidptr
+pub type FexElem = voidptr
+pub type Field = voidptr
+pub type Record = voidptr
+pub type Rset = voidptr
+pub type Sex = voidptr
+pub type DB = voidptr
+pub type Parser = voidptr
+pub type Writer = voidptr
 
 pub fn (v Mset) vptr() voidptr { return voidptr(v) }
 pub fn (v MsetElem) vptr() voidptr { return voidptr(v) }
@@ -81,7 +81,7 @@ fn dlsym0(name string) voidptr {
 pub union Retval {
     ircpp.Retval
 pub:
-    set Mset
+    mset Mset
     elem MsetElem
     
     // buf Buf
@@ -96,7 +96,7 @@ pub:
 const crv = &Retval{} // used as ret arg
 
 pub fn (set &Mset) str() string {
-    _ = Anyer(crv.set) // V bug invalid use of incomplete typedef, need a custom str()    
+    _ = Anyer(crv.mset) // V bug invalid use of incomplete typedef, need a custom str()    
     return "&${@STRUCT}(${voidptr(set)})"
 }
 pub fn (elem &MsetElem) str() string {
@@ -114,17 +114,17 @@ fn function_missing(funcname string, args...Anyer) Retval {
 // call vcp.call_vatmpl(...) if that need extra dlsym  
 // call ffi.callfca8(...) if that return not primitive type
 
-pub fn new() Mset {
-    return rec_mset_new().set
+/*************** Managing mset elements ******************************/
+
+pub const {
+    mset_any = 0    // C.MSET_ANY
+    mset_field = 1   // C.MSET_FIELD
+    mset_comment = 2 // C.MSET_COMMENT
 }
 
-pub fn (set Mset) destroy() {
-    rec_mset_destroy(set.vptr())
-}
-
-pub fn (set Mset) dup() Mset {
-   return rec_mset_dup(set.vptr()).set
-}
+pub fn new() Mset { return rec_mset_new().mset }
+pub fn (set Mset) destroy() { rec_mset_destroy(set.vptr()) }
+pub fn (set Mset) dup() Mset { return rec_mset_dup(set.vptr()).mset }
 
 // Registering Types in a multi-set
 
@@ -189,10 +189,6 @@ pub fn (itr &MsetIterator) free() {
     // vcp.call_vatmpl(fnp, true, itr)
 }
 
-
-/*************** Managing mset elements ******************************/
-
-
 /*************** Managing field  ******************************/
 
 
@@ -224,7 +220,7 @@ pub fn (rec Record) set_location(location usize)  {
     rec_record_location_str(rec.vptr(), location)
 }
 pub fn (rec Record) mset() Mset {
-    return rec_record_mset(rec.vptr()).set
+    return rec_record_mset(rec.vptr()).mset
 }
 /*************** Managing mset elements ******************************/
 
@@ -259,24 +255,24 @@ pub fn (buf &Buf) put[T](v T) !{
 pub fn DB.new() DB {
     return rec_db_new().db
 }
-pub fn (db DB) destroy() { rec_db_destroy(db) }
+pub fn (db DB) destroy() { rec_db_destroy(db.vptr()) }
 pub fn (db DB) size() usize { return rec_db_size(db.vptr()).usize }
 
 pub fn (db DB) insert(typ string, rec Record) ! {
-    idxp := nil
+    idx := db.size()+1
+    idxp := voidptr(&idx)
+    idxp = nil
     random := usize(0)
     flags := 0
     uv := rec_db_insert(db.vptr(), typ.str.cptr(), idxp, nil, nil, random, nil, rec.vptr(), flags)
     if !uv.bool {
         return error('some error $typ')
     }
-    dump(db.size())
 }
 
 pub fn (db DB) int_check() ! {
     ebuf := Buf.new()
     defer { ebuf.close() }
-    defer { dump(ebuf.string()) }
     
     uv := rec_int_check_db(voidptr(db), 1, 1, ebuf.cbuf)
     if uv.int > 0 { return errorwc('some error: ${ebuf.string()}', uv.int) }
@@ -317,18 +313,18 @@ pub fn (wrs Writer) write_str() ! {
 }
 
 
-pub fn Parser.new(infile &C.FILE, source string) Parser {
-    
-    return 0
+pub fn Parser.new(in_ &C.FILE, source string) Parser {
+    uv := rec_parser_new(voidptr(in_), source.str.cptr())
+    return uv.prs
 }
 // for not nulled buffer
 pub fn Parser.new_mem(buf charptr, size usize, source string) Parser {
-    
-    return 0
+    uv := rec_parser_new_mem(buf, size, source.str.cptr())
+    return uv.prs
 }
 pub fn Parser.new_str(buf string, source string) Parser {
-    
-    return 0
+    uv := rec_parser_new_str(buf.str.cptr(), source.str.cptr())
+    return uv.prs
 }
 pub fn (prs Parser) destroy() { rec_parser_destroy(prs.vptr()) }
 pub fn (prs Parser) reset() { rec_parser_reset(prs.vptr()) }
