@@ -19,8 +19,16 @@ pub struct SearchOption {
 }
 
 pub fn Record.ofmap[T](o map[string]T) Record {
-
-    return nil
+    r := Record.new()
+    for k, v in o {
+        s := match v {
+            string { v }
+            else { '$v' }
+        }
+        fld := Field.new(k, s)
+        r.mset().append(.field, fld.vptr())
+    }
+    return r
 }
 pub fn (rec Record) tomap() map[string]string  {
     res := map[string]string{}
@@ -30,8 +38,20 @@ pub fn (rec Record) tomap() map[string]string  {
 
 // use struct field attrs
 pub fn Record.ofstruct[T](o T) Record {
+    r := Record.new()
+    $for stfield in T.fields {
+        name := stfield.name
+        s := o.$(stfield.name).str()
+        s = match stfield.typ {
+                string { }
+                else { }
+        }
+        
+        fld := Field.new(name, s)
+        r.mset().append(.field, fld.vptr())
+    }
     
-    return nil
+    return r
 }
 pub fn Record.tostruct[T](o T) T {
     
@@ -64,8 +84,13 @@ pub fn (db DB) dump() ! string {
 }
 
 pub fn (db DB) save(filename string) ! {
+    fp := os.open_file(filename, "w+") !
+    defer { fp.close() }
+    fp2 := C.fdopen(fp.fd, c"w+")
     
-
+    wrs := Writer.new(fp2)
+    defer { wrs.destroy() }
+    wrs.write_db(db) !
 }
 
 pub fn DB.from[T](src T) ! DB {
@@ -79,10 +104,10 @@ pub fn DB.from[T](src T) ! DB {
 }
 
 
-pub fn DB.from_file(filename string) ! DB {
+pub fn DB.from_file(filename string) ! DB {    
     fp := os.open(filename) !
-    fp2 := C.fdopen(fp.fd, c'r');
     defer { fp.close() }
+    fp2 := C.fdopen(fp.fd, c'r');
     
     prs := Parser.new(fp2, filename)
     db := prs.db() !

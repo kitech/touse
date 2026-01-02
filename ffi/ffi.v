@@ -354,18 +354,32 @@ pub fn callfca8[R,S,T,U,V,W,X,Y,Z](symoradr Symbol, ar R, as_ S, at_ T, au U, av
 }
 
 pub fn ffity_oftmpl[T](t T) int {
+    isalias := $if T is $alias { true } $else { false }
+    ispointer := $if T is $pointer { true } $else { false }
+    tyidx0 := typeof(t).idx
+    tyidx1 := T.unaliased_typ // int value like typeof(0).idx
+    
 	$if t is int {  return ctype_int
 	} $else $if t is bool {	    return ctype_int
 	} $else $if t is i8 {	    return ctype_sint8
 	} $else $if t is u32 {	    return ctype_uint32
 	} $else $if t is f32 {      return ctype_float
 	} $else $if t is f64 {	    return ctype_double
-	} $else $if t is usize {	    return ctype_pointer
+	} $else $if t is usize {	return ctype_pointer
 	} $else $if t is i64 {	    return ctype_sint64
 	} $else $if t is u64 {	    return ctype_uint64
-	} $else $if t is $pointer {	    return ctype_pointer
+	} $else $if t is $pointer {	return ctype_pointer
 	} $else {
-	    println("${@FILE_LINE}: unknown ${typeof(t).name}")
+	    $if T is $alias {
+			// return ffity_oftmpl[T.unaliased_typ]() // elegant but not working
+			match tyidx1 {
+			    typeof(int(0)).idx { return ctype_int }
+			    typeof(usize(0)).idx { return ctype_pointer }
+			    typeof(voidptr(0)).idx { return ctype_pointer }
+				else {}
+			}
+		}
+	    log.warn("${@FILE_LINE}: unknown ${typeof(t).name}, alias=$isalias, pointer=$ispointer")
 	    return -1
 	}
 }

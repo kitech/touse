@@ -82,8 +82,10 @@ pub union Retval {
     ircpp.Retval
 pub:
     mset Mset
+    mset_type MsetType
     elem MsetElem
     
+    typ Type
     // buf Buf
     fld Field
     rset Rset
@@ -116,10 +118,15 @@ fn function_missing(funcname string, args...Anyer) Retval {
 
 /*************** Managing mset elements ******************************/
 
-pub const {
-    mset_any = 0    // C.MSET_ANY
-    mset_field = 1   // C.MSET_FIELD
-    mset_comment = 2 // C.MSET_COMMENT
+// extendable by Mset.register_type, but rare use
+pub enum MsetType {
+    any = 0    // C.MSET_ANY
+    field = 1   // C.MSET_FIELD
+    // record = 1 // C.MSET_RECORD
+    comment = 2 // C.MSET_COMMENT
+}
+pub enum RsetType {
+    record = 1 // C.MSET_RECORD
 }
 
 pub fn new() Mset { return rec_mset_new().mset }
@@ -128,41 +135,39 @@ pub fn (set Mset) dup() Mset { return rec_mset_dup(set.vptr()).mset }
 
 // Registering Types in a multi-set
 
-pub type Type = int
-
-pub fn (set Mset) type_p(ty Type) bool {    
+pub fn (set Mset) type_p(ty MsetType) bool {    
     return vcp.call_vatmpl(dlsym0('rec_mset_type_p'), true, set, ty) 
 }
 
-pub fn (set Mset) count(ty Type) usize {
+pub fn (set Mset) count(ty MsetType) usize {
     return rec_mset_count(set.vptr(), int(ty)).usize
 }
 
-pub fn (set Mset) register_type(name string) Type {
-    return rec_mset_register_type(set.vptr(), voidptr(name.str), vnil).int
+pub fn (set Mset) register_type(name string) MsetType {
+    return rec_mset_register_type(set.vptr(), voidptr(name.str), vnil).mset_type
 }
 
-pub fn (set Mset) get_at(ty Type, pos usize) voidptr {
+pub fn (set Mset) get_at(ty MsetType, pos usize) voidptr {
     return rec_mset_get_at(set.vptr(), int(ty), pos).vptr
 }
-pub fn (set Mset) insert_at(ty Type, data voidptr, pos usize) MsetElem {
+pub fn (set Mset) insert_at(ty MsetType, data voidptr, pos usize) MsetElem {
     return rec_mset_insert_at(set.vptr(), int(ty), data, pos).elem
 }
-pub fn (set Mset) insert_after(ty Type, data voidptr, elem MsetElem) MsetElem {
+pub fn (set Mset) insert_after(ty MsetType, data voidptr, elem MsetElem) MsetElem {
     return rec_mset_insert_after(set.vptr(), int(ty), data, elem.vptr()).elem
 }
 // data, Field/Comment/...
-pub fn (set Mset) append(ty Type, data voidptr) MsetElem {
+pub fn (set Mset) append(ty MsetType, data voidptr) MsetElem {
     return rec_mset_append(set.vptr(), int(ty), data, int(0)).elem
 }
-pub fn (set Mset) add_sorted(ty Type, data voidptr) MsetElem {
+pub fn (set Mset) add_sorted(ty MsetType, data voidptr) MsetElem {
     return rec_mset_add_sorted(set.vptr(), int(ty), data).elem
 }
 
-pub fn (set Mset) remove_elem(ty Type, elem MsetElem) bool {
+pub fn (set Mset) remove_elem(ty MsetType, elem MsetElem) bool {
     return rec_mset_remove_elem(set.vptr(), int(ty), elem.vptr()).bool
 }
-pub fn (set Mset) remove_at(ty Type, pos usize) bool {
+pub fn (set Mset) remove_at(ty MsetType, pos usize) bool {
     return rec_mset_remove_at(set.vptr(), int(ty), pos).bool
 }
 
@@ -191,8 +196,20 @@ pub fn (itr &MsetIterator) free() {
 
 /*************** Managing field  ******************************/
 
+// field type, primitive type, like int, double, bool, ...
+// extenable with ..., but rare use
+pub enum Type {
+    none = 0 // C.REC_TYPE_NONE
+    int =  1 // C.REC_TYPE_INT
+    bool = 2
+    range = 3
+    real = 4
+    // ...
+}
 
 pub fn Field.new(name string, value string) Field {
+    assert name.count(' ') == 0 // cannot have ' ', see C.REC_FNAME_RE
+    assert name.count('-') == 0
     uv := rec_field_new(name.str.cptr(), value.str.cptr())
     return uv.fld
 }
@@ -259,9 +276,10 @@ pub fn (db DB) destroy() { rec_db_destroy(db.vptr()) }
 pub fn (db DB) size() usize { return rec_db_size(db.vptr()).usize }
 
 pub fn (db DB) insert(typ string, rec Record) ! {
-    idx := db.size()+1
-    idxp := voidptr(&idx)
-    idxp = nil
+    assert typ.len>1
+    assert typ[(typ.len-1) ..] in ['.', '+', '-'], typ // sowtt
+    
+    idxp := nil
     random := usize(0)
     flags := 0
     uv := rec_db_insert(db.vptr(), typ.str.cptr(), idxp, nil, nil, random, nil, rec.vptr(), flags)
@@ -329,11 +347,11 @@ pub fn Parser.new_str(buf string, source string) Parser {
 pub fn (prs Parser) destroy() { rec_parser_destroy(prs.vptr()) }
 pub fn (prs Parser) reset() { rec_parser_reset(prs.vptr()) }
 pub fn (prs Parser) error() bool { return rec_parser_error(prs.vptr()).bool }
-pub fn (prs Parser) perror()  { rec_parser_perror(prs.vptr(), nil) }
+pub fn (prs Parser) perror()  { rec_parser_perror(prs.vptr(), '${@FILE_LINE}'.str.cptr()) }
 
 pub fn Parser.record_str(str string) !Record {
     uv := rec_parse_record_str(str.str.cptr())
-    if uv.rec == 0 { return error('@STRUCT.@FN error') }
+    if uv.rec == 0 { return error('${@FILE_LINE}: ${@STRUCT}.${@FN} error') }
     return uv.rec
 }
 pub fn (prs Parser) record_str(str string) !Record {
@@ -341,15 +359,20 @@ pub fn (prs Parser) record_str(str string) !Record {
 }
 pub fn (prs Parser) record() !Record {
     rec := Record(0)
-    uv := rec_parser_record(prs.vptr(), voidptr(&rec))
-    if !uv.bool { return error("@STRUCT.@FN error") }
+    uv := rec_parse_record(prs.vptr(), voidptr(&rec))
+    if !uv.bool { return error("${@FILE_LINE}: ${@STRUCT}.${@FN} error") }
     return rec
 }
 pub fn (prs Parser) db() !DB {
-    db := DB(0)
-    uv := rec_parser_db(prs.vptr(), voidptr(&db))
-    if !uv.bool { return error("@STRUCT.@FN error") }
-    return db
+    db_ := DB(nil)
+    db_ = DB.new()
+    dump(db_)
+    uv := rec_parse_db(prs.vptr(), voidptr(&db_))
+    dump(db_)
+    prs.perror()
+    if !uv.bool { return error("${@FILE_LINE}: ${@STRUCT}.${@FN} error") }
+    dump(db_)
+    return db_
 }
 
 
