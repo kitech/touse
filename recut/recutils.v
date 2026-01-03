@@ -175,7 +175,7 @@ pub fn (set Mset) iterator() MsetIterator {
 }
 
 pub fn (itr &MsetIterator) next(ty Type, data &voidptr, elem &&MsetElem) bool {
-    return rec_mset_iterator_next(itr, int(ty), data, elem).bool
+    return rec_mset_iterator_next(voidptr(itr), int(ty), voidptr(data), voidptr(elem)).bool
     // fnp := dlsym0('rec_mset_iterator_next')
     // return vcp.call_vatmpl(fnp, true, itr, data, elem)
 }
@@ -267,16 +267,20 @@ pub fn DB.new() DB {
 pub fn (db DB) destroy() { rec_db_destroy(db.vptr()) }
 pub fn (db DB) size() usize { return rec_db_size(db.vptr()).usize }
 
+// typ can empty, then use 'default' type
 pub fn (db DB) insert(typ string, rec Record) ! {
-    assert typ.len>1
-    assert typ[(typ.len-1) ..] in ['.', '+', '-'], typ // sowtt
-    
+    typ2 := if typ.len==0 { 'default' } else { typ }
+    if typ.len > 0 {
+        assert typ.len>1
+        assert typ[(typ.len-1) ..] in ['.', '+', '-'], typ // sowtt
+    }
+
     idxp := nil
     random := usize(0)
     flags := 0
-    uv := rec_db_insert(db.vptr(), typ.str.cptr(), idxp, nil, nil, random, nil, rec.vptr(), flags)
+    uv := rec_db_insert(db.vptr(), typ2.str.cptr(), idxp, nil, nil, random, nil, rec.vptr(), flags)
     if !uv.bool {
-        return error('some error $typ')
+        return error('some error $typ2')
     }
 }
 
