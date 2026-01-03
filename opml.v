@@ -91,7 +91,7 @@ pub fn opml_file_xmlc_to_roxml(file string) &Opml {
         }
         
         // vcp.info('adding', idx.str(), text, title, typ, url, ctime)
-        op.add(text, title, typ, url)
+        op.add(text, title, typ, url, ctime)
     }
 
     return op
@@ -160,7 +160,7 @@ fn (op &Opml) reformat(s string) string {
     return res
 }
 
-pub fn (op &Opml) add(text string, title string, typ string, url string) bool {
+pub fn (op &Opml) add(text string, title string, typ string, url string, ctime string) bool {
     n := op.body.add_elem('outline')
     
     strfix := fn (s string) string { return s.replace(' ', '+') }
@@ -170,8 +170,12 @@ pub fn (op &Opml) add(text string, title string, typ string, url string) bool {
     n.add_attr('type', strfix(typ))
     n.add_attr('xmlUrl', strfix(url))
     
-    n.add_attr('ctime', strfix(time.now().str()))
-
+    if ctime!= "" {
+        n.add_attr('ctime', strfix(ctime))
+    }else{
+        n.add_attr('ctime', strfix(time.now().str()))
+    }
+    
     return true
 }
 
