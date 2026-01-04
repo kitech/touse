@@ -231,7 +231,11 @@ pub fn (rec Record) set_location(location usize)  {
 pub fn (rec Record) mset() Mset {
     return rec_record_mset(rec.vptr()).mset
 }
-/*************** Managing mset elements ******************************/
+/*************** Managing rset elements ******************************/
+
+pub fn (set Rset) num_records() usize {
+    return rec_rset_num_records(set.vptr()).usize
+}
 
 pub struct Buf {
     pub mut:
@@ -290,6 +294,15 @@ pub fn (db DB) int_check() ! {
     
     uv := rec_int_check_db(voidptr(db), 1, 1, ebuf.cbuf)
     if uv.int > 0 { return errorwc('some error: ${ebuf.string()}', uv.int) }
+}
+
+pub fn (db DB) get_rset(position usize) Rset {
+    uv := rec_db_get_rset(db.vptr(), position)
+    return uv.rset
+}
+pub fn (db DB) get_rset_by_type(typ string) Rset {
+    uv := rec_db_get_rset_by_type(db.vptr(), typ.str.cptr())
+    return uv.rset
 }
 
 pub fn Writer.new(fp &C.FILE) Writer {

@@ -86,9 +86,9 @@ pub fn (db DB) dump() ! string {
 pub fn (db DB) save(filename string) ! {
     fp := os.open_file(filename, "w+") !
     defer { fp.close() }
-    fp2 := C.fdopen(fp.fd, c"w+")
+    cfile := struct_field_get(fp, "cfile", &C.FILE(nil))
     
-    wrs := Writer.new(fp2)
+    wrs := Writer.new(cfile)
     defer { wrs.destroy() }
     wrs.write_db(db) !
 }
@@ -107,9 +107,9 @@ pub fn DB.from[T](src T) ! DB {
 pub fn DB.from_file(filename string) ! DB {    
     fp := os.open(filename) !
     defer { fp.close() }
-    fp2 := C.fdopen(fp.fd, c'r');
+    cfile := struct_field_get(fp, "cfile", &C.FILE(nil))
     
-    prs := Parser.new(fp2, filename)
+    prs := Parser.new(cfile, filename)
     db := prs.db() !
     return db
 }
