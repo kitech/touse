@@ -46,10 +46,10 @@ pub type FexElem = voidptr
 pub type Field = voidptr
 pub type Record = voidptr
 pub type Rset = voidptr
-pub type Sex = voidptr
 pub type DB = voidptr
 pub type Parser = voidptr
 pub type Writer = voidptr
+pub type Sex = voidptr
 
 pub fn (v Mset) vptr() voidptr { return voidptr(v) }
 pub fn (v MsetElem) vptr() voidptr { return voidptr(v) }
@@ -59,6 +59,7 @@ pub fn (v Rset) vptr() voidptr { return voidptr(v) }
 pub fn (v DB) vptr() voidptr { return voidptr(v) }
 pub fn (v Parser) vptr() voidptr { return voidptr(v) }
 pub fn (v Writer) vptr() voidptr { return voidptr(v) }
+pub fn (v Sex) vptr() voidptr { return voidptr(v) }
 
 pub type MsetDispFn = fn(data voidptr)
 pub type MsetEqualFn = fn(data1 voidptr, data2 voidptr) bool
@@ -85,6 +86,7 @@ pub:
     db DB
     prs Parser
     wrs Writer
+    sex Sex
     
 }
 const crv = &Retval{} // used as ret arg
@@ -166,6 +168,7 @@ pub fn (set Mset) remove_at(ty MsetType, pos usize) bool {
 pub fn (set Mset) search(data voidptr) MsetElem {
     return rec_mset_search(set.vptr(), data).elem
 }
+pub fn (set Mset) dump() { rec_mset_dump(set.vptr()) }
 
 /*************** Iterating on mset elements *************************/
 
@@ -233,8 +236,12 @@ pub fn (rec Record) mset() Mset {
 }
 /*************** Managing rset elements ******************************/
 
+pub fn (set Rset) destroy() { rec_rset_destroy(set.vptr()) }
 pub fn (set Rset) num_records() usize {
     return rec_rset_num_records(set.vptr()).usize
+}
+pub fn (set Rset) mset() Mset {
+    return rec_rset_mset(set.vptr()).mset
 }
 
 pub struct Buf {
@@ -286,6 +293,53 @@ pub fn (db DB) insert(typ string, rec Record) ! {
     if !uv.bool {
         return error('some error $typ2')
     }
+}
+
+@[params]
+pub struct DBQueryOption4c {
+pub:
+    joinp charptr
+    indexp voidptr
+    index [2]usize // [min,max] pair
+    fast_string charptr
+    random usize
+    fex voidptr
+    password charptr
+    group_by voidptr
+    sort_by voidptr
+    flags int
+}
+
+// see below for expr format
+pub fn (db DB) query(typ string, sex Sex, opt DBQueryOption4c) Rset {
+    typ2 := if typ.len==0 { 'default' } else { typ }
+    
+    uv := rec_db_query (db.vptr(),
+                             typ2.str.cptr(),
+                             opt.joinp,
+                             opt.indexp,
+                             sex.vptr(),
+                             opt.fast_string,
+                             opt.random,
+                             opt.fex,
+                             opt.password,
+                             opt.group_by,
+                             opt.sort_by,
+                             opt.flags)
+    return uv.rset
+}
+
+// TODO, more params
+pub fn (db DB) delete(typ string, sex Sex) bool {
+    typ2 := if typ.len==0 { 'default' } else { typ }
+        
+    idxp := nil
+    fast_string := charptr(nil)
+    random := usize(0)
+    flags := 0
+
+    uv := rec_db_delete(db.vptr(), typ2.str.cptr(), idxp, sex.vptr(), fast_string, random, flags)
+    return uv.bool
 }
 
 pub fn (db DB) int_check() ! {
@@ -385,9 +439,38 @@ pub fn (prs Parser) db() !DB {
     return db
 }
 
-
 /**************** Creating and destroying sexes ******************/
 
+pub fn Sex.new(case_insensitive bool) Sex {
+    return rec_sex_new(int(case_insensitive)).sex
+}
+pub fn (sex Sex) destroy() { rec_sex_destroy(sex.vptr()) }
+
+pub fn (sex Sex) compile(expr string) ! {
+    uv := rec_sex_compile(sex.vptr(), expr.str.cptr())
+    if !uv.bool {
+        return error("${@FILE_LINE}: ${@STRUCT}.${@FN} error")
+    }
+}
+
+/*
+Common Operators and Examples
+
+    = (equality): Selects records where a field's value matches a string or number.
+        recsel -e 'Year = "1900"'
+        recsel -e "Location = 'loaned'"
+    >, <, >=, <= (comparison): Works for numeric, date, and string fields.
+        recsel -e 'Year > "1900"': Selects records where the year field is greater than 1900.
+    != (inequality): Selects records where the field's value does not match.
+        recsel -e 'Status != "Done"'
+    ~ (regular expression match): Selects records where the field's value matches a given regular expression.
+        recsel -e 'email ~ "gmail.com"': Selects records where the email field contains the substring "gmail.com".
+    && and || (logical AND and OR): Combines multiple expressions.
+        recsel -e 'Year > "2000" && Rating >= "8"': Selects records with a year greater than 2000 AND a rating of 8 or more.
+    Parentheses (): Used to group expressions and control order of operations.
+        recsel -e '(Author = "Shakespeare" || Author = "Dougherty") && Year = "1987"': Selects records authored by either Shakespeare or Dougherty, but only from the year 1987. 
+
+*/
 
 
 /**************** Encryption routines *******************************/

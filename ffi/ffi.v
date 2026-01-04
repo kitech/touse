@@ -253,10 +253,10 @@ pub fn callany[T](symoradr Symbol, args ...Anyer) T {
 
 pub fn callfca6[T](sym voidptr, args ...Anyer) T {
 	// const array must unsafe, it's compiler's fault
-	mut argctys := unsafe { [9]int{} }
-	mut argotys := unsafe { [9]voidptr{} }
-	mut argvals := unsafe { [9]voidptr{} }
-	mut argadrs := unsafe { [9]voidptr{} }
+	mut argctys := unsafe { [16]int{} }
+	mut argotys := unsafe { [16]voidptr{} }
+	mut argvals := unsafe { [16]voidptr{} }
+	mut argadrs := unsafe { [16]voidptr{} }
 
 	for i, arg in args {
 		mut fficty := ffity_ofany(arg)

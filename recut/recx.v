@@ -121,3 +121,8 @@ pub fn DB.from_string(s string) ! DB {
 pub fn DB.from_reader(r io.Reader) ! DB {
     return DB(0)
 }
+
+// TODO
+pub fn (db DB) upsert() ! {
+    
+}
