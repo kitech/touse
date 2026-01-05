@@ -28,6 +28,13 @@ pub type MsetListIter = C.rec_mset_list_iter_t
 @[typedef]
 pub struct C.rec_mset_list_iter_t {
     pub mut:
+    vtable voidptr
+    list voidptr
+    count usize
+    p voidptr
+    q voidptr
+    i usize
+    j usize
 }
 
 pub type MsetIterator = C.rec_mset_iterator_t
@@ -52,6 +59,7 @@ pub type Writer = voidptr
 pub type Sex = voidptr
 
 pub fn (v Mset) vptr() voidptr { return voidptr(v) }
+// pub fn (v MsetIterator) vptr() voidptr { return voidptr(v) }
 pub fn (v MsetElem) vptr() voidptr { return voidptr(v) }
 pub fn (v Field) vptr() voidptr { return voidptr(v) }
 pub fn (v Record) vptr() voidptr { return voidptr(v) }
@@ -75,10 +83,11 @@ pub union Retval {
     ircpp.Retval
 pub:
     mset Mset
-    mset_type MsetType
+    mset_iter MsetIterator
+    msetty MsetType
     elem MsetElem
-    
-    typ Type
+
+    tykind TypeKind
     // buf Buf
     fld Field
     rset Rset
@@ -99,6 +108,8 @@ pub fn (elem &MsetElem) str() string {
     _ = Anyer(crv.elem) // V bug invalid use of incomplete typedef, need a custom str()    
     return "&${@STRUCT}(${voidptr(elem)})"
 }
+
+//////////////////////////
 
 fn function_missing(funcname string, args...Anyer) Retval {
     fnp := dlsym0(funcname)
@@ -138,7 +149,7 @@ pub fn (set Mset) count(ty MsetType) usize {
 }
 
 pub fn (set Mset) register_type(name string) MsetType {
-    return rec_mset_register_type(set.vptr(), voidptr(name.str), vnil).mset_type
+    return rec_mset_register_type(set.vptr(), voidptr(name.str), vnil).msetty
 }
 
 pub fn (set Mset) get_at(ty MsetType, pos usize) voidptr {
@@ -173,27 +184,31 @@ pub fn (set Mset) dump() { rec_mset_dump(set.vptr()) }
 /*************** Iterating on mset elements *************************/
 
 pub fn (set Mset) iterator() MsetIterator {
+    // uv := rec_mset_iterator(set.vptr()) // crash here
+    // return uv.mset_iter
     fnp := dlsym0('rec_mset_iterator')
     return vcp.call_vatmpl(fnp, MsetIterator{}, set.vptr())
 }
 
-pub fn (itr &MsetIterator) next(ty Type, data &voidptr, elem &&MsetElem) bool {
-    return rec_mset_iterator_next(voidptr(itr), int(ty), voidptr(data), voidptr(elem)).bool
-    // fnp := dlsym0('rec_mset_iterator_next')
-    // return vcp.call_vatmpl(fnp, true, itr, data, elem)
+pub fn (itr &MsetIterator) next(ty MsetType) (voidptr, MsetElem, bool) {
+    retdata, retelem := nil, MsetElem(nil)
+    uv := rec_mset_iterator_next(voidptr(itr), int(ty), voidptr(&retdata), voidptr(&retelem))
+    return retdata, retelem, uv.bool
 }
 
-pub fn (itr &MsetIterator) free() {
+pub fn (itr &MsetIterator) free1() {
     rec_mset_iterator_free(voidptr(itr))
-    // fnp := dlsym0('rec_mset_iterator_free')
-    // vcp.call_vatmpl(fnp, true, itr)
+}
+
+pub fn (set &MsetElem) type() MsetType {
+    return rec_mset_elem_type(set.vptr()).msetty
 }
 
 /*************** Managing field  ******************************/
 
 // field type, primitive type, like int, double, bool, ...
 // extenable with ..., but rare use
-pub enum Type {
+pub enum TypeKind {
     none = 0 // C.REC_TYPE_NONE
     int =  1 // C.REC_TYPE_INT
     bool = 2
@@ -225,9 +240,12 @@ pub fn Field.new(name string, value string) Field {
     uv := rec_field_new(name.str.cptr(), value.str.cptr())
     return uv.fld
 }
+pub fn (fld Field) destroy() {
+    rec_field_destroy(fld.vptr())
+}
 
 pub fn Field.std_name(stdfld StdFieldType) string {
-    uv := rec_std_field_name()
+    uv := rec_std_field_name(int(stdfld))
     return uv.cptr.tosref()
 }
 pub fn Field.name_p(s string) bool {
@@ -239,6 +257,13 @@ pub fn Field.name_escape(s string) string {
 pub fn Field.name_normalise(s string) string {
     uv := rec_field_name_normalise(s.str.cptr())
     return uv.cptr.tosfree()
+}
+pub fn (fld Field) name() string {
+    return rec_field_name(fld.vptr()).cptr.tosdup()
+}
+pub fn (fld Field) value() string {
+    uv := rec_field_value(fld.vptr())
+    return uv.cptr.tosdup()
 }
 
 /*************** Managing record  ******************************/
@@ -266,6 +291,10 @@ pub fn (rec Record) set_location(location usize)  {
 pub fn (rec Record) mset() Mset {
     return rec_record_mset(rec.vptr()).mset
 }
+pub fn (rec Record) field_p(name string) bool {
+    return rec_record_field_p(rec.vptr(), name.str.cptr()).bool
+}
+
 /*************** Managing rset elements ******************************/
 
 pub fn (set Rset) destroy() { rec_rset_destroy(set.vptr()) }
@@ -450,6 +479,10 @@ pub fn (wrs Writer) write_field(fld Field) ! {
 pub fn (wrs Writer) write_record(fld Record) ! {
     uv := rec_write_record(wrs.vptr(), fld.vptr())
     if !uv.bool { return error ("some error record") }
+}
+pub fn (wrs Writer) write_rset(set Rset) ! {
+    uv := rec_write_rset(wrs.vptr(), set.vptr())
+    if !uv.bool { return error ("some error rset") }
 }
 pub fn (wrs Writer) write_str() ! {
     uv := rec_write_string(wrs.vptr(), c'ademo: strrr'.cptr())

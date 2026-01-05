@@ -4,6 +4,8 @@ import io
 import os
 import v.token
 
+import vcp
+
 // high level api
 
 @[params]
@@ -59,6 +61,33 @@ pub fn Record.tostruct[T](o T) T {
     return T{}
 }
 
+// set %unique => field name
+pub fn (set Rset) set_desc(stdfld StdFieldType, value string) {
+    drec := set.descriptor()
+    fld := Field.new_std(stdfld, value)
+    defer { fld.destroy() }
+    if !drec.field_p(fld.name()) {    
+    }
+    drec.mset().append(.field, fld)
+}
+pub fn (set Rset) set_descs(descs map[StdFieldType]string) {
+    for stdfld, value in descs {
+        set.set_desc(stdfld, value)
+    }
+}
+pub fn (set Rset) descs() map[StdFieldType]string {
+    res := map[StdFieldType]string{}
+    drec := set.descriptor()
+
+    for i in 0..int(StdFieldType.sigular) {
+        name := Field.std_name(StdFieldType(i))
+        if !drec.field_p(name) { continue }
+    }
+    assert false, "TODO"
+    
+    return res
+}
+
 pub fn (rec Record) dump() ! string {
     buf := charptr(0)
     size := usize(0)
@@ -69,6 +98,43 @@ pub fn (rec Record) dump() ! string {
     // assert size >= 0
 
     return buf.tosfree(int(size))    
+}
+
+pub fn (set Rset) dump() ! string {
+    buf := charptr(0)
+    size := usize(0)
+    wrs := Writer.new_str(&buf, &size)
+    
+    wrs.write_rset(set) !
+    wrs.destroy()
+    // assert size >= 0
+
+    return buf.tosfree(int(size))    
+}
+
+pub fn (mset Mset) dumpx() string {
+    iter := mset.iterator()
+    iterp := &iter
+    // dump(iter)
+    res := "MSET (${mset.count(.any)}) {\n"
+    for i := 0; ; i++ {
+        retdata, retelem, bv := iterp.next(recut.MsetType(0))
+        if !bv { break }
+        match retelem.type() {
+            .field {
+                retfld := Field(retdata)
+                if retfld.name()=="" { // wtt
+                    res += "  >> $i, empty name/value???\n"
+                    continue 
+                }
+                res += "  >> $i, ${retfld.name()} = ${retfld.value()}\n"
+            }
+            else{res += "  >> $i, unknown elem type: ${retelem.type()}, $retdata}\n"}
+        }
+    }
+    iterp.free1()
+    res += "} << MSET"
+    return res
 }
 
 
@@ -166,7 +232,7 @@ pub fn (db DB) delete_by_expr(typ string, expr string) ! {
 // name is column name/normal field name
 // (.unique, 'url')
 // (.key, 'username')
-pub fn Field.new_std(fld StdFieldType, name string) Field {
-    stdname := Field.std_name(fld)
+pub fn Field.new_std(fldty StdFieldType, name string) Field {
+    stdname := Field.std_name(fldty)
     return Field.new(stdname, name)
 }
