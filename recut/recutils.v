@@ -202,11 +202,43 @@ pub enum Type {
     // ...
 }
 
+pub enum StdFieldType {
+    auto = 0         // REC_FIELD_AUTO = 0,
+    confidential     // REC_FIELD_CONFIDENTIAL,
+    key                 // REC_FIELD_KEY,
+    mandatory            // REC_FIELD_MANDATORY,
+    prohibit             // REC_FIELD_PROHIBIT,
+    rec                 // REC_FIELD_REC,
+    size                 // REC_FIELD_SIZE,
+    sort                 // REC_FIELD_SORT,
+    type                 // REC_FIELD_TYPE,
+    typedef                 // REC_FIELD_TYPEDEF,
+    unique                 // REC_FIELD_UNIQUE,
+    constraint                 // REC_FIELD_CONSTRAINT,
+    allowed                 // REC_FIELD_ALLOWED,
+    sigular                 // REC_FIELD_SINGULAR
+}
+
 pub fn Field.new(name string, value string) Field {
     assert name.count(' ') == 0 // cannot have ' ', see C.REC_FNAME_RE
     assert name.count('-') == 0
     uv := rec_field_new(name.str.cptr(), value.str.cptr())
     return uv.fld
+}
+
+pub fn Field.std_name(stdfld StdFieldType) string {
+    uv := rec_std_field_name()
+    return uv.cptr.tosref()
+}
+pub fn Field.name_p(s string) bool {
+    return rec_field_name_p(s.str.cptr()).bool
+}
+pub fn Field.name_escape(s string) string {
+    return Field.name_normalise(s)
+}
+pub fn Field.name_normalise(s string) string {
+    uv := rec_field_name_normalise(s.str.cptr())
+    return uv.cptr.tosfree()
 }
 
 /*************** Managing record  ******************************/
@@ -237,11 +269,23 @@ pub fn (rec Record) mset() Mset {
 /*************** Managing rset elements ******************************/
 
 pub fn (set Rset) destroy() { rec_rset_destroy(set.vptr()) }
+pub fn (set Rset) type() string { 
+    return rec_rset_type(set.vptr()).cptr.tosfree()
+}
 pub fn (set Rset) num_records() usize {
     return rec_rset_num_records(set.vptr()).usize
 }
 pub fn (set Rset) mset() Mset {
     return rec_rset_mset(set.vptr()).mset
+}
+
+pub fn (set Rset) descriptor() Record {
+    return rec_rset_descriptor(set.vptr()).rec
+}
+pub fn (set Rset) set_descriptor(rec Record) Record {
+    oldrec := rec_rset_descriptor(set.vptr()).rec
+    rec_rset_set_descriptor(set.vptr(), rec.vptr())
+    return oldrec
 }
 
 pub struct Buf {
@@ -296,10 +340,14 @@ pub fn (db DB) insert(typ string, rec Record) ! {
 }
 
 @[params]
-pub struct DBQueryOption4c {
+pub struct QueryOption4c {
 pub:
+    // NULL to 'default'
+    // samilar to SQL's table concept
+    typep charptr = c'default' // how to all?
     joinp charptr
     indexp voidptr
+    // samilar to SQL's limit?
     index [2]usize // [min,max] pair
     fast_string charptr
     random usize
@@ -311,7 +359,9 @@ pub:
 }
 
 // see below for expr format
-pub fn (db DB) query(typ string, sex Sex, opt DBQueryOption4c) Rset {
+// return always non NULL
+pub fn (db DB) query(sex Sex, opt QueryOption4c) Rset {
+    typ := opt.typep.tosref()
     typ2 := if typ.len==0 { 'default' } else { typ }
     
     uv := rec_db_query (db.vptr(),
@@ -326,6 +376,8 @@ pub fn (db DB) query(typ string, sex Sex, opt DBQueryOption4c) Rset {
                              opt.group_by,
                              opt.sort_by,
                              opt.flags)
+    
+    assert uv.rset != nil
     return uv.rset
 }
 
@@ -346,14 +398,25 @@ pub fn (db DB) int_check() ! {
     ebuf := Buf.new()
     defer { ebuf.close() }
     
-    uv := rec_int_check_db(voidptr(db), 1, 1, ebuf.cbuf)
+    check_descriptor_p, remote_descriptor_p := 1, 1
+    uv := rec_int_check_db(voidptr(db), check_descriptor_p, remote_descriptor_p, ebuf.cbuf)
+    if uv.int > 0 { return errorwc('some error: ${ebuf.string()}', uv.int) }
+}
+pub fn (db DB) int_check_rset(rset Rset) ! {
+    ebuf := Buf.new()
+    defer { ebuf.close() }
+    
+    check_descriptor_p, remote_descriptor_p := 1, 1
+    uv := rec_int_check_db(db.vptr(), rset.vptr(), check_descriptor_p, remote_descriptor_p, ebuf.cbuf)
     if uv.int > 0 { return errorwc('some error: ${ebuf.string()}', uv.int) }
 }
 
+// return maybe NULL
 pub fn (db DB) get_rset(position usize) Rset {
     uv := rec_db_get_rset(db.vptr(), position)
     return uv.rset
 }
+// return maybe NULL
 pub fn (db DB) get_rset_by_type(typ string) Rset {
     uv := rec_db_get_rset_by_type(db.vptr(), typ.str.cptr())
     return uv.rset
@@ -446,11 +509,12 @@ pub fn Sex.new(case_insensitive bool) Sex {
 }
 pub fn (sex Sex) destroy() { rec_sex_destroy(sex.vptr()) }
 
-pub fn (sex Sex) compile(expr string) ! {
+pub fn (sex Sex) compile(expr string) !Sex {
     uv := rec_sex_compile(sex.vptr(), expr.str.cptr())
     if !uv.bool {
         return error("${@FILE_LINE}: ${@STRUCT}.${@FN} error")
     }
+    return sex
 }
 
 /*

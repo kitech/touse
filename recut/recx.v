@@ -2,6 +2,7 @@ module recut
 
 import io
 import os
+import v.token
 
 // high level api
 
@@ -125,4 +126,47 @@ pub fn DB.from_reader(r io.Reader) ! DB {
 // TODO
 pub fn (db DB) upsert() ! {
     
+}
+
+pub enum QueryOp {
+    // eq = int(token.Kind.eq)
+    eq = int(token.Kind.assign)
+    ne = int(token.Kind.ne)
+    gt = int(token.Kind.gt)
+    lt = int(token.Kind.lt)
+    ge = int(token.Kind.ge)
+    le = int(token.Kind.le)
+}
+
+// type=all
+pub fn (db DB) query_field(name string, op QueryOp, value string) !Rset {
+    return 0
+}
+
+// list types/tables
+// ['default', ...]
+pub fn (db DB) list_types() []string {
+    res := []string{}
+    for pos in 0..db.size() {
+        rset := db.get_rset(pos)
+        typ := rset.type()
+        res << typ
+    }
+    return res
+}
+
+// name = 'value'
+pub fn (db DB) delete_by_expr(typ string, expr string) ! {
+    re := Sex.new(true).compile(expr) !
+    defer { re.destroy() }
+    
+    db.delete(typ, re)
+}
+
+// name is column name/normal field name
+// (.unique, 'url')
+// (.key, 'username')
+pub fn Field.new_std(fld StdFieldType, name string) Field {
+    stdname := Field.std_name(fld)
+    return Field.new(stdname, name)
 }
