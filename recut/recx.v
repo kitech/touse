@@ -19,15 +19,25 @@ pub struct QueryOption {
 @[params]
 pub struct SearchOption {
     pub mut:
+    a int
+    b string
+    c f32
+}
+
+@[markused]
+fn infer_some() {
+    Record.ofstruct(SearchOption{})
+    Record.ofmap(map[string]int{})
+    Record.ofmap(map[string]string{})
 }
 
 pub fn Record.ofmap[T](o map[string]T) Record {
     r := Record.new()
     for k, v in o {
-        s := match v {
-            string { v }
-            else { '$v' }
-        }
+        s := ''
+        $if T is $string { s = v }
+        $else { s = v.str() }
+    
         fld := Field.new(k, s)
         r.mset().append(.field, fld.vptr())
     }
@@ -44,10 +54,14 @@ pub fn Record.ofstruct[T](o T) Record {
     r := Record.new()
     $for stfield in T.fields {
         name := stfield.name
-        s := o.$(stfield.name).str()
-        s = match stfield.typ {
-                string { }
-                else { }
+        s := match stfield.typ {
+            string { o.$(stfield.name).str() }
+            else { o.$(stfield.name).str() }
+        }
+        $if stfield.typ is $string {
+            s = o.$(stfield.name)
+        } $else {
+            o.$(stfield.name).str()
         }
         
         fld := Field.new(name, s)
@@ -75,15 +89,18 @@ pub fn (set Rset) set_descs(descs map[StdFieldType]string) {
         set.set_desc(stdfld, value)
     }
 }
-pub fn (set Rset) descs() map[StdFieldType]string {
-    res := map[StdFieldType]string{}
+pub fn (set Rset) descs() map[string]string {
+    res := map[string]string{}
     drec := set.descriptor()
 
     for i in 0..int(StdFieldType.sigular) {
         name := Field.std_name(StdFieldType(i))
         if !drec.field_p(name) { continue }
+        nflds := drec.get_num_fields_by_name(name)
+        assert nflds==1, 'desc record must only 1 field for one name'
+        fld := drec.get_field_by_name(name, 0)
+        res[name] = fld.value()
     }
-    assert false, "TODO"
     
     return res
 }
@@ -116,7 +133,8 @@ pub fn (mset Mset) dumpx() string {
     iter := mset.iterator()
     iterp := &iter
     // dump(iter)
-    res := "MSET (${mset.count(.any)}) {\n"
+    res := "MSET (${mset.count(.any)}) {"
+    res += ifelse(mset.count(.any)>1, "\n", "")
     for i := 0; ; i++ {
         retdata, retelem, bv := iterp.next(recut.MsetType(0))
         if !bv { break }
@@ -190,8 +208,22 @@ pub fn DB.from_reader(r io.Reader) ! DB {
 }
 
 // TODO
-pub fn (db DB) upsert() ! {
-    
+pub fn (db DB) upsert(recty string, rec Record, uniq_field_name string) ! {
+    if uniq_field_name != "" {
+        assert rec.field_p(uniq_field_name)
+        fld := rec.get_field_by_name(uniq_field_name, 0)
+        ure := '$uniq_field_name = "${fld.value()}"'
+        usex := Sex.new(true).compile(ure) !
+        defer { usex.destroy() }
+        
+        rset_slt := db.query(usex, typep:recty.str)
+        defer { rset_slt.destroy() }
+        recdupcnt := rset_slt.num_records()
+        if recdupcnt > 0 {
+        if !db.delete(recty, usex) {return errorws("db.delete fail, cnt $recdupcnt, $ure", 0)}
+        }
+    }
+    db.insert(recty, rec) !
 }
 
 pub enum QueryOp {

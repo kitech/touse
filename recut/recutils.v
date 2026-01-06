@@ -7,7 +7,7 @@ import vcp.ircpp
 import touse.ffi
 
 
-#include <rec.h>
+// #include <rec.h>
 
 pub const version_major = 1
 pub const version_minor = 0
@@ -24,9 +24,9 @@ pub fn fini() {
     // vcp.call_vatmpl(dlsym0('rec_fini'), 0)
 }
 
-pub type MsetListIter = C.rec_mset_list_iter_t
-@[typedef]
-pub struct C.rec_mset_list_iter_t {
+pub type MsetListIter = Crec_mset_list_iter_t
+// @[typedef]
+pub struct Crec_mset_list_iter_t {
     pub mut:
     vtable voidptr
     list voidptr
@@ -37,9 +37,9 @@ pub struct C.rec_mset_list_iter_t {
     j usize
 }
 
-pub type MsetIterator = C.rec_mset_iterator_t
-@[typedef]
-pub struct C.rec_mset_iterator_t {
+pub type MsetIterator = Crec_mset_iterator_t
+// @[typedef]
+pub struct Crec_mset_iterator_t {
     pub mut:
     mset Mset
     list_iter MsetListIter
@@ -74,10 +74,6 @@ pub type MsetEqualFn = fn(data1 voidptr, data2 voidptr) bool
 pub type MsetDupFn = fn(data voidptr) voidptr
 pub type MsetComparelFn = fn(data1 voidptr, data2 voidptr, type2 int) int
 
-// drop !
-fn dlsym0(name string) voidptr {
-    return rtld.sym(name) or { vcp.error(err.str()) }
-}
 
 pub union Retval {
     ircpp.Retval
@@ -111,7 +107,47 @@ pub fn (elem &MsetElem) str() string {
 
 //////////////////////////
 
+// drop !
+fn dlsym0(name string) voidptr {
+    return rtld.sym(name) or { vcp.error(err.str()) }
+}
+
+// only used for function_missing
+// only can used for name rule very clear and no any expection rule
+// recut.Mset.static.new
+// recut.init_
+// recut.Mset_destroy
+// modname = @MOD, it should in mod1.mod2... format
+fn missing_cfuncname_by_caller(modname string, cfpfx string, skip int) string {
+    callers := xdl.get_caller_names(true)
+    assert skip < callers.len
+    // caller[0] is myself
+    // caller[1] is function_missing
+    caller := callers[skip]
+
+    cfname := "${cfpfx}_$caller"
+    arr := caller[modname.len+1..].split('.')
+    
+    if arr.contains('static') {
+        cfname = "${cfpfx}_${arr[0].untitle()}_${arr[2]}"
+    } else if arr[0].is_title() {
+        cfname = "${cfpfx}_${arr[0].untitle()}"        
+    } else {
+        if arr[0] == 'init_' {
+            cfname = "${cfpfx}_init"
+        }else{
+            cfname = "${cfpfx}_${arr[0]}"            
+        }
+    }
+    // vcp.info(caller, "=>", cfname, modname)
+    return cfname
+}
+
 fn function_missing(funcname string, args...Anyer) Retval {
+    assert funcname.starts_with('rec'), funcname
+    cfname := missing_cfuncname_by_caller(@MOD, 'rec', 2)    
+    // if cfname != funcname { vcp.warn(cfname, "!=", funcname) }
+    
     fnp := dlsym0(funcname)
     return ffi.callany[Retval](fnp, ...args)
 }
@@ -293,6 +329,17 @@ pub fn (rec Record) mset() Mset {
 }
 pub fn (rec Record) field_p(name string) bool {
     return rec_record_field_p(rec.vptr(), name.str.cptr()).bool
+}
+pub fn (rec Record) get_num_fields_by_name(field_name string) usize {
+    uv := rec_record_get_num_fields_by_name(rec.vptr(), field_name.str.cptr())
+    return uv.usize
+}
+pub fn (rec Record) get_field_by_name(field_name string, n usize) Field {
+    uv := rec_record_get_field_by_name(rec.vptr(), field_name.str.cptr(), n)
+    return uv.fld
+}
+pub fn (rec Record) remove_field_by_name(field_name string, n usize) {
+    rec_record_remove_field_by_name(rec.vptr(), field_name.str.cptr(), n)
 }
 
 /*************** Managing rset elements ******************************/
