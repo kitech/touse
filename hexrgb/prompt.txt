@@ -1,0 +1,5 @@
+使用C99编写web color #FFFFFF 为 rgb 的双向转换函数，并包装为V语言函数，并编写V的单元测试
+在每个文件最后显示个总行数。验证函数也要写为C函数。不需要构建脚本。
+使用no body func, 加 @[importc: "name"], 让V封装代码更少。
+包名为 hexrgb，C函数加上前缀 hexrgb_。
+注释和测试输出使用英文。
