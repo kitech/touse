@@ -16,14 +16,160 @@
 #include <wchar.h>
 #include <iconv.h>
 
+// ==================== 日志系统 ====================
+
+// 日志级别
+typedef enum {
+    X11UT_LOG_NONE = 0,    // 不显示任何日志
+    X11UT_LOG_ERROR = 1,   // 只显示错误
+    X11UT_LOG_WARNING = 2, // 显示错误和警告
+    X11UT_LOG_INFO = 3,    // 显示错误、警告和信息（默认）
+    X11UT_LOG_DEBUG = 4,   // 显示所有日志，包括调试信息
+    X11UT_LOG_VERBOSE = 5  // 显示所有日志，包括详细信息
+} x11ut__log_level_t;
+
+// 全局日志级别（默认为INFO）
+static x11ut__log_level_t g_x11ut_log_level = X11UT_LOG_INFO;
+// 全局日志文件指针
+static FILE* g_x11ut_log_file = NULL;
+
+// 获取文件名（去掉路径）
+static const char* x11ut__get_filename(const char* path) {
+    const char* filename = strrchr(path, '/');
+    return filename ? filename + 1 : path;
+}
+
+// 日志函数（内部使用）
+static void x11ut__log_internal(x11ut__log_level_t level, const char* file, int line, const char* format, ...) {
+    // 如果请求的日志级别高于当前设置的级别，则不输出
+    if (level > g_x11ut_log_level) {
+        return;
+    }
+    
+    // 获取当前时间
+    time_t now;
+    struct tm* tm_info;
+    char time_buffer[20];
+    
+    time(&now);
+    tm_info = localtime(&now);
+    strftime(time_buffer, sizeof(time_buffer), "%H:%M:%S", tm_info);
+    
+    // 日志级别名称
+    const char* level_name;
+    switch(level) {
+        case X11UT_LOG_ERROR:   level_name = "ERROR"; break;
+        case X11UT_LOG_WARNING: level_name = "WARNING"; break;
+        case X11UT_LOG_INFO:    level_name = "INFO"; break;
+        case X11UT_LOG_DEBUG:   level_name = "DEBUG"; break;
+        case X11UT_LOG_VERBOSE: level_name = "VERBOSE"; break;
+        default:                level_name = "UNKNOWN"; break;
+    }
+    
+    // 确定输出目标
+    FILE* output = stdout;
+    if (level == X11UT_LOG_ERROR || level == X11UT_LOG_WARNING) {
+        output = stderr;
+    }
+    
+    // 输出日志头（时间、级别、文件、行号）
+    fprintf(output, "[%s] [%-7s] %s:%d: ", 
+            time_buffer, level_name, x11ut__get_filename(file), line);
+    
+    // 输出日志内容
+    va_list args;
+    va_start(args, format);
+    vfprintf(output, format, args);
+    va_end(args);
+    
+    fprintf(output, "\n");
+    fflush(output);
+    
+    // 如果启用了日志文件，也输出到文件
+    if (g_x11ut_log_file) {
+        fprintf(g_x11ut_log_file, "[%s] [%-7s] %s:%d: ", 
+                time_buffer, level_name, x11ut__get_filename(file), line);
+        va_start(args, format);
+        vfprintf(g_x11ut_log_file, format, args);
+        va_end(args);
+        fprintf(g_x11ut_log_file, "\n");
+        fflush(g_x11ut_log_file);
+    }
+}
+
+// 日志宏（包含文件行数）
+#define X11UT_LOG_ERROR(...)    x11ut__log_internal(X11UT_LOG_ERROR, __FILE__, __LINE__, __VA_ARGS__)
+#define X11UT_LOG_WARNING(...)  x11ut__log_internal(X11UT_LOG_WARNING, __FILE__, __LINE__, __VA_ARGS__)
+#define X11UT_LOG_INFO(...)     x11ut__log_internal(X11UT_LOG_INFO, __FILE__, __LINE__, __VA_ARGS__)
+#define X11UT_LOG_DEBUG(...)    x11ut__log_internal(X11UT_LOG_DEBUG, __FILE__, __LINE__, __VA_ARGS__)
+#define X11UT_LOG_VERBOSE(...)  x11ut__log_internal(X11UT_LOG_VERBOSE, __FILE__, __LINE__, __VA_ARGS__)
+
+// 设置日志级别
+static void x11ut__set_log_level(x11ut__log_level_t level) {
+    g_x11ut_log_level = level;
+    X11UT_LOG_INFO("设置日志级别为: %d", level);
+}
+
+// 解析日志级别字符串
+static x11ut__log_level_t x11ut__parse_log_level(const char* level_str) {
+    if (strcmp(level_str, "none") == 0 || strcmp(level_str, "NONE") == 0) {
+        return X11UT_LOG_NONE;
+    } else if (strcmp(level_str, "error") == 0 || strcmp(level_str, "ERROR") == 0) {
+        return X11UT_LOG_ERROR;
+    } else if (strcmp(level_str, "warning") == 0 || strcmp(level_str, "WARNING") == 0) {
+        return X11UT_LOG_WARNING;
+    } else if (strcmp(level_str, "info") == 0 || strcmp(level_str, "INFO") == 0) {
+        return X11UT_LOG_INFO;
+    } else if (strcmp(level_str, "debug") == 0 || strcmp(level_str, "DEBUG") == 0) {
+        return X11UT_LOG_DEBUG;
+    } else if (strcmp(level_str, "verbose") == 0 || strcmp(level_str, "VERBOSE") == 0) {
+        return X11UT_LOG_VERBOSE;
+    } else {
+        // 尝试解析数字
+        int level = atoi(level_str);
+        if (level >= X11UT_LOG_NONE && level <= X11UT_LOG_VERBOSE) {
+            return (x11ut__log_level_t)level;
+        }
+        return X11UT_LOG_INFO; // 默认
+    }
+}
+
+// 设置日志文件
+static bool x11ut__set_log_file(const char* filename) {
+    if (g_x11ut_log_file) {
+        fclose(g_x11ut_log_file);
+        g_x11ut_log_file = NULL;
+    }
+    
+    if (filename) {
+        g_x11ut_log_file = fopen(filename, "a");
+        if (!g_x11ut_log_file) {
+            X11UT_LOG_ERROR("无法打开日志文件: %s", filename);
+            return false;
+        }
+        X11UT_LOG_INFO("日志将保存到文件: %s", filename);
+    }
+    
+    return true;
+}
+
+// 清理日志系统
+static void x11ut__log_cleanup(void) {
+    if (g_x11ut_log_file) {
+        X11UT_LOG_INFO("关闭日志文件");
+        fclose(g_x11ut_log_file);
+        g_x11ut_log_file = NULL;
+    }
+}
+
 // ==================== 错误处理 ====================
 
 // X11错误处理函数
 static int x11ut__error_handler(Display* display, XErrorEvent* error) {
     char error_text[256];
     XGetErrorText(display, error->error_code, error_text, sizeof(error_text));
-    fprintf(stderr, "X11错误 [代码: %d, 请求: %d, 小代码: %d]: %s\n",
-            error->error_code, error->request_code, error->minor_code, error_text);
+    X11UT_LOG_ERROR("X11错误 [代码: %d, 请求: %d, 小代码: %d]: %s",
+                    error->error_code, error->request_code, error->minor_code, error_text);
     return 0;
 }
 
@@ -230,7 +376,7 @@ bool x11ut__tray_init(x11ut__tray_t* tray, const char* display_name) {
     // 打开显示
     tray->display = XOpenDisplay(display_name);
     if (!tray->display) {
-        fprintf(stderr, "无法打开X显示连接\n");
+        X11UT_LOG_ERROR("无法打开X显示连接");
         return false;
     }
     
@@ -395,7 +541,7 @@ bool x11ut__tray_init(x11ut__tray_t* tray, const char* display_name) {
                                        tray->colors.bg_color);     // 背景颜色
     
     if (!tray->window) {
-        fprintf(stderr, "无法创建窗口\n");
+        X11UT_LOG_ERROR("无法创建窗口");
         XCloseDisplay(tray->display);
         return false;
     }
@@ -440,7 +586,7 @@ bool x11ut__tray_init(x11ut__tray_t* tray, const char* display_name) {
     tray->gc = XCreateGC(tray->display, tray->window, 
                         GCForeground | GCBackground | GCLineWidth, &gc_vals);
     if (!tray->gc) {
-        fprintf(stderr, "无法创建图形上下文\n");
+        X11UT_LOG_ERROR("无法创建图形上下文");
         XDestroyWindow(tray->display, tray->window);
         XCloseDisplay(tray->display);
         return false;
@@ -454,7 +600,7 @@ bool x11ut__tray_init(x11ut__tray_t* tray, const char* display_name) {
     // 绘制默认图标
     x11ut__draw_default_icon(tray);
     
-    printf("托盘初始化成功，窗口ID: 0x%lx\n", tray->window);
+    X11UT_LOG_INFO("托盘初始化成功，窗口ID: 0x%lx", tray->window);
     return true;
 }
 
@@ -518,6 +664,7 @@ bool x11ut__tray_set_icon(x11ut__tray_t* tray, int width, int height, const unsi
     x11ut__draw_default_icon(tray);
     
     XFlush(tray->display);
+    X11UT_LOG_DEBUG("设置图标尺寸: %dx%d", width, height);
     return true;
 }
 
@@ -525,19 +672,19 @@ bool x11ut__tray_set_icon(x11ut__tray_t* tray, int width, int height, const unsi
 bool x11ut__tray_embed(x11ut__tray_t* tray) {
     if (!tray || !tray->display) return false;
     
-    printf("查找系统托盘...\n");
+    X11UT_LOG_INFO("查找系统托盘...");
     
     // 获取系统托盘窗口
     tray->tray_window = XGetSelectionOwner(tray->display, tray->net_system_tray_s0);
     
     if (tray->tray_window == None) {
-        printf("未找到系统托盘，将在普通窗口中显示\n");
+        X11UT_LOG_WARNING("未找到系统托盘，将在普通窗口中显示");
         XMapWindow(tray->display, tray->window);
         XFlush(tray->display);
         return false;
     }
     
-    printf("找到系统托盘窗口: 0x%lx\n", tray->tray_window);
+    X11UT_LOG_INFO("找到系统托盘窗口: 0x%lx", tray->tray_window);
     
     // 发送嵌入消息
     XClientMessageEvent ev;
@@ -555,7 +702,7 @@ bool x11ut__tray_embed(x11ut__tray_t* tray) {
     XSendEvent(tray->display, tray->tray_window, False, NoEventMask, (XEvent*)&ev);
     XFlush(tray->display);
     
-    printf("已发送嵌入请求\n");
+    X11UT_LOG_INFO("已发送嵌入请求");
     
     // 等待一下然后映射窗口
     x11ut__msleep(100);
@@ -563,7 +710,7 @@ bool x11ut__tray_embed(x11ut__tray_t* tray) {
     XFlush(tray->display);
     
     tray->embedded = true;
-    printf("窗口已映射\n");
+    X11UT_LOG_INFO("窗口已映射");
     
     return true;
 }
@@ -578,7 +725,7 @@ static bool x11ut__load_font(x11ut__tray_t* tray, x11ut__menu_t* menu, const cha
     if (font_name) {
         menu->font = XftFontOpenName(tray->display, tray->screen, font_name);
         if (menu->font) {
-            printf("成功加载指定字体: %s\n", font_name);
+            X11UT_LOG_DEBUG("成功加载指定字体: %s", font_name);
             
             // 初始化颜色
             XRenderColor render_color;
@@ -633,7 +780,7 @@ static bool x11ut__load_font(x11ut__tray_t* tray, x11ut__menu_t* menu, const cha
     for (int i = 0; font_names[i] != NULL; i++) {
         menu->font = XftFontOpenName(tray->display, tray->screen, font_names[i]);
         if (menu->font) {
-            printf("成功加载字体: %s\n", font_names[i]);
+            X11UT_LOG_DEBUG("成功加载字体: %s", font_names[i]);
             
             // 初始化颜色
             XRenderColor render_color;
@@ -674,7 +821,7 @@ static bool x11ut__load_font(x11ut__tray_t* tray, x11ut__menu_t* menu, const cha
         }
     }
     
-    fprintf(stderr, "错误: 无法加载任何字体\n");
+    X11UT_LOG_ERROR("无法加载任何字体");
     return false;
 }
 
@@ -736,6 +883,7 @@ x11ut__menu_t* x11ut__menu_create(x11ut__tray_t* tray) {
     if (!menu->window) {
         if (menu->font) XftFontClose(tray->display, menu->font);
         free(menu);
+        X11UT_LOG_ERROR("无法创建菜单窗口");
         return NULL;
     }
     
@@ -779,6 +927,7 @@ x11ut__menu_t* x11ut__menu_create(x11ut__tray_t* tray) {
                    XA_ATOM, 32, PropModeReplace,
                    (unsigned char*)&tray->net_wm_window_type_menu, 1);
     
+    X11UT_LOG_DEBUG("创建菜单成功，窗口ID: 0x%lx", menu->window);
     return menu;
 }
 
@@ -828,6 +977,7 @@ bool x11ut__menu_add_item(x11ut__tray_t* tray, x11ut__menu_t* menu,
         }
     }
     
+    X11UT_LOG_DEBUG("添加菜单项: %s", label);
     return true;
 }
 
@@ -876,6 +1026,7 @@ bool x11ut__menu_add_checkable_item(x11ut__tray_t* tray, x11ut__menu_t* menu, co
         }
     }
     
+    X11UT_LOG_DEBUG("添加可勾选菜单项: %s (初始状态: %s)", label, initial_state ? "勾选" : "未勾选");
     return true;
 }
 
@@ -902,6 +1053,7 @@ bool x11ut__menu_set_checked(x11ut__tray_t* tray, x11ut__menu_t* menu, int index
         x11ut__menu_draw(tray, menu);
     }
     
+    X11UT_LOG_DEBUG("设置菜单项 %d 勾选状态为: %s", index, checked ? "勾选" : "未勾选");
     return true;
 }
 
@@ -936,12 +1088,15 @@ bool x11ut__menu_add_separator(x11ut__tray_t* tray, x11ut__menu_t* menu) {
     menu->item_count++;
     menu->height = menu->item_count * menu->item_height + 10;
     
+    X11UT_LOG_DEBUG("添加菜单分隔线");
     return true;
 }
 
 // 绘制菜单
 static void x11ut__menu_draw(x11ut__tray_t* tray, x11ut__menu_t* menu) {
     if (!tray || !tray->display || !menu || !menu->window) return;
+    
+    X11UT_LOG_VERBOSE("绘制菜单");
     
     // 创建临时GC用于背景和边框
     XGCValues gc_vals;
@@ -1065,6 +1220,8 @@ void x11ut__menu_show(x11ut__tray_t* tray, x11ut__menu_t* menu, int x, int y) {
         menu_y = 10;
     }
     
+    X11UT_LOG_DEBUG("显示菜单于位置: (%d, %d)", menu_x, menu_y);
+    
     // 移动和调整大小
     XMoveResizeWindow(tray->display, menu->window, menu_x, menu_y, 
                      menu->width, menu->height);
@@ -1090,6 +1247,7 @@ void x11ut__menu_hide(x11ut__tray_t* tray, x11ut__menu_t* menu) {
     XUnmapWindow(tray->display, menu->window);
     menu->visible = false;
     menu->hover_index = -1;  // 重置悬停索引
+    X11UT_LOG_DEBUG("隐藏菜单");
     XFlush(tray->display);
 }
 
@@ -1127,9 +1285,9 @@ static void x11ut__handle_menu_click(x11ut__tray_t* tray, x11ut__menu_t* menu, i
     
     // 调用回调函数
     if (item->callback) {
-        printf("点击菜单项: %s (checked: %s)\n", 
-               item->utf8_label ? item->utf8_label : item->label,
-               item->checked ? "true" : "false");
+        X11UT_LOG_DEBUG("点击菜单项: %s (checked: %s)", 
+                        item->utf8_label ? item->utf8_label : item->label,
+                        item->checked ? "true" : "false");
         item->callback(item->user_data, item->checked);
     }
     
@@ -1179,12 +1337,15 @@ static void x11ut__update_menu_hover(x11ut__tray_t* tray, x11ut__menu_t* menu, i
     if (menu->hover_index != item_index) {
         menu->hover_index = item_index;
         x11ut__menu_draw(tray, menu);
+        X11UT_LOG_VERBOSE("菜单悬停项: %d", item_index);
     }
 }
 
 // 清理菜单
 void x11ut__menu_cleanup(x11ut__tray_t* tray, x11ut__menu_t* menu) {
     if (!menu) return;
+    
+    X11UT_LOG_DEBUG("清理菜单资源");
     
     if (tray && tray->display && menu->window) {
         x11ut__menu_hide(tray, menu);
@@ -1247,7 +1408,7 @@ x11ut__tooltip_t* x11ut__tooltip_create(x11ut__tray_t* tray) {
         for (int i = 0; font_names[i] != NULL; i++) {
             tooltip->font = XftFontOpenName(tray->display, tray->screen, font_names[i]);
             if (tooltip->font) {
-                printf("工具提示字体: %s\n", font_names[i]);
+                X11UT_LOG_DEBUG("工具提示字体: %s", font_names[i]);
                 break;
             }
         }
@@ -1299,6 +1460,7 @@ x11ut__tooltip_t* x11ut__tooltip_create(x11ut__tray_t* tray) {
         }
         XftColorFree(tray->display, tray->visual, tray->colormap, &tooltip->color);
         free(tooltip);
+        X11UT_LOG_ERROR("无法创建工具提示窗口");
         return NULL;
     }
     
@@ -1312,6 +1474,7 @@ x11ut__tooltip_t* x11ut__tooltip_create(x11ut__tray_t* tray) {
                    XA_ATOM, 32, PropModeReplace,
                    (unsigned char*)&tray->net_wm_window_type_tooltip, 1);
     
+    X11UT_LOG_DEBUG("创建工具提示成功，窗口ID: 0x%lx", tooltip->window);
     return tooltip;
 }
 
@@ -1407,6 +1570,7 @@ void x11ut__tooltip_show(x11ut__tray_t* tray, x11ut__tooltip_t* tooltip,
                          strlen(tooltip->text));
         
         XFlush(tray->display);
+        X11UT_LOG_DEBUG("显示工具提示: %s", text);
     }
 }
 
@@ -1416,12 +1580,15 @@ void x11ut__tooltip_hide(x11ut__tray_t* tray, x11ut__tooltip_t* tooltip) {
     
     XUnmapWindow(tray->display, tooltip->window);
     tooltip->visible = false;
+    X11UT_LOG_VERBOSE("隐藏工具提示");
     XFlush(tray->display);
 }
 
 // 清理工具提示
 void x11ut__tooltip_cleanup(x11ut__tray_t* tray, x11ut__tooltip_t* tooltip) {
     if (!tooltip) return;
+    
+    X11UT_LOG_DEBUG("清理工具提示资源");
     
     if (tray && tray->display && tooltip->window) {
         x11ut__tooltip_hide(tray, tooltip);
@@ -1458,8 +1625,10 @@ bool x11ut__tray_process_events(x11ut__tray_t* tray) {
                 if (event.xexpose.window == tray->window) {
                     XCopyArea(tray->display, tray->icon_pixmap, tray->window, tray->gc,
                               0, 0, tray->icon_width, tray->icon_height, 0, 0);
+                    X11UT_LOG_VERBOSE("重绘托盘图标");
                 } else if (tray->menu && event.xexpose.window == tray->menu->window) {
                     x11ut__menu_draw(tray, tray->menu);
+                    X11UT_LOG_VERBOSE("重绘菜单");
                 } else if (tray->tooltip && event.xexpose.window == tray->tooltip->window) {
                     // 重新绘制工具提示
                     if (tray->tooltip->text && tray->tooltip->font) {
@@ -1472,13 +1641,14 @@ bool x11ut__tray_process_events(x11ut__tray_t* tray) {
                                          (const FcChar8*)tray->tooltip->text,
                                          strlen(tray->tooltip->text));
                     }
+                    X11UT_LOG_VERBOSE("重绘工具提示");
                 }
                 break;
                 
             case ButtonPress:
                 if (event.xbutton.window == tray->window) {
-                    printf("托盘图标被点击 (位置: %d, %d)\n", 
-                           event.xbutton.x_root, event.xbutton.y_root);
+                    X11UT_LOG_DEBUG("托盘图标被点击 (位置: %d, %d)", 
+                                   event.xbutton.x_root, event.xbutton.y_root);
                     if (tray->menu) {
                         x11ut__menu_show(tray, tray->menu, 
                                        event.xbutton.x_root, 
@@ -1556,14 +1726,14 @@ bool x11ut__tray_process_events(x11ut__tray_t* tray) {
                 
             case DestroyNotify:
                 if (event.xdestroywindow.window == tray->window) {
-                    printf("托盘窗口被销毁\n");
+                    X11UT_LOG_INFO("托盘窗口被销毁");
                     tray->running = false;
                 }
                 break;
                 
             case ClientMessage:
                 if (event.xclient.message_type == tray->net_system_tray_opcode) {
-                    printf("收到系统托盘消息\n");
+                    X11UT_LOG_DEBUG("收到系统托盘消息");
                 }
                 break;
         }
@@ -1585,6 +1755,8 @@ static void x11ut__msleep(long milliseconds) {
 // 清理资源
 void x11ut__tray_cleanup(x11ut__tray_t* tray) {
     if (!tray) return;
+    
+    X11UT_LOG_INFO("清理托盘资源");
     
     if (tray->display) {
         // 清理菜单
@@ -1611,36 +1783,36 @@ void x11ut__tray_cleanup(x11ut__tray_t* tray) {
 // ==================== 示例回调函数 ====================
 
 static void x11ut__example_callback1(void* data, bool checked) {
-    printf("选项1被点击: %s (checked: %s)\n", (char*)data, checked ? "true" : "false");
+    X11UT_LOG_INFO("选项1被点击: %s (checked: %s)", (char*)data, checked ? "true" : "false");
 }
 
 static void x11ut__example_callback2(void* data, bool checked) {
-    printf("选项2被点击 (checked: %s)\n", checked ? "true" : "false");
+    X11UT_LOG_INFO("选项2被点击 (checked: %s)", checked ? "true" : "false");
 }
 
 static void x11ut__test_callback(void* data, bool checked) {
-    printf("测试功能被点击 (checked: %s)\n", checked ? "true" : "false");
+    X11UT_LOG_INFO("测试功能被点击 (checked: %s)", checked ? "true" : "false");
 }
 
 static void x11ut__settings_callback(void* data, bool checked) {
-    printf("设置被点击 (checked: %s)\n", checked ? "true" : "false");
+    X11UT_LOG_INFO("设置被点击 (checked: %s)", checked ? "true" : "false");
 }
 
 static void x11ut__toggle_callback(void* data, bool checked) {
-    printf("切换功能: %s\n", checked ? "启用" : "禁用");
+    X11UT_LOG_INFO("切换功能: %s", checked ? "启用" : "禁用");
     
     // 这里可以执行实际的启用/禁用操作
     if (checked) {
-        printf("功能已启用\n");
+        X11UT_LOG_DEBUG("功能已启用");
     } else {
-        printf("功能已禁用\n");
+        X11UT_LOG_DEBUG("功能已禁用");
     }
 }
 
 static void x11ut__exit_callback(void* data, bool checked) {
     x11ut__tray_t* tray = (x11ut__tray_t*)data;
     if (tray) {
-        printf("退出程序 (checked: %s)\n", checked ? "true" : "false");
+        X11UT_LOG_INFO("退出程序 (checked: %s)", checked ? "true" : "false");
         tray->running = false;
     }
 }
@@ -1656,9 +1828,9 @@ static void x11ut__switch_language_callback(void* data, bool checked) {
     tray->english_mode = !tray->english_mode;
     
     if (tray->english_mode) {
-        printf("已切换到英文模式\n");
+        X11UT_LOG_INFO("已切换到英文模式");
     } else {
-        printf("已切换到中文模式\n");
+        X11UT_LOG_INFO("已切换到中文模式");
     }
     
     // 重新创建菜单（使用新的语言）
@@ -1681,9 +1853,9 @@ static void x11ut__toggle_dark_mode_callback(void* data, bool checked) {
     tray->dark_mode = !tray->dark_mode;
     
     if (tray->dark_mode) {
-        printf("已切换到暗色主题\n");
+        X11UT_LOG_INFO("已切换到暗色主题");
     } else {
-        printf("已切换到亮色主题\n");
+        X11UT_LOG_INFO("已切换到亮色主题");
     }
     
     // 重新初始化颜色
@@ -1712,7 +1884,7 @@ static void x11ut__create_menu(x11ut__tray_t* tray) {
     // 创建菜单
     tray->menu = x11ut__menu_create(tray);
     if (!tray->menu) {
-        fprintf(stderr, "警告: 无法创建菜单，字体加载失败\n");
+        X11UT_LOG_WARNING("无法创建菜单，字体加载失败");
         return;
     }
     
@@ -1762,12 +1934,14 @@ static void x11ut__create_menu(x11ut__tray_t* tray) {
         x11ut__menu_add_separator(tray, tray->menu);
         x11ut__menu_add_item(tray, tray->menu, "退出程序", x11ut__exit_callback, tray);
     }
+    
+    X11UT_LOG_DEBUG("创建菜单完成，共 %d 个菜单项", tray->menu->item_count);
 }
 
 // ==================== 字体测试函数 ====================
 
 static void x11ut__test_fonts(x11ut__tray_t* tray) {
-    printf("=== 字体测试 ===\n");
+    X11UT_LOG_INFO("=== 字体测试 ===");
     
     // 测试一些常见的中文字体
     const char* test_fonts[] = {
@@ -1782,47 +1956,164 @@ static void x11ut__test_fonts(x11ut__tray_t* tray) {
     for (int i = 0; test_fonts[i] != NULL; i++) {
         XftFont* font = XftFontOpenName(tray->display, tray->screen, test_fonts[i]);
         if (font) {
-            printf("✓ 字体可用: %s\n", test_fonts[i]);
+            X11UT_LOG_INFO("✓ 字体可用: %s", test_fonts[i]);
             XftFontClose(tray->display, font);
         } else {
-            printf("✗ 字体不可用: %s\n", test_fonts[i]);
+            X11UT_LOG_WARNING("✗ 字体不可用: %s", test_fonts[i]);
         }
     }
     
-    printf("=== 字体测试结束 ===\n\n");
+    X11UT_LOG_INFO("=== 字体测试结束 ===");
 }
 
 // ==================== 主函数 ====================
 
+// 显示帮助信息
+static void x11ut__print_help(const char* program_name) {
+    printf("用法: %s [选项]\n", program_name);
+    printf("选项:\n");
+    printf("  -h, --help             显示此帮助信息\n");
+    printf("  -l, --lang <语言>      设置语言: en (英文) 或 zh (中文)\n");
+    printf("  -d, --dark             启用暗色模式 (默认)\n");
+    printf("  --light                启用亮色模式\n");
+    printf("  --log-level <级别>     设置日志级别: 0-5 (0:无, 1:错误, 2:警告, 3:信息, 4:调试, 5:详细)\n");
+    printf("                        或: none, error, warning, info, debug, verbose\n");
+    printf("  --log-file <文件>      将日志输出到文件\n");
+    printf("  --version              显示版本信息\n");
+    printf("\n示例:\n");
+    printf("  %s                     # 默认: 中文 + 暗色主题 + INFO日志\n", program_name);
+    printf("  %s -l en               # 英文 + 暗色主题\n", program_name);
+    printf("  %s -l zh --light       # 中文 + 亮色主题\n", program_name);
+    printf("  %s --lang en --light   # 英文 + 亮色主题\n", program_name);
+    printf("  %s --log-level debug   # 启用调试日志\n", program_name);
+    printf("  %s --log-level 0       # 禁用所有日志\n", program_name);
+}
+
+// 解析命令行参数
+static void x11ut__parse_args(int argc, char* argv[], 
+                              bool* dark_mode, bool* english_mode,
+                              x11ut__log_level_t* log_level,
+                              char** log_file) {
+    // 默认值
+    *dark_mode = true;      // 默认暗色模式
+    *english_mode = false;  // 默认中文模式
+    *log_level = X11UT_LOG_INFO;  // 默认INFO级别
+    *log_file = NULL;       // 默认不记录到文件
+    
+    for (int i = 1; i < argc; i++) {
+        if (strcmp(argv[i], "-h") == 0 || strcmp(argv[i], "--help") == 0) {
+            x11ut__print_help(argv[0]);
+            exit(0);
+        } else if (strcmp(argv[i], "-l") == 0 || strcmp(argv[i], "--lang") == 0) {
+            if (i + 1 < argc) {
+                if (strcmp(argv[i + 1], "en") == 0 || strcmp(argv[i + 1], "english") == 0 || 
+                    strcmp(argv[i + 1], "EN") == 0 || strcmp(argv[i + 1], "English") == 0) {
+                    *english_mode = true;
+                } else if (strcmp(argv[i + 1], "zh") == 0 || strcmp(argv[i + 1], "chinese") == 0 || 
+                          strcmp(argv[i + 1], "ZH") == 0 || strcmp(argv[i + 1], "Chinese") == 0) {
+                    *english_mode = false;
+                } else {
+                    fprintf(stderr, "错误: 无效的语言选项 '%s'。请使用 'en' 或 'zh'\n", argv[i + 1]);
+                    x11ut__print_help(argv[0]);
+                    exit(1);
+                }
+                i++; // 跳过参数值
+            } else {
+                fprintf(stderr, "错误: -l/--lang 选项需要一个参数 (en 或 zh)\n");
+                x11ut__print_help(argv[0]);
+                exit(1);
+            }
+        } else if (strcmp(argv[i], "-d") == 0 || strcmp(argv[i], "--dark") == 0) {
+            *dark_mode = true;
+        } else if (strcmp(argv[i], "--light") == 0) {
+            *dark_mode = false;
+        } else if (strcmp(argv[i], "--log-level") == 0) {
+            if (i + 1 < argc) {
+                *log_level = x11ut__parse_log_level(argv[i + 1]);
+                i++; // 跳过参数值
+            } else {
+                fprintf(stderr, "错误: --log-level 选项需要一个参数\n");
+                x11ut__print_help(argv[0]);
+                exit(1);
+            }
+        } else if (strcmp(argv[i], "--log-file") == 0) {
+            if (i + 1 < argc) {
+                *log_file = argv[i + 1];
+                i++; // 跳过参数值
+            } else {
+                fprintf(stderr, "错误: --log-file 选项需要一个参数\n");
+                x11ut__print_help(argv[0]);
+                exit(1);
+            }
+        } else if (strcmp(argv[i], "--version") == 0) {
+            printf("X11 托盘图标程序 v1.0.0\n");
+            printf("支持命令行参数、主题切换、语言切换、日志系统\n");
+            exit(0);
+        } else {
+            fprintf(stderr, "错误: 未知选项 '%s'\n", argv[i]);
+            x11ut__print_help(argv[0]);
+            exit(1);
+        }
+    }
+}
+
 int main(int argc, char* argv[]) {
     x11ut__tray_t tray;
     
-    printf("=== X11 托盘图标程序 (支持语言和主题切换) ===\n");
-    printf("区域设置: %s\n", setlocale(LC_ALL, ""));
+    // 解析命令行参数
+    bool dark_mode, english_mode;
+    x11ut__log_level_t log_level;
+    char* log_file = NULL;
+    x11ut__parse_args(argc, argv, &dark_mode, &english_mode, &log_level, &log_file);
     
-    // 初始化
+    // 设置日志系统
+    x11ut__set_log_level(log_level);
+    if (log_file) {
+        x11ut__set_log_file(log_file);
+    }
+    
+    // 在设置日志级别后输出启动信息
+    X11UT_LOG_INFO("=== X11 托盘图标程序 (支持语言和主题切换) ===");
+    X11UT_LOG_INFO("参数设置:");
+    X11UT_LOG_INFO("  - 语言: %s", english_mode ? "英文" : "中文");
+    X11UT_LOG_INFO("  - 主题: %s", dark_mode ? "暗色" : "亮色");
+    X11UT_LOG_INFO("  - 日志级别: %d", log_level);
+    X11UT_LOG_INFO("  - 日志文件: %s", log_file ? log_file : "无");
+    X11UT_LOG_INFO("区域设置: %s", setlocale(LC_ALL, ""));
+    
+    // 初始化托盘
     if (!x11ut__tray_init(&tray, NULL)) {
-        fprintf(stderr, "无法初始化托盘\n");
+        X11UT_LOG_ERROR("无法初始化托盘");
         return 1;
     }
     
-    // 测试字体
-    x11ut__test_fonts(&tray);
+    // 应用命令行参数设置
+    tray.dark_mode = dark_mode;
+    tray.english_mode = english_mode;
+    
+    // 重新初始化颜色以应用主题设置
+    x11ut__init_colors(&tray);
+    
+    // 测试字体（如果日志级别足够高）
+    if (log_level >= X11UT_LOG_DEBUG) {
+        x11ut__test_fonts(&tray);
+    }
     
     // 设置图标
     if (!x11ut__tray_set_icon(&tray, 24, 24, NULL)) {
-        fprintf(stderr, "无法设置图标\n");
+        X11UT_LOG_ERROR("无法设置图标");
         x11ut__tray_cleanup(&tray);
+        x11ut__log_cleanup();
         return 1;
     }
     
     // 等待系统托盘
-    printf("等待系统托盘...\n");
+    X11UT_LOG_INFO("等待系统托盘...");
     x11ut__msleep(1000);
     
     // 嵌入到系统托盘
     if (!x11ut__tray_embed(&tray)) {
-        printf("注意: 未嵌入到系统托盘，但程序继续运行\n");
+        X11UT_LOG_WARNING("未嵌入到系统托盘，但程序继续运行");
     }
     
     // 创建菜单
@@ -1831,26 +2122,29 @@ int main(int argc, char* argv[]) {
     // 创建工具提示
     tray.tooltip = x11ut__tooltip_create(&tray);
     
-    printf("\n托盘程序运行中...\n");
-    printf("功能特性:\n");
-    printf("  - 支持暗色/亮色主题切换\n");
-    printf("  - 支持中英文语言切换\n");
-    printf("  - 菜单项左对齐\n");
-    printf("  - 支持checkbox菜单项\n");
-    printf("  - 菜单项鼠标悬停效果\n");
-    printf("  - 工具提示支持\n");
-    printf("  - 分隔线支持\n");
-    printf("  - 使用Xft字体渲染，支持UTF-8\n");
-    printf("\n鼠标悬停在托盘图标上显示工具提示\n");
-    printf("点击托盘图标显示菜单\n");
-    printf("菜单特性:\n");
-    printf("  - 无标题栏，真正的弹出菜单外观\n");
-    printf("  - 显示在托盘图标附近\n");
-    printf("  - 鼠标悬停有视觉反馈\n");
-    printf("  - 支持checkbox，点击可切换状态\n");
-    printf("  - 支持分隔线\n");
-    printf("  - 点击菜单项后菜单自动隐藏\n");
-    printf("\n按 Ctrl+C 退出程序\n\n");
+    X11UT_LOG_INFO("托盘程序运行中...");
+    X11UT_LOG_INFO("功能特性:");
+    X11UT_LOG_INFO("  - 支持暗色/亮色主题切换");
+    X11UT_LOG_INFO("  - 支持中英文语言切换");
+    X11UT_LOG_INFO("  - 统一的日志系统");
+    X11UT_LOG_INFO("  - 菜单项左对齐");
+    X11UT_LOG_INFO("  - 支持checkbox菜单项");
+    X11UT_LOG_INFO("  - 菜单项鼠标悬停效果");
+    X11UT_LOG_INFO("  - 工具提示支持");
+    X11UT_LOG_INFO("  - 分隔线支持");
+    X11UT_LOG_INFO("  - 使用Xft字体渲染，支持UTF-8");
+    X11UT_LOG_INFO("");
+    X11UT_LOG_INFO("鼠标悬停在托盘图标上显示工具提示");
+    X11UT_LOG_INFO("点击托盘图标显示菜单");
+    X11UT_LOG_INFO("菜单特性:");
+    X11UT_LOG_INFO("  - 无标题栏，真正的弹出菜单外观");
+    X11UT_LOG_INFO("  - 显示在托盘图标附近");
+    X11UT_LOG_INFO("  - 鼠标悬停有视觉反馈");
+    X11UT_LOG_INFO("  - 支持checkbox，点击可切换状态");
+    X11UT_LOG_INFO("  - 支持分隔线");
+    X11UT_LOG_INFO("  - 点击菜单项后菜单自动隐藏");
+    X11UT_LOG_INFO("");
+    X11UT_LOG_INFO("按 Ctrl+C 退出程序");
     
     // 主事件循环
     while (tray.running) {
@@ -1859,9 +2153,10 @@ int main(int argc, char* argv[]) {
     }
     
     // 清理
-    printf("正在清理资源...\n");
+    X11UT_LOG_INFO("正在清理资源...");
     x11ut__tray_cleanup(&tray);
-    printf("程序退出\n");
+    x11ut__log_cleanup();
+    X11UT_LOG_INFO("程序退出");
     
     return 0;
 }
