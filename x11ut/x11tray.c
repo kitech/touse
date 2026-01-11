@@ -605,47 +605,285 @@ bool x11ut__tray_init(x11ut__tray_t* tray, const char* display_name) {
 }
 
 // 绘制默认图标
-static void x11ut__draw_default_icon(x11ut__tray_t* tray) {
-    // 清除背景
-    XSetForeground(tray->display, tray->gc, tray->colors.bg_color);
-    XFillRectangle(tray->display, tray->icon_pixmap, tray->gc,
-                   0, 0, tray->icon_width, tray->icon_height);
+
+// ==================== 图标生成和绘制函数 ====================
+
+// 生成默认图标数据
+static unsigned char* x11ut__generate_default_icon(x11ut__tray_t* tray, int* width, int* height) {
+    if (!tray) return NULL;
+    
+    // 默认图标尺寸
+    int icon_width = 24;
+    int icon_height = 24;
+    
+    // 计算行字节对齐（通常是4字节对齐）
+    int row_stride = (icon_width * 3 + 3) & ~3;
+    
+    // 分配内存存储像素数据（RGB格式）
+    unsigned char* pixels = malloc(row_stride * icon_height);
+    if (!pixels) {
+        X11UT_LOG_ERROR("无法分配图标像素内存");
+        return NULL;
+    }
+    
+    X11UT_LOG_DEBUG("生成默认图标数据: %dx%d", icon_width, icon_height);
+    
+    // 清空像素数据
+    memset(pixels, 0, row_stride * icon_height);
+    
+    // 获取颜色分量（用于RGB像素）
+    unsigned char bg_r, bg_g, bg_b;
+    unsigned char fg_r, fg_g, fg_b;
+    
+    if (tray->dark_mode) {
+        // 暗色主题
+        bg_r = 45;   // #2D2D2D
+        bg_g = 45;
+        bg_b = 45;
+        fg_r = 224;  // #E0E0E0
+        fg_g = 224;
+        fg_b = 224;
+    } else {
+        // 亮色主题
+        bg_r = 255;  // #FFFFFF
+        bg_g = 255;
+        bg_b = 255;
+        fg_r = 0;    // #000000
+        fg_g = 0;
+        fg_b = 0;
+    }
+    
+    // 填充背景色
+    for (int y = 0; y < icon_height; y++) {
+        for (int x = 0; x < icon_width; x++) {
+            int offset = y * row_stride + x * 3;
+            pixels[offset] = bg_r;     // R
+            pixels[offset + 1] = bg_g; // G
+            pixels[offset + 2] = bg_b; // B
+        }
+    }
     
     // 绘制边框
-    XSetForeground(tray->display, tray->gc, tray->colors.fg_color);
-    XDrawRectangle(tray->display, tray->icon_pixmap, tray->gc,
-                   0, 0, tray->icon_width - 1, tray->icon_height - 1);
+    for (int x = 0; x < icon_width; x++) {
+        // 顶部边框
+        int offset = 0 * row_stride + x * 3;
+        pixels[offset] = fg_r;
+        pixels[offset + 1] = fg_g;
+        pixels[offset + 2] = fg_b;
+        
+        // 底部边框
+        offset = (icon_height - 1) * row_stride + x * 3;
+        pixels[offset] = fg_r;
+        pixels[offset + 1] = fg_g;
+        pixels[offset + 2] = fg_b;
+    }
+    
+    for (int y = 0; y < icon_height; y++) {
+        // 左侧边框
+        int offset = y * row_stride + 0 * 3;
+        pixels[offset] = fg_r;
+        pixels[offset + 1] = fg_g;
+        pixels[offset + 2] = fg_b;
+        
+        // 右侧边框
+        offset = y * row_stride + (icon_width - 1) * 3;
+        pixels[offset] = fg_r;
+        pixels[offset + 1] = fg_g;
+        pixels[offset + 2] = fg_b;
+    }
     
     // 绘制图标内容（三条线，类似菜单图标）
-    int center_x = tray->icon_width / 2;
-    int center_y = tray->icon_height / 2;
+    int center_x = icon_width / 2;
+    int center_y = icon_height / 2;
     
     // 顶部横线
-    XDrawLine(tray->display, tray->icon_pixmap, tray->gc,
-              center_x - 6, center_y - 3,
-              center_x + 6, center_y - 3);
+    for (int x = center_x - 6; x <= center_x + 6; x++) {
+        int y = center_y - 3;
+        int offset = y * row_stride + x * 3;
+        if (offset >= 0 && offset < row_stride * icon_height - 2) {
+            pixels[offset] = fg_r;
+            pixels[offset + 1] = fg_g;
+            pixels[offset + 2] = fg_b;
+        }
+    }
     
     // 中间横线
-    XDrawLine(tray->display, tray->icon_pixmap, tray->gc,
-              center_x - 6, center_y,
-              center_x + 6, center_y);
+    for (int x = center_x - 6; x <= center_x + 6; x++) {
+        int y = center_y;
+        int offset = y * row_stride + x * 3;
+        if (offset >= 0 && offset < row_stride * icon_height - 2) {
+            pixels[offset] = fg_r;
+            pixels[offset + 1] = fg_g;
+            pixels[offset + 2] = fg_b;
+        }
+    }
     
     // 底部横线
-    XDrawLine(tray->display, tray->icon_pixmap, tray->gc,
-              center_x - 6, center_y + 3,
-              center_x + 6, center_y + 3);
+    for (int x = center_x - 6; x <= center_x + 6; x++) {
+        int y = center_y + 3;
+        int offset = y * row_stride + x * 3;
+        if (offset >= 0 && offset < row_stride * icon_height - 2) {
+            pixels[offset] = fg_r;
+            pixels[offset + 1] = fg_g;
+            pixels[offset + 2] = fg_b;
+        }
+    }
+    
+    // 返回生成的尺寸
+    if (width) *width = icon_width;
+    if (height) *height = icon_height;
+    
+    return pixels;
+}
+
+// 使用X11绘制默认图标（调用生成函数并绘制）
+static void x11ut__draw_default_icon(x11ut__tray_t* tray) {
+    if (!tray || !tray->display) return;
+    
+    X11UT_LOG_DEBUG("绘制默认图标");
+    
+    // 生成图标数据
+    int icon_width, icon_height;
+    unsigned char* pixels = x11ut__generate_default_icon(tray, &icon_width, &icon_height);
+    
+    if (!pixels) {
+        X11UT_LOG_ERROR("无法生成图标数据");
+        return;
+    }
+    
+    // 创建图像
+    XImage* image = XCreateImage(tray->display, tray->visual,
+                                DefaultDepth(tray->display, tray->screen),
+                                ZPixmap, 0, (char*)pixels,
+                                icon_width, icon_height,
+                                8, 0);
+    
+    if (!image) {
+        X11UT_LOG_ERROR("无法创建XImage");
+        free(pixels);
+        return;
+    }
+    
+    // 计算行字节对齐（与生成时一致）
+    int row_stride = (icon_width * 3 + 3) & ~3;
+    image->bytes_per_line = row_stride;
+    
+    // 设置正确的字节序
+    image->byte_order = MSBFirst;
+    image->bitmap_bit_order = MSBFirst;
+    
+    // 重新配置窗口大小
+    if (icon_width != tray->icon_width || icon_height != tray->icon_height) {
+        tray->icon_width = icon_width;
+        tray->icon_height = icon_height;
+        XResizeWindow(tray->display, tray->window, icon_width, icon_height);
+    }
+    
+    // 释放旧的pixmap
+    if (tray->icon_pixmap) {
+        XFreePixmap(tray->display, tray->icon_pixmap);
+    }
+    
+    // 创建新的pixmap
+    tray->icon_pixmap = XCreatePixmap(tray->display, tray->window,
+                                     icon_width, icon_height,
+                                     DefaultDepth(tray->display, tray->screen));
+    
+    // 将图像复制到pixmap
+    XPutImage(tray->display, tray->icon_pixmap, tray->gc, image,
+              0, 0, 0, 0, icon_width, icon_height);
     
     // 设置窗口背景
     XSetWindowBackgroundPixmap(tray->display, tray->window, tray->icon_pixmap);
     XClearWindow(tray->display, tray->window);
+    
+    // 清理资源
+    image->data = NULL; // 防止XDestroyImage释放我们的像素数据
+    XDestroyImage(image);
+    free(pixels);
+    
+    X11UT_LOG_DEBUG("默认图标绘制完成，尺寸: %dx%d", icon_width, icon_height);
 }
 
-// 设置图标
-bool x11ut__tray_set_icon(x11ut__tray_t* tray, int width, int height, const unsigned char* data) {
-    if (!tray || !tray->display) return false;
+// 创建一个简单的测试图标（可选，用于测试）
+static unsigned char* x11ut__generate_test_icon(x11ut__tray_t* tray, int width, int height) {
+    if (!tray || width <= 0 || height <= 0) return NULL;
+    
+    X11UT_LOG_DEBUG("生成测试图标: %dx%d", width, height);
+    
+    int row_stride = (width * 3 + 3) & ~3;
+    unsigned char* pixels = malloc(row_stride * height);
+    if (!pixels) {
+        X11UT_LOG_ERROR("无法分配测试图标内存");
+        return NULL;
+    }
+    
+    // 获取颜色分量
+    unsigned char bg_r, bg_g, bg_b;
+    unsigned char fg_r, fg_g, fg_b;
+    
+    if (tray->dark_mode) {
+        // 暗色主题
+        bg_r = 30;   // 深灰色背景
+        bg_g = 30;
+        bg_b = 30;
+        fg_r = 200;  // 亮灰色前景
+        fg_g = 200;
+        fg_b = 200;
+    } else {
+        // 亮色主题
+        bg_r = 240;  // 浅灰色背景
+        bg_g = 240;
+        bg_b = 240;
+        fg_r = 60;   // 深灰色前景
+        fg_g = 60;
+        fg_b = 60;
+    }
+    
+    // 填充背景色
+    for (int y = 0; y < height; y++) {
+        for (int x = 0; x < width; x++) {
+            int offset = y * row_stride + x * 3;
+            pixels[offset] = bg_r;
+            pixels[offset + 1] = bg_g;
+            pixels[offset + 2] = bg_b;
+        }
+    }
+    
+    // 绘制一个简单的圆形
+    int center_x = width / 2;
+    int center_y = height / 2;
+    int radius = width / 3;
+    
+    for (int y = 0; y < height; y++) {
+        for (int x = 0; x < width; x++) {
+            int dx = x - center_x;
+            int dy = y - center_y;
+            int distance_squared = dx * dx + dy * dy;
+            
+            if (distance_squared <= radius * radius) {
+                int offset = y * row_stride + x * 3;
+                pixels[offset] = fg_r;
+                pixels[offset + 1] = fg_g;
+                pixels[offset + 2] = fg_b;
+            }
+        }
+    }
+    
+    return pixels;
+}
+
+// 使用指定数据设置图标
+bool x11ut__tray_set_icon_with_data(x11ut__tray_t* tray, int width, int height, const unsigned char* data) {
+    if (!tray || !tray->display || !data || width <= 0 || height <= 0) {
+        X11UT_LOG_ERROR("无效的图标参数");
+        return false;
+    }
     
     tray->icon_width = width;
     tray->icon_height = height;
+    
+    X11UT_LOG_DEBUG("设置自定义图标，尺寸: %dx%d", width, height);
     
     // 重新配置窗口
     XResizeWindow(tray->display, tray->window, width, height);
@@ -660,12 +898,61 @@ bool x11ut__tray_set_icon(x11ut__tray_t* tray, int width, int height, const unsi
                                      width, height,
                                      DefaultDepth(tray->display, tray->screen));
     
-    // 绘制图标
-    x11ut__draw_default_icon(tray);
+    // 创建图像
+    int row_stride = (width * 3 + 3) & ~3;
+    XImage* image = XCreateImage(tray->display, tray->visual,
+                                DefaultDepth(tray->display, tray->screen),
+                                ZPixmap, 0, (char*)data,
+                                width, height,
+                                8, 0);
+    
+    if (!image) {
+        X11UT_LOG_ERROR("无法创建XImage");
+        XFreePixmap(tray->display, tray->icon_pixmap);
+        tray->icon_pixmap = 0;
+        return false;
+    }
+    
+    image->bytes_per_line = row_stride;
+    image->byte_order = MSBFirst;
+    image->bitmap_bit_order = MSBFirst;
+    
+    // 将图像复制到pixmap
+    XPutImage(tray->display, tray->icon_pixmap, tray->gc, image,
+              0, 0, 0, 0, width, height);
+    
+    // 设置窗口背景
+    XSetWindowBackgroundPixmap(tray->display, tray->window, tray->icon_pixmap);
+    XClearWindow(tray->display, tray->window);
+    
+    // 清理资源
+    image->data = NULL; // 防止XDestroyImage释放我们的数据
+    XDestroyImage(image);
     
     XFlush(tray->display);
-    X11UT_LOG_DEBUG("设置图标尺寸: %dx%d", width, height);
+    X11UT_LOG_DEBUG("自定义图标设置成功");
     return true;
+}
+
+// 设置图标（兼容旧接口）
+bool x11ut__tray_set_icon(x11ut__tray_t* tray, int width, int height, const unsigned char* data) {
+    if (!tray || !tray->display) return false;
+    
+    if (data) {
+        // 使用提供的数据
+        return x11ut__tray_set_icon_with_data(tray, width, height, data);
+    } else {
+        // 使用默认图标
+        tray->icon_width = width;
+        tray->icon_height = height;
+        
+        // 重新绘制默认图标
+        x11ut__draw_default_icon(tray);
+        
+        XFlush(tray->display);
+        X11UT_LOG_DEBUG("设置默认图标，尺寸: %dx%d", width, height);
+        return true;
+    }
 }
 
 // 嵌入到系统托盘
@@ -1968,6 +2255,8 @@ static void x11ut__test_fonts(x11ut__tray_t* tray) {
 
 // ==================== 主函数 ====================
 
+// ==================== 主函数 ====================
+
 // 显示帮助信息
 static void x11ut__print_help(const char* program_name) {
     printf("用法: %s [选项]\n", program_name);
@@ -1976,15 +2265,18 @@ static void x11ut__print_help(const char* program_name) {
     printf("  -l, --lang <语言>      设置语言: en (英文) 或 zh (中文)\n");
     printf("  -d, --dark             启用暗色模式 (默认)\n");
     printf("  --light                启用亮色模式\n");
+    printf("  -t, --test-icon        生成并使用测试图标（圆形图标）\n");
+    printf("  -s, --icon-size <尺寸>  设置图标尺寸 (默认: 24)\n");
     printf("  --log-level <级别>     设置日志级别: 0-5 (0:无, 1:错误, 2:警告, 3:信息, 4:调试, 5:详细)\n");
     printf("                        或: none, error, warning, info, debug, verbose\n");
     printf("  --log-file <文件>      将日志输出到文件\n");
     printf("  --version              显示版本信息\n");
     printf("\n示例:\n");
-    printf("  %s                     # 默认: 中文 + 暗色主题 + INFO日志\n", program_name);
-    printf("  %s -l en               # 英文 + 暗色主题\n", program_name);
-    printf("  %s -l zh --light       # 中文 + 亮色主题\n", program_name);
-    printf("  %s --lang en --light   # 英文 + 亮色主题\n", program_name);
+    printf("  %s                     # 默认: 中文 + 暗色主题 + 默认图标\n", program_name);
+    printf("  %s -l en               # 英文 + 暗色主题 + 默认图标\n", program_name);
+    printf("  %s -t                  # 使用测试图标（圆形）\n", program_name);
+    printf("  %s -t -s 32           # 使用32x32的测试图标\n", program_name);
+    printf("  %s -l zh --light -t   # 中文 + 亮色主题 + 测试图标\n", program_name);
     printf("  %s --log-level debug   # 启用调试日志\n", program_name);
     printf("  %s --log-level 0       # 禁用所有日志\n", program_name);
 }
@@ -1992,11 +2284,14 @@ static void x11ut__print_help(const char* program_name) {
 // 解析命令行参数
 static void x11ut__parse_args(int argc, char* argv[], 
                               bool* dark_mode, bool* english_mode,
+                              bool* use_test_icon, int* icon_size,
                               x11ut__log_level_t* log_level,
                               char** log_file) {
     // 默认值
     *dark_mode = true;      // 默认暗色模式
     *english_mode = false;  // 默认中文模式
+    *use_test_icon = false; // 默认使用默认图标（三条线）
+    *icon_size = 24;        // 默认图标尺寸
     *log_level = X11UT_LOG_INFO;  // 默认INFO级别
     *log_file = NULL;       // 默认不记录到文件
     
@@ -2027,6 +2322,21 @@ static void x11ut__parse_args(int argc, char* argv[],
             *dark_mode = true;
         } else if (strcmp(argv[i], "--light") == 0) {
             *dark_mode = false;
+        } else if (strcmp(argv[i], "-t") == 0 || strcmp(argv[i], "--test-icon") == 0) {
+            *use_test_icon = true;
+        } else if (strcmp(argv[i], "-s") == 0 || strcmp(argv[i], "--icon-size") == 0) {
+            if (i + 1 < argc) {
+                *icon_size = atoi(argv[i + 1]);
+                if (*icon_size < 16 || *icon_size > 128) {
+                    fprintf(stderr, "警告: 图标尺寸 %d 不在推荐范围 (16-128) 内，使用默认值 24\n", *icon_size);
+                    *icon_size = 24;
+                }
+                i++; // 跳过参数值
+            } else {
+                fprintf(stderr, "错误: -s/--icon-size 选项需要一个参数\n");
+                x11ut__print_help(argv[0]);
+                exit(1);
+            }
         } else if (strcmp(argv[i], "--log-level") == 0) {
             if (i + 1 < argc) {
                 *log_level = x11ut__parse_log_level(argv[i + 1]);
@@ -2046,8 +2356,8 @@ static void x11ut__parse_args(int argc, char* argv[],
                 exit(1);
             }
         } else if (strcmp(argv[i], "--version") == 0) {
-            printf("X11 托盘图标程序 v1.0.0\n");
-            printf("支持命令行参数、主题切换、语言切换、日志系统\n");
+            printf("X11 托盘图标程序 v1.1.0\n");
+            printf("支持命令行参数、主题切换、语言切换、图标选择、日志系统\n");
             exit(0);
         } else {
             fprintf(stderr, "错误: 未知选项 '%s'\n", argv[i]);
@@ -2061,10 +2371,13 @@ int main(int argc, char* argv[]) {
     x11ut__tray_t tray;
     
     // 解析命令行参数
-    bool dark_mode, english_mode;
+    bool dark_mode, english_mode, use_test_icon;
+    int icon_size;
     x11ut__log_level_t log_level;
     char* log_file = NULL;
-    x11ut__parse_args(argc, argv, &dark_mode, &english_mode, &log_level, &log_file);
+    
+    x11ut__parse_args(argc, argv, &dark_mode, &english_mode, 
+                      &use_test_icon, &icon_size, &log_level, &log_file);
     
     // 设置日志系统
     x11ut__set_log_level(log_level);
@@ -2077,6 +2390,8 @@ int main(int argc, char* argv[]) {
     X11UT_LOG_INFO("参数设置:");
     X11UT_LOG_INFO("  - 语言: %s", english_mode ? "英文" : "中文");
     X11UT_LOG_INFO("  - 主题: %s", dark_mode ? "暗色" : "亮色");
+    X11UT_LOG_INFO("  - 图标: %s", use_test_icon ? "测试图标（圆形）" : "默认图标（三条线）");
+    X11UT_LOG_INFO("  - 图标尺寸: %dx%d", icon_size, icon_size);
     X11UT_LOG_INFO("  - 日志级别: %d", log_level);
     X11UT_LOG_INFO("  - 日志文件: %s", log_file ? log_file : "无");
     X11UT_LOG_INFO("区域设置: %s", setlocale(LC_ALL, ""));
@@ -2099,12 +2414,37 @@ int main(int argc, char* argv[]) {
         x11ut__test_fonts(&tray);
     }
     
-    // 设置图标
-    if (!x11ut__tray_set_icon(&tray, 24, 24, NULL)) {
-        X11UT_LOG_ERROR("无法设置图标");
-        x11ut__tray_cleanup(&tray);
-        x11ut__log_cleanup();
-        return 1;
+    // 根据参数设置图标
+    if (use_test_icon) {
+        // 生成并设置测试图标
+        X11UT_LOG_INFO("正在生成测试图标（圆形），尺寸: %dx%d", icon_size, icon_size);
+        
+        unsigned char* test_icon_data = x11ut__generate_test_icon(&tray, icon_size, icon_size);
+        if (test_icon_data) {
+            if (x11ut__tray_set_icon_with_data(&tray, icon_size, icon_size, test_icon_data)) {
+                X11UT_LOG_INFO("测试图标设置成功");
+            } else {
+                X11UT_LOG_WARNING("测试图标设置失败，使用默认图标");
+                x11ut__draw_default_icon(&tray);
+            }
+            free(test_icon_data);
+        } else {
+            X11UT_LOG_WARNING("无法生成测试图标，使用默认图标");
+            x11ut__draw_default_icon(&tray);
+        }
+    } else {
+        // 使用默认图标（三条线）
+        X11UT_LOG_INFO("正在设置默认图标（三条线），尺寸: %dx%d", icon_size, icon_size);
+        
+        // 先设置图标尺寸
+        tray.icon_width = icon_size;
+        tray.icon_height = icon_size;
+        
+        // 重新配置窗口大小
+        XResizeWindow(tray.display, tray.window, icon_size, icon_size);
+        
+        // 重新绘制默认图标
+        x11ut__draw_default_icon(&tray);
     }
     
     // 等待系统托盘
@@ -2126,6 +2466,8 @@ int main(int argc, char* argv[]) {
     X11UT_LOG_INFO("功能特性:");
     X11UT_LOG_INFO("  - 支持暗色/亮色主题切换");
     X11UT_LOG_INFO("  - 支持中英文语言切换");
+    X11UT_LOG_INFO("  - 支持选择图标类型：默认图标（三条线）或测试图标（圆形）");
+    X11UT_LOG_INFO("  - 支持自定义图标尺寸");
     X11UT_LOG_INFO("  - 统一的日志系统");
     X11UT_LOG_INFO("  - 菜单项左对齐");
     X11UT_LOG_INFO("  - 支持checkbox菜单项");
@@ -2133,6 +2475,9 @@ int main(int argc, char* argv[]) {
     X11UT_LOG_INFO("  - 工具提示支持");
     X11UT_LOG_INFO("  - 分隔线支持");
     X11UT_LOG_INFO("  - 使用Xft字体渲染，支持UTF-8");
+    X11UT_LOG_INFO("");
+    X11UT_LOG_INFO("当前图标类型: %s", use_test_icon ? "测试图标（圆形）" : "默认图标（三条线）");
+    X11UT_LOG_INFO("图标尺寸: %dx%d", icon_size, icon_size);
     X11UT_LOG_INFO("");
     X11UT_LOG_INFO("鼠标悬停在托盘图标上显示工具提示");
     X11UT_LOG_INFO("点击托盘图标显示菜单");
