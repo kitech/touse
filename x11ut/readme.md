@@ -1,11 +1,15 @@
 使用C99编写基于libX11 使用_NET_SYSTEM_TRAY_S0协议 的linux/bsd托盘图标程序，支持添加菜单和点击处理，函数名加前缀 x11ut__，注意是双下划线。报告错误时同时显示调用返回的错误码和错误信息。X11有错误处理函数你查找一下。
+菜单项鼠标悬停没有背景颜色变化反馈，不能正常显示中文，配色默认改为dark模式。
+这一版本可以显示英文字符。再尝试菜单中的文字正常靠左对齐，不要居中。再尝试添加菜单和提示中文显示功能。
 
 使用_NET_SYSTEM_TRAY_S0协议
 XEmbed协议也受支持
 StatusNotifierItem协议可用
 
+
+
 # 编译测试程序
-gcc -std=c99 -DX11UT_TEST -o x11ut_tray_test x11ut_tray.c -lX11
+gcc -std=c99 -DX11UT_TEST -o x11ut_tray_test x11ut_tray.c -lX11 -lXft -I/usr/include/freetype2/
 
 # 如果需要调试信息
 gcc -std=c99 -DX11UT_TEST -g -o x11ut_tray_test x11ut_tray.c -lX11
