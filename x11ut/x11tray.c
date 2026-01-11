@@ -227,7 +227,12 @@ static bool x11ut__load_png(const char* filename, unsigned char** pixels, int* w
     
     // 设置错误处理
     if (setjmp(png_jmpbuf(png_ptr))) {
-        png_destroy_read_struct(&png_ptr, &info_ptr, NULL);
+        // 释放已分配的行指针内存
+        if (info_ptr) {
+            png_destroy_read_struct(&png_ptr, &info_ptr, NULL);
+        } else {
+            png_destroy_read_struct(&png_ptr, NULL, NULL);
+        }
         fclose(fp);
         X11UT_LOG_ERROR("PNG解码错误: %s", filename);
         return false;
@@ -290,6 +295,7 @@ static bool x11ut__load_png(const char* filename, unsigned char** pixels, int* w
     for (int y = 0; y < *height; y++) {
         row_pointers[y] = malloc(row_bytes);
         if (!row_pointers[y]) {
+            // 释放已分配的行内存
             for (int i = 0; i < y; i++) {
                 free(row_pointers[i]);
             }
@@ -308,6 +314,7 @@ static bool x11ut__load_png(const char* filename, unsigned char** pixels, int* w
     size_t pixel_count = (*width) * (*height);
     *pixels = malloc(pixel_count * 3);
     if (!*pixels) {
+        // 释放行指针和行内存
         for (int y = 0; y < *height; y++) {
             free(row_pointers[y]);
         }
@@ -504,7 +511,11 @@ static bool x11ut__load_bmp(const char* filename, unsigned char** pixels, int* w
                    *width, *height, info_header.bits_per_pixel, info_header.compression);
     
     // 移动到像素数据开始位置
-    fseek(fp, file_header.offset, SEEK_SET);
+    if (fseek(fp, file_header.offset, SEEK_SET) != 0) {
+        fclose(fp);
+        X11UT_LOG_ERROR("无法定位到BMP像素数据: %s", filename);
+        return false;
+    }
     
     // 计算行大小（BMP行以4字节对齐）
     int row_size = ((*width) * channels + 3) & ~3;
@@ -532,13 +543,11 @@ static bool x11ut__load_bmp(const char* filename, unsigned char** pixels, int* w
     int start_y = (info_header.height < 0) ? 0 : (*height - 1);
     int end_y = (info_header.height < 0) ? *height : -1;
     
+    bool success = true;
     for (int y = start_y; y != end_y; y += direction) {
         if (fread(row_buffer, 1, row_size, fp) != row_size) {
-            free(row_buffer);
-            free(*pixels);
-            fclose(fp);
-            X11UT_LOG_ERROR("读取BMP行数据失败: %s", filename);
-            return false;
+            success = false;
+            break;
         }
         
         unsigned char* src = row_buffer;
@@ -556,6 +565,13 @@ static bool x11ut__load_bmp(const char* filename, unsigned char** pixels, int* w
     free(row_buffer);
     fclose(fp);
     
+    if (!success) {
+        free(*pixels);
+        *pixels = NULL;
+        X11UT_LOG_ERROR("读取BMP行数据失败: %s", filename);
+        return false;
+    }
+    
     X11UT_LOG_DEBUG("BMP加载成功: %s, 尺寸: %dx%d", filename, *width, *height);
     return true;
 }
@@ -570,7 +586,13 @@ static unsigned char* x11ut__resize_image(const unsigned char* src_pixels, int s
     }
     
     // 分配目标图像内存
-    unsigned char* dest_pixels = malloc(dest_width * dest_height * 3);
+    size_t dest_size = dest_width * dest_height * 3;
+    if (dest_size == 0) {
+        X11UT_LOG_ERROR("目标图像尺寸为0");
+        return NULL;
+    }
+    
+    unsigned char* dest_pixels = malloc(dest_size);
     if (!dest_pixels) {
         X11UT_LOG_ERROR("无法分配缩放图像内存");
         return NULL;
@@ -603,9 +625,6 @@ static unsigned char* x11ut__resize_image(const unsigned char* src_pixels, int s
 }
 
 // ==================== RGB转XPM格式函数 ====================
-
-
-// ==================== RGB转XPM格式函数（修复版） ====================
 
 static char** x11ut__rgb_to_xpm(const unsigned char* pixels, int width, int height) {
     if (!pixels || width <= 0 || height <= 0) {
@@ -707,23 +726,34 @@ static char** x11ut__rgb_to_xpm(const unsigned char* pixels, int width, int heig
         return NULL;
     }
     
+    // 初始化为NULL
+    for (int i = 0; i < total_lines; i++) {
+        xpm_data[i] = NULL;
+    }
+    
     // 第一行：宽度 高度 颜色数 每像素字符数
     char header[256];
     snprintf(header, sizeof(header), "%d %d %d %d", width, height, color_count, chars_per_pixel);
     xpm_data[0] = strdup(header);
+    if (!xpm_data[0]) {
+        X11UT_LOG_ERROR("无法分配头信息内存");
+        free(xpm_data);
+        return NULL;
+    }
     
     // 颜色表行
     const char* color_chars = ".#abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+    int color_chars_len = strlen(color_chars);
     
     for (int i = 0; i < color_count; i++) {
         char color_line[256];
         char color_key[3] = {0};
         
         if (chars_per_pixel == 1) {
-            color_key[0] = color_chars[i % strlen(color_chars)];
+            color_key[0] = color_chars[i % color_chars_len];
         } else {
-            int idx1 = i / strlen(color_chars);
-            int idx2 = i % strlen(color_chars);
+            int idx1 = i / color_chars_len;
+            int idx2 = i % color_chars_len;
             color_key[0] = color_chars[idx1];
             color_key[1] = color_chars[idx2];
         }
@@ -733,19 +763,29 @@ static char** x11ut__rgb_to_xpm(const unsigned char* pixels, int width, int heig
                 color_table[i].r, color_table[i].g, color_table[i].b);
         
         xpm_data[1 + i] = strdup(color_line);
+        if (!xpm_data[1 + i]) {
+            X11UT_LOG_ERROR("无法分配颜色行内存");
+            // 清理已分配的内存
+            for (int j = 0; j < 1 + i; j++) {
+                free(xpm_data[j]);
+            }
+            free(xpm_data);
+            return NULL;
+        }
     }
     
     // 像素数据行
     for (int y = 0; y < height; y++) {
         // 分配行内存
-        char* pixel_line = malloc(width * chars_per_pixel + 1);
+        int line_len = width * chars_per_pixel + 1;
+        char* pixel_line = malloc(line_len);
         if (!pixel_line) {
+            X11UT_LOG_ERROR("无法分配像素行内存");
             // 清理已分配的内存
             for (int j = 0; j < 1 + color_count + y; j++) {
                 free(xpm_data[j]);
             }
             free(xpm_data);
-            X11UT_LOG_ERROR("无法分配像素行内存");
             return NULL;
         }
         
@@ -792,10 +832,10 @@ static char** x11ut__rgb_to_xpm(const unsigned char* pixels, int width, int heig
             // 写入颜色字符
             if (color_index >= 0) {
                 if (chars_per_pixel == 1) {
-                    pixel_line[x] = color_chars[color_index % strlen(color_chars)];
+                    pixel_line[x] = color_chars[color_index % color_chars_len];
                 } else {
-                    int idx1 = color_index / strlen(color_chars);
-                    int idx2 = color_index % strlen(color_chars);
+                    int idx1 = color_index / color_chars_len;
+                    int idx2 = color_index % color_chars_len;
                     pixel_line[x * 2] = color_chars[idx1];
                     pixel_line[x * 2 + 1] = color_chars[idx2];
                 }
@@ -826,7 +866,6 @@ static char** x11ut__rgb_to_xpm(const unsigned char* pixels, int width, int heig
     X11UT_LOG_DEBUG("XPM转换完成，总行数: %d", total_lines - 1);
     return xpm_data;
 }
-
 
 // ==================== 释放XPM数据 ====================
 
@@ -923,10 +962,6 @@ static bool x11ut__validate_xpm_data(char** xpm_data) {
 
 // ==================== 图像转换主函数 ====================
 
-
-
-// ==================== 图像转换主函数（修复版） ====================
-
 static char** x11ut__convert_image_to_xpm(const char* input_file, int* width, int* height) {
     if (!input_file || !width || !height) {
         X11UT_LOG_ERROR("图像转换: 无效参数");
@@ -971,13 +1006,18 @@ static char** x11ut__convert_image_to_xpm(const char* input_file, int* width, in
     
     // 如果图像不是目标尺寸，进行缩放
     unsigned char* resized_pixels = pixels;
+    bool needs_free_resized = false;
+    bool needs_free_original = true;
+    
     if (orig_width != target_width || orig_height != target_height) {
         X11UT_LOG_DEBUG("缩放图像到 %dx%d", target_width, target_height);
         resized_pixels = x11ut__resize_image(pixels, orig_width, orig_height, 
                                            target_width, target_height);
         if (resized_pixels) {
-            free(pixels);  // 释放原始图像
-            pixels = NULL;
+            // 标记需要释放缩放后的图像
+            needs_free_resized = true;
+            // 标记原始图像可以释放
+            needs_free_original = true;
             *width = target_width;
             *height = target_height;
         } else {
@@ -985,17 +1025,24 @@ static char** x11ut__convert_image_to_xpm(const char* input_file, int* width, in
             *width = orig_width;
             *height = orig_height;
             resized_pixels = pixels;
+            needs_free_resized = false;
+            needs_free_original = false; // 不能释放，因为resized_pixels指向它
         }
     } else {
         *width = orig_width;
         *height = orig_height;
+        needs_free_resized = false;
+        needs_free_original = true;
     }
     
     // 转换为XPM格式
     char** xpm_data = x11ut__rgb_to_xpm(resized_pixels, *width, *height);
     
-    // 清理
-    if (resized_pixels) {
+    // 清理图像数据
+    if (needs_free_original && pixels) {
+        free(pixels);
+    }
+    if (needs_free_resized && resized_pixels) {
         free(resized_pixels);
     }
     
@@ -1008,7 +1055,6 @@ static char** x11ut__convert_image_to_xpm(const char* input_file, int* width, in
     if (!x11ut__validate_xpm_data(xpm_data)) {
         X11UT_LOG_ERROR("XPM数据验证失败: %s", input_file);
         x11ut__free_xpm_data(xpm_data);
-        if (resized_pixels) free(resized_pixels);
         return NULL;
     }    
     
@@ -1280,7 +1326,11 @@ bool x11ut__tray_init(x11ut__tray_t* tray, const char* display_name) {
         bg_color.blue = 255 * 256;
     }
     bg_color.flags = DoRed | DoGreen | DoBlue;
-    XAllocColor(tray->display, tray->colormap, &bg_color);
+    if (!XAllocColor(tray->display, tray->colormap, &bg_color)) {
+        X11UT_LOG_ERROR("无法分配背景色");
+        XCloseDisplay(tray->display);
+        return false;
+    }
     tray->colors.bg_color = bg_color.pixel;
     
     // 前景色
@@ -1294,7 +1344,11 @@ bool x11ut__tray_init(x11ut__tray_t* tray, const char* display_name) {
         fg_color.blue = 0;
     }
     fg_color.flags = DoRed | DoGreen | DoBlue;
-    XAllocColor(tray->display, tray->colormap, &fg_color);
+    if (!XAllocColor(tray->display, tray->colormap, &fg_color)) {
+        X11UT_LOG_ERROR("无法分配前景色");
+        XCloseDisplay(tray->display);
+        return false;
+    }
     tray->colors.fg_color = fg_color.pixel;
     
     // 边框色
@@ -1308,7 +1362,11 @@ bool x11ut__tray_init(x11ut__tray_t* tray, const char* display_name) {
         border_color.blue = 200 * 256;
     }
     border_color.flags = DoRed | DoGreen | DoBlue;
-    XAllocColor(tray->display, tray->colormap, &border_color);
+    if (!XAllocColor(tray->display, tray->colormap, &border_color)) {
+        X11UT_LOG_ERROR("无法分配边框色");
+        XCloseDisplay(tray->display);
+        return false;
+    }
     tray->colors.border_color = border_color.pixel;
     
     // 悬停背景色
@@ -1322,7 +1380,11 @@ bool x11ut__tray_init(x11ut__tray_t* tray, const char* display_name) {
         hover_bg_color.blue = 240 * 256;
     }
     hover_bg_color.flags = DoRed | DoGreen | DoBlue;
-    XAllocColor(tray->display, tray->colormap, &hover_bg_color);
+    if (!XAllocColor(tray->display, tray->colormap, &hover_bg_color)) {
+        X11UT_LOG_ERROR("无法分配悬停背景色");
+        XCloseDisplay(tray->display);
+        return false;
+    }
     tray->colors.hover_bg_color = hover_bg_color.pixel;
     
     // 悬停前景色
@@ -1336,7 +1398,11 @@ bool x11ut__tray_init(x11ut__tray_t* tray, const char* display_name) {
         hover_fg_color.blue = 0;
     }
     hover_fg_color.flags = DoRed | DoGreen | DoBlue;
-    XAllocColor(tray->display, tray->colormap, &hover_fg_color);
+    if (!XAllocColor(tray->display, tray->colormap, &hover_fg_color)) {
+        X11UT_LOG_ERROR("无法分配悬停前景色");
+        XCloseDisplay(tray->display);
+        return false;
+    }
     tray->colors.hover_fg_color = hover_fg_color.pixel;
     
     // 分隔线颜色
@@ -1350,7 +1416,11 @@ bool x11ut__tray_init(x11ut__tray_t* tray, const char* display_name) {
         separator_color.blue = 200 * 256;
     }
     separator_color.flags = DoRed | DoGreen | DoBlue;
-    XAllocColor(tray->display, tray->colormap, &separator_color);
+    if (!XAllocColor(tray->display, tray->colormap, &separator_color)) {
+        X11UT_LOG_ERROR("无法分配分隔线颜色");
+        XCloseDisplay(tray->display);
+        return false;
+    }
     tray->colors.separator_color = separator_color.pixel;
     
     // checkbox背景色
@@ -1364,7 +1434,11 @@ bool x11ut__tray_init(x11ut__tray_t* tray, const char* display_name) {
         check_bg_color.blue = 245 * 256;
     }
     check_bg_color.flags = DoRed | DoGreen | DoBlue;
-    XAllocColor(tray->display, tray->colormap, &check_bg_color);
+    if (!XAllocColor(tray->display, tray->colormap, &check_bg_color)) {
+        X11UT_LOG_ERROR("无法分配checkbox背景色");
+        XCloseDisplay(tray->display);
+        return false;
+    }
     tray->colors.check_bg_color = check_bg_color.pixel;
     
     // checkbox勾选颜色
@@ -1378,7 +1452,11 @@ bool x11ut__tray_init(x11ut__tray_t* tray, const char* display_name) {
         check_fg_color.blue = 0;
     }
     check_fg_color.flags = DoRed | DoGreen | DoBlue;
-    XAllocColor(tray->display, tray->colormap, &check_fg_color);
+    if (!XAllocColor(tray->display, tray->colormap, &check_fg_color)) {
+        X11UT_LOG_ERROR("无法分配checkbox勾选颜色");
+        XCloseDisplay(tray->display);
+        return false;
+    }
     tray->colors.check_fg_color = check_fg_color.pixel;
     
     // checkbox边框色
@@ -1392,7 +1470,11 @@ bool x11ut__tray_init(x11ut__tray_t* tray, const char* display_name) {
         check_border_color.blue = 180 * 256;
     }
     check_border_color.flags = DoRed | DoGreen | DoBlue;
-    XAllocColor(tray->display, tray->colormap, &check_border_color);
+    if (!XAllocColor(tray->display, tray->colormap, &check_border_color)) {
+        X11UT_LOG_ERROR("无法分配checkbox边框色");
+        XCloseDisplay(tray->display);
+        return false;
+    }
     tray->colors.check_border_color = check_border_color.pixel;
     
     // 创建窗口
@@ -1467,8 +1549,6 @@ bool x11ut__tray_init(x11ut__tray_t* tray, const char* display_name) {
     return true;
 }
 
-// 绘制默认图标
-
 // ==================== 图标生成和绘制函数 ====================
 
 // 生成默认图标数据
@@ -1483,7 +1563,13 @@ static unsigned char* x11ut__generate_default_icon(x11ut__tray_t* tray, int* wid
     int row_stride = (icon_width * 3 + 3) & ~3;
     
     // 分配内存存储像素数据（RGB格式）
-    unsigned char* pixels = malloc(row_stride * icon_height);
+    size_t buffer_size = row_stride * icon_height;
+    if (buffer_size == 0) {
+        X11UT_LOG_ERROR("图标缓冲区大小为0");
+        return NULL;
+    }
+    
+    unsigned char* pixels = malloc(buffer_size);
     if (!pixels) {
         X11UT_LOG_ERROR("无法分配图标像素内存");
         return NULL;
@@ -1492,7 +1578,7 @@ static unsigned char* x11ut__generate_default_icon(x11ut__tray_t* tray, int* wid
     X11UT_LOG_DEBUG("生成默认图标数据: %dx%d", icon_width, icon_height);
     
     // 清空像素数据
-    memset(pixels, 0, row_stride * icon_height);
+    memset(pixels, 0, buffer_size);
     
     // 获取颜色分量（用于RGB像素）
     unsigned char bg_r, bg_g, bg_b;
@@ -1563,7 +1649,7 @@ static unsigned char* x11ut__generate_default_icon(x11ut__tray_t* tray, int* wid
     for (int x = center_x - 6; x <= center_x + 6; x++) {
         int y = center_y - 3;
         int offset = y * row_stride + x * 3;
-        if (offset >= 0 && offset < row_stride * icon_height - 2) {
+        if (offset >= 0 && offset < (int)buffer_size - 2) {
             pixels[offset] = fg_r;
             pixels[offset + 1] = fg_g;
             pixels[offset + 2] = fg_b;
@@ -1574,7 +1660,7 @@ static unsigned char* x11ut__generate_default_icon(x11ut__tray_t* tray, int* wid
     for (int x = center_x - 6; x <= center_x + 6; x++) {
         int y = center_y;
         int offset = y * row_stride + x * 3;
-        if (offset >= 0 && offset < row_stride * icon_height - 2) {
+        if (offset >= 0 && offset < (int)buffer_size - 2) {
             pixels[offset] = fg_r;
             pixels[offset + 1] = fg_g;
             pixels[offset + 2] = fg_b;
@@ -1585,7 +1671,7 @@ static unsigned char* x11ut__generate_default_icon(x11ut__tray_t* tray, int* wid
     for (int x = center_x - 6; x <= center_x + 6; x++) {
         int y = center_y + 3;
         int offset = y * row_stride + x * 3;
-        if (offset >= 0 && offset < row_stride * icon_height - 2) {
+        if (offset >= 0 && offset < (int)buffer_size - 2) {
             pixels[offset] = fg_r;
             pixels[offset + 1] = fg_g;
             pixels[offset + 2] = fg_b;
@@ -1675,7 +1761,13 @@ static unsigned char* x11ut__generate_test_icon(x11ut__tray_t* tray, int width, 
     X11UT_LOG_DEBUG("生成测试图标: %dx%d", width, height);
     
     int row_stride = (width * 3 + 3) & ~3;
-    unsigned char* pixels = malloc(row_stride * height);
+    size_t buffer_size = row_stride * height;
+    if (buffer_size == 0) {
+        X11UT_LOG_ERROR("测试图标缓冲区大小为0");
+        return NULL;
+    }
+    
+    unsigned char* pixels = malloc(buffer_size);
     if (!pixels) {
         X11UT_LOG_ERROR("无法分配测试图标内存");
         return NULL;
@@ -1889,8 +1981,13 @@ static bool x11ut__load_font(x11ut__tray_t* tray, x11ut__menu_t* menu, const cha
                 render_color.blue = 0;
             }
             render_color.alpha = 0xffff;
-            XftColorAllocValue(tray->display, tray->visual, tray->colormap, 
-                              &render_color, &menu->fg_color);
+            if (!XftColorAllocValue(tray->display, tray->visual, tray->colormap, 
+                                   &render_color, &menu->fg_color)) {
+                X11UT_LOG_ERROR("无法分配前景色");
+                XftFontClose(tray->display, menu->font);
+                menu->font = NULL;
+                return false;
+            }
             
             if (tray->dark_mode) {
                 render_color.red = 255 * 256;   // #FFFFFF
@@ -1902,15 +1999,28 @@ static bool x11ut__load_font(x11ut__tray_t* tray, x11ut__menu_t* menu, const cha
                 render_color.blue = 0;
             }
             render_color.alpha = 0xffff;
-            XftColorAllocValue(tray->display, tray->visual, tray->colormap, 
-                              &render_color, &menu->hover_fg_color);
+            if (!XftColorAllocValue(tray->display, tray->visual, tray->colormap, 
+                                   &render_color, &menu->hover_fg_color)) {
+                X11UT_LOG_ERROR("无法分配悬停前景色");
+                XftColorFree(tray->display, tray->visual, tray->colormap, &menu->fg_color);
+                XftFontClose(tray->display, menu->font);
+                menu->font = NULL;
+                return false;
+            }
             
             render_color.red = 0;           // 绿色勾选
             render_color.green = 200 * 256;
             render_color.blue = 0;
             render_color.alpha = 0xffff;
-            XftColorAllocValue(tray->display, tray->visual, tray->colormap, 
-                              &render_color, &menu->check_color);
+            if (!XftColorAllocValue(tray->display, tray->visual, tray->colormap, 
+                                   &render_color, &menu->check_color)) {
+                X11UT_LOG_ERROR("无法分配勾选颜色");
+                XftColorFree(tray->display, tray->visual, tray->colormap, &menu->fg_color);
+                XftColorFree(tray->display, tray->visual, tray->colormap, &menu->hover_fg_color);
+                XftFontClose(tray->display, menu->font);
+                menu->font = NULL;
+                return false;
+            }
             
             return true;
         }
@@ -1944,8 +2054,13 @@ static bool x11ut__load_font(x11ut__tray_t* tray, x11ut__menu_t* menu, const cha
                 render_color.blue = 0;
             }
             render_color.alpha = 0xffff;
-            XftColorAllocValue(tray->display, tray->visual, tray->colormap, 
-                              &render_color, &menu->fg_color);
+            if (!XftColorAllocValue(tray->display, tray->visual, tray->colormap, 
+                                   &render_color, &menu->fg_color)) {
+                X11UT_LOG_ERROR("无法分配前景色");
+                XftFontClose(tray->display, menu->font);
+                menu->font = NULL;
+                continue;
+            }
             
             if (tray->dark_mode) {
                 render_color.red = 255 * 256;   // #FFFFFF
@@ -1957,15 +2072,28 @@ static bool x11ut__load_font(x11ut__tray_t* tray, x11ut__menu_t* menu, const cha
                 render_color.blue = 0;
             }
             render_color.alpha = 0xffff;
-            XftColorAllocValue(tray->display, tray->visual, tray->colormap, 
-                              &render_color, &menu->hover_fg_color);
+            if (!XftColorAllocValue(tray->display, tray->visual, tray->colormap, 
+                                   &render_color, &menu->hover_fg_color)) {
+                X11UT_LOG_ERROR("无法分配悬停前景色");
+                XftColorFree(tray->display, tray->visual, tray->colormap, &menu->fg_color);
+                XftFontClose(tray->display, menu->font);
+                menu->font = NULL;
+                continue;
+            }
             
             render_color.red = 0;           // 绿色勾选
             render_color.green = 200 * 256;
             render_color.blue = 0;
             render_color.alpha = 0xffff;
-            XftColorAllocValue(tray->display, tray->visual, tray->colormap, 
-                              &render_color, &menu->check_color);
+            if (!XftColorAllocValue(tray->display, tray->visual, tray->colormap, 
+                                   &render_color, &menu->check_color)) {
+                X11UT_LOG_ERROR("无法分配勾选颜色");
+                XftColorFree(tray->display, tray->visual, tray->colormap, &menu->fg_color);
+                XftColorFree(tray->display, tray->visual, tray->colormap, &menu->hover_fg_color);
+                XftFontClose(tray->display, menu->font);
+                menu->font = NULL;
+                continue;
+            }
             
             return true;
         }
@@ -2031,9 +2159,13 @@ x11ut__menu_t* x11ut__menu_create(x11ut__tray_t* tray) {
                                  &attrs);
     
     if (!menu->window) {
-        if (menu->font) XftFontClose(tray->display, menu->font);
-        free(menu);
         X11UT_LOG_ERROR("无法创建菜单窗口");
+        // 清理已分配的资源
+        XftColorFree(tray->display, tray->visual, tray->colormap, &menu->fg_color);
+        XftColorFree(tray->display, tray->visual, tray->colormap, &menu->hover_fg_color);
+        XftColorFree(tray->display, tray->visual, tray->colormap, &menu->check_color);
+        XftFontClose(tray->display, menu->font);
+        free(menu);
         return NULL;
     }
     
@@ -2090,9 +2222,20 @@ bool x11ut__menu_add_item(x11ut__tray_t* tray, x11ut__menu_t* menu,
     x11ut__menu_item_t* item = malloc(sizeof(x11ut__menu_item_t));
     if (!item) return false;
     
+    memset(item, 0, sizeof(x11ut__menu_item_t));
+    
     // 存储UTF-8标签
     item->utf8_label = x11ut__strdup(label);
+    if (!item->utf8_label) {
+        free(item);
+        return false;
+    }
     item->label = x11ut__strdup(label);  // 直接复制，假设已经是UTF-8
+    if (!item->label) {
+        free(item->utf8_label);
+        free(item);
+        return false;
+    }
     
     item->callback = callback;
     item->user_data = user_data;
@@ -2139,9 +2282,20 @@ bool x11ut__menu_add_checkable_item(x11ut__tray_t* tray, x11ut__menu_t* menu, co
     x11ut__menu_item_t* item = malloc(sizeof(x11ut__menu_item_t));
     if (!item) return false;
     
+    memset(item, 0, sizeof(x11ut__menu_item_t));
+    
     // 存储UTF-8标签
     item->utf8_label = x11ut__strdup(label);
+    if (!item->utf8_label) {
+        free(item);
+        return false;
+    }
     item->label = x11ut__strdup(label);  // 直接复制，假设已经是UTF-8
+    if (!item->label) {
+        free(item->utf8_label);
+        free(item);
+        return false;
+    }
     
     item->callback = callback;
     item->user_data = user_data;
@@ -2217,10 +2371,7 @@ bool x11ut__menu_add_separator(x11ut__tray_t* tray, x11ut__menu_t* menu) {
     x11ut__menu_item_t* item = malloc(sizeof(x11ut__menu_item_t));
     if (!item) return false;
     
-    item->label = NULL;
-    item->utf8_label = NULL;
-    item->callback = NULL;
-    item->user_data = NULL;
+    memset(item, 0, sizeof(x11ut__menu_item_t));
     item->is_separator = true;
     item->is_checkable = false;
     item->checked = false;
@@ -2254,6 +2405,10 @@ static void x11ut__menu_draw(x11ut__tray_t* tray, x11ut__menu_t* menu) {
     gc_vals.background = tray->colors.bg_color;
     GC bg_gc = XCreateGC(tray->display, menu->window, 
                         GCForeground | GCBackground, &gc_vals);
+    if (!bg_gc) {
+        X11UT_LOG_ERROR("无法创建背景GC");
+        return;
+    }
     
     // 清除背景
     XSetForeground(tray->display, bg_gc, tray->colors.bg_color);
@@ -2581,8 +2736,16 @@ x11ut__tooltip_t* x11ut__tooltip_create(x11ut__tray_t* tray) {
         render_color.blue = 0;
     }
     render_color.alpha = 0xffff;
-    XftColorAllocValue(tray->display, tray->visual, tray->colormap, 
-                      &render_color, &tooltip->color);
+    if (!XftColorAllocValue(tray->display, tray->visual, tray->colormap, 
+                          &render_color, &tooltip->color)) {
+        X11UT_LOG_ERROR("无法分配工具提示颜色");
+        // 注意：如果字体是从菜单借用的，不要关闭它
+        if (tooltip->font != tray->menu->font) {
+            XftFontClose(tray->display, tooltip->font);
+        }
+        free(tooltip);
+        return NULL;
+    }
     
     // 创建工具提示窗口属性
     XSetWindowAttributes attrs;
@@ -2604,13 +2767,13 @@ x11ut__tooltip_t* x11ut__tooltip_create(x11ut__tray_t* tray) {
                                    &attrs);
     
     if (!tooltip->window) {
+        X11UT_LOG_ERROR("无法创建工具提示窗口");
         // 注意：如果字体是从菜单借用的，不要关闭它
         if (tooltip->font != tray->menu->font) {
             XftFontClose(tray->display, tooltip->font);
         }
         XftColorFree(tray->display, tray->visual, tray->colormap, &tooltip->color);
         free(tooltip);
-        X11UT_LOG_ERROR("无法创建工具提示窗口");
         return NULL;
     }
     
@@ -2636,6 +2799,10 @@ void x11ut__tooltip_show(x11ut__tray_t* tray, x11ut__tooltip_t* tooltip,
     // 设置文本
     if (tooltip->text) free(tooltip->text);
     tooltip->text = x11ut__strdup(text);
+    if (!tooltip->text) {
+        X11UT_LOG_ERROR("无法复制工具提示文本");
+        return;
+    }
     
     // 计算文本尺寸
     if (tooltip->font) {
@@ -2689,17 +2856,19 @@ void x11ut__tooltip_show(x11ut__tray_t* tray, x11ut__tooltip_t* tooltip,
         GC bg_gc = XCreateGC(tray->display, tooltip->window, 
                             GCForeground | GCBackground, &gc_vals);
         
-        // 绘制背景
-        XSetForeground(tray->display, bg_gc, tray->colors.bg_color);
-        XFillRectangle(tray->display, tooltip->pixmap, bg_gc, 
-                      0, 0, tooltip->width, tooltip->height);
-        
-        // 绘制边框
-        XSetForeground(tray->display, bg_gc, tray->colors.border_color);
-        XDrawRectangle(tray->display, tooltip->pixmap, bg_gc, 
-                      0, 0, tooltip->width - 1, tooltip->height - 1);
-        
-        XFreeGC(tray->display, bg_gc);
+        if (bg_gc) {
+            // 绘制背景
+            XSetForeground(tray->display, bg_gc, tray->colors.bg_color);
+            XFillRectangle(tray->display, tooltip->pixmap, bg_gc, 
+                          0, 0, tooltip->width, tooltip->height);
+            
+            // 绘制边框
+            XSetForeground(tray->display, bg_gc, tray->colors.border_color);
+            XDrawRectangle(tray->display, tooltip->pixmap, bg_gc, 
+                          0, 0, tooltip->width - 1, tooltip->height - 1);
+            
+            XFreeGC(tray->display, bg_gc);
+        }
         
         // 设置窗口背景
         XSetWindowBackgroundPixmap(tray->display, tooltip->window, tooltip->pixmap);
@@ -3118,9 +3287,6 @@ static void x11ut__test_fonts(x11ut__tray_t* tray) {
 
 // ==================== 主函数 ====================
 
-// ==================== 主函数 ====================
-
-
 // 修改帮助信息函数
 static void x11ut__print_help(const char* program_name) {
     printf("用法: %s [选项]\n", program_name);
@@ -3341,7 +3507,6 @@ static bool x11ut__tray_set_icon_from_xpm(x11ut__tray_t* tray, char** xpm_data) 
             case XpmNoMemory: X11UT_LOG_ERROR("XPM错误: 内存不足"); break;
             case XpmOpenFailed: X11UT_LOG_ERROR("XPM错误: 打开失败"); break;
             case XpmFileInvalid: X11UT_LOG_ERROR("XPM错误: 文件无效"); break;
-            // case XpmNoMemory: X11UT_LOG_ERROR("XPM错误: 无内存"); break;
             default: X11UT_LOG_ERROR("XPM错误: 未知错误 %d", result); break;
         }
         
@@ -3386,9 +3551,9 @@ static bool x11ut__tray_set_icon_from_xpm(x11ut__tray_t* tray, char** xpm_data) 
     return true;
 }
 
-
 int main(int argc, char* argv[]) {
     x11ut__tray_t tray;
+    memset(&tray, 0, sizeof(x11ut__tray_t));
     
     // 解析命令行参数
     bool dark_mode, english_mode, use_test_icon;
@@ -3438,7 +3603,6 @@ int main(int argc, char* argv[]) {
     }
     
     // 根据参数设置图标
-    // 在main函数中修改这部分代码：
     if (icon_file) {
         // 从图像文件加载并转换为XPM
         X11UT_LOG_INFO("正在从图像文件加载图标: %s", icon_file);

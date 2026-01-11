@@ -19,6 +19,8 @@ StatusNotifierItem协议可用
 # 编译测试程序
 gcc -std=c99 -Wall -Wextra -O0 -g -o x11_tray x11tray.c -lX11 -lXft -lXrender -lXpm -DHAVE_LIBPNG -DHAVE_LIBJPEG  -lpng -ljpeg -lm -I/usr/include/freetype2/ -I/opt/vcpkg/installed/x64-linux-dynamic/include/
 
+tcc.exe -std=c99 -Wall -Wextra -O0 -g -o x11_tray x11tray.c -lX11 -lXft -lXrender -DHAVE_LIBPNG -DHAVE_LIBJPEG  -lpng -ljpeg -lm -I/usr/include/freetype2/ -I/opt/vcpkg/installed/x64-linux-dynamic/include/ -lXpm -I ~/bprog/vlang/thirdparty/tcc/lib/tcc/include/ -L ~/bprog/vlang/thirdparty/tcc/lib/tcc/
+
 # 如果需要调试信息
 gcc -std=c99 -DX11UT_TEST -g -o x11ut_tray_test x11ut_tray.c -lX11
 
