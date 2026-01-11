@@ -33,9 +33,11 @@ static int x11ut__error_handler(Display* display, XErrorEvent* error) {
 typedef struct x11ut__menu_item {
     char* label;
     char* utf8_label;  // UTF-8编码的标签
-    void (*callback)(void*);
+    void (*callback)(void*, bool);  // 回调函数，第二个参数是checked状态
     void* user_data;
     bool is_separator;  // 是否是分隔线
+    bool is_checkable;  // 是否可勾选
+    bool checked;       // 是否已勾选
     struct x11ut__menu_item* next;
 } x11ut__menu_item_t;
 
@@ -67,9 +69,11 @@ typedef struct {
     XftDraw* draw;       // Xft绘制上下文
     XftColor fg_color;   // 前景色
     XftColor hover_fg_color; // 悬停前景色
+    XftColor check_color;    // checkbox颜色
     GC hover_gc;         // 悬停图形上下文
     GC separator_gc;     // 分隔线图形上下文
     GC border_gc;        // 边框图形上下文
+    GC check_gc;         // checkbox图形上下文
 } x11ut__menu_t;
 
 // 颜色结构（暗色主题）
@@ -80,6 +84,9 @@ typedef struct {
     unsigned long hover_bg_color;  // 悬停背景色
     unsigned long hover_fg_color;  // 悬停前景色
     unsigned long separator_color; // 分隔线颜色
+    unsigned long check_bg_color;  // checkbox背景色
+    unsigned long check_fg_color;  // checkbox前景色
+    unsigned long check_border_color; // checkbox边框色
 } x11ut__colors_t;
 
 // 托盘图标结构
@@ -133,8 +140,11 @@ bool x11ut__tray_process_events(x11ut__tray_t* tray);
 // 菜单函数
 x11ut__menu_t* x11ut__menu_create(x11ut__tray_t* tray);
 bool x11ut__menu_add_item(x11ut__tray_t* tray, x11ut__menu_t* menu, const char* label, 
-                         void (*callback)(void*), void* user_data);
+                         void (*callback)(void*, bool), void* user_data);
+bool x11ut__menu_add_checkable_item(x11ut__tray_t* tray, x11ut__menu_t* menu, const char* label,
+                                   void (*callback)(void*, bool), void* user_data, bool initial_state);
 bool x11ut__menu_add_separator(x11ut__tray_t* tray, x11ut__menu_t* menu);
+bool x11ut__menu_set_checked(x11ut__tray_t* tray, x11ut__menu_t* menu, int index, bool checked);
 void x11ut__menu_show(x11ut__tray_t* tray, x11ut__menu_t* menu, int x, int y);
 void x11ut__menu_hide(x11ut__tray_t* tray, x11ut__menu_t* menu);
 void x11ut__menu_cleanup(x11ut__tray_t* tray, x11ut__menu_t* menu);
@@ -151,6 +161,9 @@ static void x11ut__draw_default_icon(x11ut__tray_t* tray);
 static void x11ut__msleep(long milliseconds);
 static void x11ut__init_colors(x11ut__tray_t* tray);
 static bool x11ut__load_font(x11ut__tray_t* tray, x11ut__menu_t* menu, const char* font_name);
+
+// 绘制函数声明
+static void x11ut__menu_draw(x11ut__tray_t* tray, x11ut__menu_t* menu);
 
 // ==================== 辅助函数 ====================
 
@@ -179,6 +192,9 @@ static void x11ut__init_colors(x11ut__tray_t* tray) {
     tray->colors.hover_bg_color = x11ut__rgb_to_color(tray, 58, 58, 58);  // #3A3A3A
     tray->colors.hover_fg_color = x11ut__rgb_to_color(tray, 255, 255, 255); // #FFFFFF
     tray->colors.separator_color = x11ut__rgb_to_color(tray, 68, 68, 68); // #444444
+    tray->colors.check_bg_color = x11ut__rgb_to_color(tray, 70, 70, 70);  // checkbox背景
+    tray->colors.check_fg_color = x11ut__rgb_to_color(tray, 0, 200, 0);   // checkbox勾选颜色
+    tray->colors.check_border_color = x11ut__rgb_to_color(tray, 100, 100, 100); // checkbox边框
 }
 
 // ==================== 初始化函数 ====================
@@ -220,6 +236,7 @@ bool x11ut__tray_init(x11ut__tray_t* tray, const char* display_name) {
     
     // 创建颜色映射
     XColor bg_color, fg_color, border_color, hover_bg_color, hover_fg_color, separator_color;
+    XColor check_bg_color, check_fg_color, check_border_color;
     
     // 背景色
     bg_color.red = 45 * 256;
@@ -268,6 +285,30 @@ bool x11ut__tray_init(x11ut__tray_t* tray, const char* display_name) {
     separator_color.flags = DoRed | DoGreen | DoBlue;
     XAllocColor(tray->display, tray->colormap, &separator_color);
     tray->colors.separator_color = separator_color.pixel;
+    
+    // checkbox背景色
+    check_bg_color.red = 70 * 256;
+    check_bg_color.green = 70 * 256;
+    check_bg_color.blue = 70 * 256;
+    check_bg_color.flags = DoRed | DoGreen | DoBlue;
+    XAllocColor(tray->display, tray->colormap, &check_bg_color);
+    tray->colors.check_bg_color = check_bg_color.pixel;
+    
+    // checkbox勾选颜色
+    check_fg_color.red = 0;
+    check_fg_color.green = 200 * 256;
+    check_fg_color.blue = 0;
+    check_fg_color.flags = DoRed | DoGreen | DoBlue;
+    XAllocColor(tray->display, tray->colormap, &check_fg_color);
+    tray->colors.check_fg_color = check_fg_color.pixel;
+    
+    // checkbox边框色
+    check_border_color.red = 100 * 256;
+    check_border_color.green = 100 * 256;
+    check_border_color.blue = 100 * 256;
+    check_border_color.flags = DoRed | DoGreen | DoBlue;
+    XAllocColor(tray->display, tray->colormap, &check_border_color);
+    tray->colors.check_border_color = check_border_color.pixel;
     
     // 创建窗口
     Window root = RootWindow(tray->display, tray->screen);
@@ -479,6 +520,13 @@ static bool x11ut__load_font(x11ut__tray_t* tray, x11ut__menu_t* menu, const cha
             XftColorAllocValue(tray->display, tray->visual, tray->colormap, 
                               &render_color, &menu->hover_fg_color);
             
+            render_color.red = 0;           // 绿色勾选
+            render_color.green = 200 * 256;
+            render_color.blue = 0;
+            render_color.alpha = 0xffff;
+            XftColorAllocValue(tray->display, tray->visual, tray->colormap, 
+                              &render_color, &menu->check_color);
+            
             return true;
         }
     }
@@ -514,6 +562,13 @@ static bool x11ut__load_font(x11ut__tray_t* tray, x11ut__menu_t* menu, const cha
             render_color.alpha = 0xffff;
             XftColorAllocValue(tray->display, tray->visual, tray->colormap, 
                               &render_color, &menu->hover_fg_color);
+            
+            render_color.red = 0;           // 绿色勾选
+            render_color.green = 200 * 256;
+            render_color.blue = 0;
+            render_color.alpha = 0xffff;
+            XftColorAllocValue(tray->display, tray->visual, tray->colormap, 
+                              &render_color, &menu->check_color);
             
             return true;
         }
@@ -611,6 +666,13 @@ x11ut__menu_t* x11ut__menu_create(x11ut__tray_t* tray) {
     menu->border_gc = XCreateGC(tray->display, menu->window,
                                GCForeground | GCBackground | GCLineWidth, &gc_vals);
     
+    // checkbox图形上下文
+    gc_vals.foreground = tray->colors.check_fg_color;
+    gc_vals.background = tray->colors.check_bg_color;
+    gc_vals.line_width = 1;
+    menu->check_gc = XCreateGC(tray->display, menu->window,
+                              GCForeground | GCBackground | GCLineWidth, &gc_vals);
+    
     // 设置窗口类型为菜单
     Atom window_type = XInternAtom(tray->display, "_NET_WM_WINDOW_TYPE", False);
     XChangeProperty(tray->display, menu->window, window_type,
@@ -620,9 +682,9 @@ x11ut__menu_t* x11ut__menu_create(x11ut__tray_t* tray) {
     return menu;
 }
 
-// 添加菜单项
+// 添加普通菜单项
 bool x11ut__menu_add_item(x11ut__tray_t* tray, x11ut__menu_t* menu, 
-                         const char* label, void (*callback)(void*), 
+                         const char* label, void (*callback)(void*, bool), 
                          void* user_data) {
     if (!menu || !label) return false;
     
@@ -636,6 +698,8 @@ bool x11ut__menu_add_item(x11ut__tray_t* tray, x11ut__menu_t* menu,
     item->callback = callback;
     item->user_data = user_data;
     item->is_separator = false;
+    item->is_checkable = false;
+    item->checked = false;
     item->next = NULL;
     
     // 添加到链表
@@ -657,10 +721,85 @@ bool x11ut__menu_add_item(x11ut__tray_t* tray, x11ut__menu_t* menu,
                           (const FcChar8*)item->utf8_label, 
                           strlen(item->utf8_label), &extents);
         
-        int needed_width = extents.width + 30; // 左边距15 + 右边距15
+        // 为checkbox预留空间（即使不是checkable，也要预留空间以保持对齐）
+        int needed_width = extents.width + 45; // 左边距15 + checkbox宽度15 + 间距5 + 右边距10
         if (needed_width > menu->width) {
             menu->width = needed_width;
         }
+    }
+    
+    return true;
+}
+
+// 添加可勾选菜单项
+bool x11ut__menu_add_checkable_item(x11ut__tray_t* tray, x11ut__menu_t* menu, const char* label,
+                                   void (*callback)(void*, bool), void* user_data, bool initial_state) {
+    if (!menu || !label) return false;
+    
+    x11ut__menu_item_t* item = malloc(sizeof(x11ut__menu_item_t));
+    if (!item) return false;
+    
+    // 存储UTF-8标签
+    item->utf8_label = x11ut__strdup(label);
+    item->label = x11ut__strdup(label);  // 直接复制，假设已经是UTF-8
+    
+    item->callback = callback;
+    item->user_data = user_data;
+    item->is_separator = false;
+    item->is_checkable = true;
+    item->checked = initial_state;
+    item->next = NULL;
+    
+    // 添加到链表
+    if (!menu->items) {
+        menu->items = item;
+    } else {
+        x11ut__menu_item_t* last = menu->items;
+        while (last->next) last = last->next;
+        last->next = item;
+    }
+    
+    menu->item_count++;
+    menu->height = menu->item_count * menu->item_height + 10;
+    
+    // 更新菜单宽度（基于最长标签）
+    if (menu->font) {
+        XGlyphInfo extents;
+        XftTextExtentsUtf8(tray->display, menu->font, 
+                          (const FcChar8*)item->utf8_label, 
+                          strlen(item->utf8_label), &extents);
+        
+        // 为checkbox预留空间
+        int needed_width = extents.width + 45; // 左边距15 + checkbox宽度15 + 间距5 + 右边距10
+        if (needed_width > menu->width) {
+            menu->width = needed_width;
+        }
+    }
+    
+    return true;
+}
+
+// 设置菜单项勾选状态
+bool x11ut__menu_set_checked(x11ut__tray_t* tray, x11ut__menu_t* menu, int index, bool checked) {
+    if (!menu || index < 0 || index >= menu->item_count) return false;
+    
+    // 找到对应的菜单项
+    x11ut__menu_item_t* item = menu->items;
+    int current_index = 0;
+    
+    while (item && current_index < index) {
+        item = item->next;
+        current_index++;
+    }
+    
+    if (!item || !item->is_checkable) return false;
+    
+    // 更新状态
+    item->checked = checked;
+    
+    // 如果菜单可见，重新绘制
+    if (menu->visible) {
+        x11ut__menu_draw(tray, menu);
     }
     
     return true;
@@ -670,6 +809,9 @@ bool x11ut__menu_add_item(x11ut__tray_t* tray, x11ut__menu_t* menu,
 bool x11ut__menu_add_separator(x11ut__tray_t* tray, x11ut__menu_t* menu) {
     if (!menu) return false;
     
+    // 标记未使用的参数
+    (void)tray;
+    
     x11ut__menu_item_t* item = malloc(sizeof(x11ut__menu_item_t));
     if (!item) return false;
     
@@ -678,6 +820,8 @@ bool x11ut__menu_add_separator(x11ut__tray_t* tray, x11ut__menu_t* menu) {
     item->callback = NULL;
     item->user_data = NULL;
     item->is_separator = true;
+    item->is_checkable = false;
+    item->checked = false;
     item->next = NULL;
     
     // 添加到链表
@@ -731,9 +875,38 @@ static void x11ut__menu_draw(x11ut__tray_t* tray, x11ut__menu_t* menu) {
                                1, y, menu->width - 2, menu->item_height);
             }
             
+            // 绘制checkbox（如果可勾选）
+            if (item->is_checkable) {
+                int check_x = 10;
+                int check_y = y + 7;
+                int check_size = 16;
+                
+                // 绘制checkbox边框
+                XSetForeground(tray->display, menu->check_gc, tray->colors.check_border_color);
+                XDrawRectangle(tray->display, menu->window, menu->check_gc,
+                              check_x, check_y, check_size, check_size);
+                
+                // 绘制checkbox背景
+                XSetForeground(tray->display, menu->check_gc, tray->colors.check_bg_color);
+                XFillRectangle(tray->display, menu->window, menu->check_gc,
+                              check_x + 1, check_y + 1, check_size - 2, check_size - 2);
+                
+                // 如果已勾选，绘制勾选标记
+                if (item->checked) {
+                    // 绘制对勾
+                    XSetForeground(tray->display, menu->check_gc, tray->colors.check_fg_color);
+                    XDrawLine(tray->display, menu->window, menu->check_gc,
+                             check_x + 3, check_y + 9,
+                             check_x + 7, check_y + 13);
+                    XDrawLine(tray->display, menu->window, menu->check_gc,
+                             check_x + 7, check_y + 13,
+                             check_x + 13, check_y + 5);
+                }
+            }
+            
             // 绘制文本（左对齐）
             if (item->utf8_label && menu->font) {
-                int text_x = 15;  // 左对齐，左边距15像素
+                int text_x = item->is_checkable ? 35 : 15;  // 如果有checkbox，文本向右偏移
                 int text_y = y + menu->item_height/2 + 5;
                 
                 // 使用适当的颜色绘制文本
@@ -842,12 +1015,29 @@ static void x11ut__handle_menu_click(x11ut__tray_t* tray, x11ut__menu_t* menu, i
     }
     
     // 如果是分隔线，忽略点击
-    if (item && !item->is_separator && item->callback) {
-        printf("点击菜单项: %s\n", item->utf8_label ? item->utf8_label : item->label);
-        item->callback(item->user_data);
+    if (!item || item->is_separator) {
+        x11ut__menu_hide(tray, menu);
+        return;
     }
     
-    x11ut__menu_hide(tray, menu);
+    // 如果是可勾选菜单项，切换勾选状态
+    if (item->is_checkable) {
+        item->checked = !item->checked;
+    }
+    
+    // 调用回调函数
+    if (item->callback) {
+        printf("点击菜单项: %s (checked: %s)\n", 
+               item->utf8_label ? item->utf8_label : item->label,
+               item->checked ? "true" : "false");
+        item->callback(item->user_data, item->checked);
+    }
+    
+    // 重新绘制菜单以显示新的勾选状态
+    x11ut__menu_draw(tray, menu);
+    
+    // 注意：这里不隐藏菜单，允许用户继续操作
+    // x11ut__menu_hide(tray, menu);
 }
 
 // 更新菜单悬停状态
@@ -906,9 +1096,12 @@ void x11ut__menu_cleanup(x11ut__tray_t* tray, x11ut__menu_t* menu) {
                                                tray->colormap, &menu->fg_color);
         if (menu->hover_fg_color.pixel) XftColorFree(tray->display, tray->visual, 
                                                      tray->colormap, &menu->hover_fg_color);
+        if (menu->check_color.pixel) XftColorFree(tray->display, tray->visual, 
+                                                  tray->colormap, &menu->check_color);
         if (menu->hover_gc) XFreeGC(tray->display, menu->hover_gc);
         if (menu->separator_gc) XFreeGC(tray->display, menu->separator_gc);
         if (menu->border_gc) XFreeGC(tray->display, menu->border_gc);
+        if (menu->check_gc) XFreeGC(tray->display, menu->check_gc);
         
         XDestroyWindow(tray->display, menu->window);
     }
@@ -1304,26 +1497,37 @@ void x11ut__tray_cleanup(x11ut__tray_t* tray) {
 
 // ==================== 示例回调函数 ====================
 
-static void x11ut__example_callback1(void* data) {
-    printf("选项1被点击: %s\n", (char*)data);
+static void x11ut__example_callback1(void* data, bool checked) {
+    printf("选项1被点击: %s (checked: %s)\n", (char*)data, checked ? "true" : "false");
 }
 
-static void x11ut__example_callback2(void* data) {
-    printf("选项2被点击\n");
+static void x11ut__example_callback2(void* data, bool checked) {
+    printf("选项2被点击 (checked: %s)\n", checked ? "true" : "false");
 }
 
-static void x11ut__test_callback(void* data) {
-    printf("测试功能被点击\n");
+static void x11ut__test_callback(void* data, bool checked) {
+    printf("测试功能被点击 (checked: %s)\n", checked ? "true" : "false");
 }
 
-static void x11ut__settings_callback(void* data) {
-    printf("设置被点击\n");
+static void x11ut__settings_callback(void* data, bool checked) {
+    printf("设置被点击 (checked: %s)\n", checked ? "true" : "false");
 }
 
-static void x11ut__exit_callback(void* data) {
+static void x11ut__toggle_callback(void* data, bool checked) {
+    printf("切换功能: %s\n", checked ? "启用" : "禁用");
+    
+    // 这里可以执行实际的启用/禁用操作
+    if (checked) {
+        printf("功能已启用\n");
+    } else {
+        printf("功能已禁用\n");
+    }
+}
+
+static void x11ut__exit_callback(void* data, bool checked) {
     x11ut__tray_t* tray = (x11ut__tray_t*)data;
     if (tray) {
-        printf("退出程序\n");
+        printf("退出程序 (checked: %s)\n", checked ? "true" : "false");
         tray->running = false;
     }
 }
@@ -1361,7 +1565,7 @@ static void x11ut__test_fonts(x11ut__tray_t* tray) {
 int main(int argc, char* argv[]) {
     x11ut__tray_t tray;
     
-    printf("=== X11 托盘图标程序 (暗色主题) ===\n");
+    printf("=== X11 托盘图标程序 (暗色主题，支持checkbox) ===\n");
     printf("区域设置: %s\n", setlocale(LC_ALL, ""));
     
     // 初始化
@@ -1392,10 +1596,18 @@ int main(int argc, char* argv[]) {
     // 创建菜单
     tray.menu = x11ut__menu_create(&tray);
     if (tray.menu) {
-        // 添加菜单项（包含中文）
+        // 添加普通菜单项
         x11ut__menu_add_item(&tray, tray.menu, "选项1 (Option 1)", x11ut__example_callback1, "测试数据");
         x11ut__menu_add_item(&tray, tray.menu, "选项2 (Option 2)", x11ut__example_callback2, NULL);
         x11ut__menu_add_separator(&tray, tray.menu);
+        
+        // 添加可勾选菜单项
+        x11ut__menu_add_checkable_item(&tray, tray.menu, "自动启动 (Auto Start)", x11ut__toggle_callback, NULL, false);
+        x11ut__menu_add_checkable_item(&tray, tray.menu, "启用通知 (Enable Notifications)", x11ut__toggle_callback, NULL, true);
+        x11ut__menu_add_checkable_item(&tray, tray.menu, "暗色主题 (Dark Theme)", x11ut__toggle_callback, NULL, true);
+        x11ut__menu_add_separator(&tray, tray.menu);
+        
+        // 继续添加其他菜单项
         x11ut__menu_add_item(&tray, tray.menu, "测试功能 (Test Function)", x11ut__test_callback, NULL);
         x11ut__menu_add_item(&tray, tray.menu, "设置 (Settings)", x11ut__settings_callback, NULL);
         x11ut__menu_add_separator(&tray, tray.menu);
@@ -1412,6 +1624,7 @@ int main(int argc, char* argv[]) {
     printf("  - 暗色主题界面\n");
     printf("  - 支持中文显示\n");
     printf("  - 菜单项左对齐\n");
+    printf("  - 支持checkbox菜单项\n");
     printf("  - 菜单项鼠标悬停效果\n");
     printf("  - 工具提示支持\n");
     printf("  - 分隔线支持\n");
@@ -1422,6 +1635,7 @@ int main(int argc, char* argv[]) {
     printf("  - 无标题栏，真正的弹出菜单外观\n");
     printf("  - 显示在托盘图标附近\n");
     printf("  - 鼠标悬停有视觉反馈\n");
+    printf("  - 支持checkbox，点击可切换状态\n");
     printf("  - 支持分隔线\n");
     printf("  - 暗色主题配色\n");
     printf("\n按 Ctrl+C 退出程序\n\n");
