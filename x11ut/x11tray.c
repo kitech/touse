@@ -57,6 +57,7 @@ typedef struct {
     Atom net_system_tray_s0;
     Atom net_system_tray_opcode;
     Atom net_wm_window_type_dock;
+    Atom net_wm_window_type_menu;
     Atom net_wm_state_skip_taskbar;
     Atom xembed_info;
     
@@ -131,6 +132,7 @@ bool x11ut__tray_init(x11ut__tray_t* tray, const char* display_name) {
     tray->net_system_tray_s0 = XInternAtom(tray->display, "_NET_SYSTEM_TRAY_S0", False);
     tray->net_system_tray_opcode = XInternAtom(tray->display, "_NET_SYSTEM_TRAY_OPCODE", False);
     tray->net_wm_window_type_dock = XInternAtom(tray->display, "_NET_WM_WINDOW_TYPE_DOCK", False);
+    tray->net_wm_window_type_menu = XInternAtom(tray->display, "_NET_WM_WINDOW_TYPE_MENU", False);
     tray->net_wm_state_skip_taskbar = XInternAtom(tray->display, "_NET_WM_STATE_SKIP_TASKBAR", False);
     tray->xembed_info = XInternAtom(tray->display, "_XEMBED_INFO", False);
     
@@ -308,23 +310,36 @@ x11ut__menu_t* x11ut__menu_create(x11ut__tray_t* tray) {
     menu->item_height = 25;
     menu->width = 150;
     
-    // 创建菜单窗口
-    menu->window = XCreateSimpleWindow(tray->display,
-                                       RootWindow(tray->display, tray->screen),
-                                       0, 0, menu->width, 100,
-                                       1,
-                                       BlackPixel(tray->display, tray->screen),
-                                       WhitePixel(tray->display, tray->screen));
+    // 创建菜单窗口属性
+    XSetWindowAttributes attrs;
+    attrs.override_redirect = True;  // 重要：使菜单窗口跳过窗口管理器
+    attrs.background_pixel = WhitePixel(tray->display, tray->screen);
+    attrs.border_pixel = BlackPixel(tray->display, tray->screen);
+    attrs.event_mask = ExposureMask | ButtonPressMask | ButtonReleaseMask |
+                       LeaveWindowMask | FocusChangeMask;
+    
+    // 创建菜单窗口 - 使用override_redirect
+    menu->window = XCreateWindow(tray->display,
+                                 RootWindow(tray->display, tray->screen),
+                                 0, 0, menu->width, 100,
+                                 1,  // 边框宽度
+                                 CopyFromParent,  // 深度
+                                 CopyFromParent,  // 类
+                                 CopyFromParent,  // 视觉
+                                 CWOverrideRedirect | CWBackPixel | 
+                                 CWBorderPixel | CWEventMask,
+                                 &attrs);
     
     if (!menu->window) {
         free(menu);
         return NULL;
     }
     
-    // 选择输入事件
-    XSelectInput(tray->display, menu->window,
-                 ExposureMask | ButtonPressMask | ButtonReleaseMask |
-                 LeaveWindowMask);
+    // 设置窗口类型为菜单（无装饰）
+    Atom window_type = XInternAtom(tray->display, "_NET_WM_WINDOW_TYPE", False);
+    XChangeProperty(tray->display, menu->window, window_type,
+                   XA_ATOM, 32, PropModeReplace,
+                   (unsigned char*)&tray->net_wm_window_type_menu, 1);
     
     return menu;
 }
@@ -376,7 +391,7 @@ static void x11ut__menu_draw(x11ut__tray_t* tray, x11ut__menu_t* menu) {
     int y = 10;
     
     while (item) {
-        XDrawString(tray->display, menu->window, gc, 10, y, 
+        XDrawString(tray->display, menu->window, gc, 10, y + 15, 
                    item->label, strlen(item->label));
         y += menu->item_height;
         item = item->next;
@@ -393,15 +408,38 @@ static void x11ut__menu_draw(x11ut__tray_t* tray, x11ut__menu_t* menu) {
 void x11ut__menu_show(x11ut__tray_t* tray, x11ut__menu_t* menu, int x, int y) {
     if (!tray || !tray->display || !menu || !menu->window) return;
     
-    // 调整位置确保在屏幕内
+    // 获取屏幕尺寸
     int screen_width = DisplayWidth(tray->display, tray->screen);
     int screen_height = DisplayHeight(tray->display, tray->screen);
     
-    if (x + menu->width > screen_width) x = screen_width - menu->width;
-    if (y + menu->height > screen_height) y = screen_height - menu->height;
+    // 调整菜单位置 - 在点击位置附近显示
+    // 默认显示在点击位置下方
+    int menu_x = x;
+    int menu_y = y;
+    
+    // 如果点击位置太靠右，向左调整
+    if (menu_x + menu->width > screen_width) {
+        menu_x = screen_width - menu->width - 10;
+    }
+    
+    // 如果点击位置太靠下，向上调整
+    if (menu_y + menu->height > screen_height) {
+        menu_y = screen_height - menu->height - 10;
+    }
+    
+    // 如果点击位置太靠左，向右调整
+    if (menu_x < 10) {
+        menu_x = 10;
+    }
+    
+    // 如果点击位置太靠上，向下调整
+    if (menu_y < 10) {
+        menu_y = 10;
+    }
     
     // 移动和调整大小
-    XMoveResizeWindow(tray->display, menu->window, x, y, menu->width, menu->height);
+    XMoveResizeWindow(tray->display, menu->window, menu_x, menu_y, 
+                     menu->width, menu->height);
     
     // 绘制菜单
     x11ut__menu_draw(tray, menu);
@@ -409,6 +447,9 @@ void x11ut__menu_show(x11ut__tray_t* tray, x11ut__menu_t* menu, int x, int y) {
     // 映射窗口
     XMapWindow(tray->display, menu->window);
     XRaiseWindow(tray->display, menu->window);
+    
+    // 获取输入焦点
+    XSetInputFocus(tray->display, menu->window, RevertToParent, CurrentTime);
     
     menu->visible = true;
     XFlush(tray->display);
@@ -427,8 +468,13 @@ void x11ut__menu_hide(x11ut__tray_t* tray, x11ut__menu_t* menu) {
 static void x11ut__handle_menu_click(x11ut__tray_t* tray, x11ut__menu_t* menu, int x, int y) {
     if (!menu || !menu->visible) return;
     
+    // 计算点击的菜单项
     int item_index = (y - 10) / menu->item_height;
-    if (item_index < 0 || item_index >= menu->item_count) return;
+    if (item_index < 0 || item_index >= menu->item_count) {
+        // 点击了菜单外区域，隐藏菜单
+        x11ut__menu_hide(tray, menu);
+        return;
+    }
     
     x11ut__menu_item_t* item = menu->items;
     for (int i = 0; i < item_index && item; i++) {
@@ -485,7 +531,8 @@ bool x11ut__tray_process_events(x11ut__tray_t* tray) {
                 
             case ButtonPress:
                 if (event.xbutton.window == tray->window) {
-                    printf("托盘图标被点击\n");
+                    printf("托盘图标被点击 (位置: %d, %d)\n", 
+                           event.xbutton.x_root, event.xbutton.y_root);
                     if (tray->menu) {
                         x11ut__menu_show(tray, tray->menu, 
                                        event.xbutton.x_root, 
@@ -498,10 +545,31 @@ bool x11ut__tray_process_events(x11ut__tray_t* tray) {
                 }
                 break;
                 
-            case LeaveNotify:
-                if (tray->menu && event.xcrossing.window == tray->menu->window) {
-                    x11ut__msleep(100);
+            case FocusOut:
+                // 当菜单失去焦点时隐藏
+                if (tray->menu && event.xfocus.window == tray->menu->window) {
+                    x11ut__msleep(50);
                     x11ut__menu_hide(tray, tray->menu);
+                }
+                break;
+                
+            case LeaveNotify:
+                // 鼠标离开菜单窗口时隐藏菜单
+                if (tray->menu && event.xcrossing.window == tray->menu->window) {
+                    // 检查鼠标是否真的离开了菜单区域
+                    Window root, child;
+                    int root_x, root_y, win_x, win_y;
+                    unsigned int mask;
+                    
+                    XQueryPointer(tray->display, tray->menu->window,
+                                 &root, &child, &root_x, &root_y,
+                                 &win_x, &win_y, &mask);
+                    
+                    if (win_x < 0 || win_x >= tray->menu->width ||
+                        win_y < 0 || win_y >= tray->menu->height) {
+                        x11ut__msleep(100);
+                        x11ut__menu_hide(tray, tray->menu);
+                    }
                 }
                 break;
                 
@@ -564,6 +632,10 @@ static void x11ut__example_callback2(void* data) {
     printf("选项2被点击\n");
 }
 
+static void x11ut__test_callback(void* data) {
+    printf("测试回调被点击\n");
+}
+
 static void x11ut__exit_callback(void* data) {
     x11ut__tray_t* tray = (x11ut__tray_t*)data;
     if (tray) {
@@ -606,12 +678,18 @@ int main(int argc, char* argv[]) {
     if (tray.menu) {
         x11ut__menu_add_item(tray.menu, "选项 1", x11ut__example_callback1, "测试数据");
         x11ut__menu_add_item(tray.menu, "选项 2", x11ut__example_callback2, NULL);
-        x11ut__menu_add_item(tray.menu, "退出", x11ut__exit_callback, &tray);
+        x11ut__menu_add_item(tray.menu, "测试功能", x11ut__test_callback, NULL);
+        x11ut__menu_add_item(tray.menu, "退出程序", x11ut__exit_callback, &tray);
     }
     
-    printf("托盘程序运行中...\n");
+    printf("\n托盘程序运行中...\n");
     printf("点击托盘图标显示菜单\n");
-    printf("按 Ctrl+C 退出程序\n\n");
+    printf("菜单特性:\n");
+    printf("  - 无标题栏，真正的弹出菜单外观\n");
+    printf("  - 显示在托盘图标附近\n");
+    printf("  - 点击菜单外区域或按ESC键关闭\n");
+    printf("  - 鼠标离开菜单时自动关闭\n");
+    printf("\n按 Ctrl+C 退出程序\n\n");
     
     // 主事件循环
     while (tray.running) {
