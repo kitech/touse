@@ -5,6 +5,7 @@
 #include <X11/Xatom.h>
 #include <X11/Xutil.h>
 #include <X11/Xft/Xft.h>
+#include <X11/xpm.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -160,6 +161,868 @@ static void x11ut__log_cleanup(void) {
         fclose(g_x11ut_log_file);
         g_x11ut_log_file = NULL;
     }
+}
+
+// 添加头文件包含
+#include <png.h>
+#include <jpeglib.h>
+#include <setjmp.h>
+#include <errno.h>
+#include <stdint.h>
+#include <strings.h>
+
+// 函数声明
+static char** x11ut__convert_image_to_xpm(const char* input_file, int* width, int* height);
+static bool x11ut__load_png(const char* filename, unsigned char** pixels, int* width, int* height);
+static bool x11ut__load_jpeg(const char* filename, unsigned char** pixels, int* width, int* height);
+static bool x11ut__load_bmp(const char* filename, unsigned char** pixels, int* width, int* height);
+static char** x11ut__rgb_to_xpm(const unsigned char* pixels, int width, int height);
+static unsigned char* x11ut__resize_image(const unsigned char* src_pixels, int src_width, int src_height, 
+                                          int dest_width, int dest_height);
+
+
+// ==================== PNG加载函数 ====================
+
+static bool x11ut__load_png(const char* filename, unsigned char** pixels, int* width, int* height) {
+    if (!filename || !pixels || !width || !height) {
+        X11UT_LOG_ERROR("PNG加载: 无效参数");
+        return false;
+    }
+    
+    FILE* fp = fopen(filename, "rb");
+    if (!fp) {
+        X11UT_LOG_ERROR("无法打开PNG文件: %s (%s)", filename, strerror(errno));
+        return false;
+    }
+    
+    // 检查PNG签名
+    unsigned char header[8];
+    if (fread(header, 1, 8, fp) != 8) {
+        fclose(fp);
+        X11UT_LOG_ERROR("PNG文件过小或读取失败: %s", filename);
+        return false;
+    }
+    
+    if (png_sig_cmp(header, 0, 8)) {
+        fclose(fp);
+        X11UT_LOG_ERROR("不是有效的PNG文件: %s", filename);
+        return false;
+    }
+    
+    // 初始化libpng
+    png_structp png_ptr = png_create_read_struct(PNG_LIBPNG_VER_STRING, NULL, NULL, NULL);
+    if (!png_ptr) {
+        fclose(fp);
+        X11UT_LOG_ERROR("无法创建PNG读取结构: %s", filename);
+        return false;
+    }
+    
+    png_infop info_ptr = png_create_info_struct(png_ptr);
+    if (!info_ptr) {
+        png_destroy_read_struct(&png_ptr, NULL, NULL);
+        fclose(fp);
+        X11UT_LOG_ERROR("无法创建PNG信息结构: %s", filename);
+        return false;
+    }
+    
+    // 设置错误处理
+    if (setjmp(png_jmpbuf(png_ptr))) {
+        png_destroy_read_struct(&png_ptr, &info_ptr, NULL);
+        fclose(fp);
+        X11UT_LOG_ERROR("PNG解码错误: %s", filename);
+        return false;
+    }
+    
+    png_init_io(png_ptr, fp);
+    png_set_sig_bytes(png_ptr, 8);
+    
+    // 读取信息
+    png_read_info(png_ptr, info_ptr);
+    
+    *width = png_get_image_width(png_ptr, info_ptr);
+    *height = png_get_image_height(png_ptr, info_ptr);
+    png_byte color_type = png_get_color_type(png_ptr, info_ptr);
+    png_byte bit_depth = png_get_bit_depth(png_ptr, info_ptr);
+    
+    X11UT_LOG_DEBUG("PNG图像: %dx%d, 颜色类型: %d, 位深度: %d", 
+                   *width, *height, color_type, bit_depth);
+    
+    // 转换到8位RGB格式
+    if (bit_depth == 16) {
+        png_set_strip_16(png_ptr);
+    }
+    
+    if (color_type == PNG_COLOR_TYPE_PALETTE) {
+        png_set_palette_to_rgb(png_ptr);
+    }
+    
+    if (color_type == PNG_COLOR_TYPE_GRAY && bit_depth < 8) {
+        png_set_expand_gray_1_2_4_to_8(png_ptr);
+    }
+    
+    if (png_get_valid(png_ptr, info_ptr, PNG_INFO_tRNS)) {
+        png_set_tRNS_to_alpha(png_ptr);
+    }
+    
+    if (color_type == PNG_COLOR_TYPE_RGB ||
+        color_type == PNG_COLOR_TYPE_GRAY ||
+        color_type == PNG_COLOR_TYPE_PALETTE) {
+        png_set_filler(png_ptr, 0xFF, PNG_FILLER_AFTER);
+    }
+    
+    if (color_type == PNG_COLOR_TYPE_GRAY ||
+        color_type == PNG_COLOR_TYPE_GRAY_ALPHA) {
+        png_set_gray_to_rgb(png_ptr);
+    }
+    
+    png_read_update_info(png_ptr, info_ptr);
+    
+    // 分配内存
+    png_size_t row_bytes = png_get_rowbytes(png_ptr, info_ptr);
+    png_bytep* row_pointers = malloc(sizeof(png_bytep) * (*height));
+    if (!row_pointers) {
+        png_destroy_read_struct(&png_ptr, &info_ptr, NULL);
+        fclose(fp);
+        X11UT_LOG_ERROR("无法分配PNG行指针内存: %s", filename);
+        return false;
+    }
+    
+    for (int y = 0; y < *height; y++) {
+        row_pointers[y] = malloc(row_bytes);
+        if (!row_pointers[y]) {
+            for (int i = 0; i < y; i++) {
+                free(row_pointers[i]);
+            }
+            free(row_pointers);
+            png_destroy_read_struct(&png_ptr, &info_ptr, NULL);
+            fclose(fp);
+            X11UT_LOG_ERROR("无法分配PNG行内存: %s", filename);
+            return false;
+        }
+    }
+    
+    // 读取图像数据
+    png_read_image(png_ptr, row_pointers);
+    
+    // 转换为RGB格式
+    size_t pixel_count = (*width) * (*height);
+    *pixels = malloc(pixel_count * 3);
+    if (!*pixels) {
+        for (int y = 0; y < *height; y++) {
+            free(row_pointers[y]);
+        }
+        free(row_pointers);
+        png_destroy_read_struct(&png_ptr, &info_ptr, NULL);
+        fclose(fp);
+        X11UT_LOG_ERROR("无法分配像素内存: %s", filename);
+        return false;
+    }
+    
+    for (int y = 0; y < *height; y++) {
+        png_bytep row = row_pointers[y];
+        for (int x = 0; x < *width; x++) {
+            png_bytep px = &(row[x * 4]);
+            unsigned char* dest = &((*pixels)[(y * (*width) + x) * 3]);
+            dest[0] = px[0];  // R
+            dest[1] = px[1];  // G
+            dest[2] = px[2];  // B
+            // 忽略alpha通道
+        }
+        free(row_pointers[y]);
+    }
+    
+    free(row_pointers);
+    png_read_end(png_ptr, NULL);
+    png_destroy_read_struct(&png_ptr, &info_ptr, NULL);
+    fclose(fp);
+    
+    X11UT_LOG_DEBUG("PNG加载成功: %s, 尺寸: %dx%d", filename, *width, *height);
+    return true;
+}
+
+// ==================== JPEG加载函数 ====================
+
+static bool x11ut__load_jpeg(const char* filename, unsigned char** pixels, int* width, int* height) {
+    if (!filename || !pixels || !width || !height) {
+        X11UT_LOG_ERROR("JPEG加载: 无效参数");
+        return false;
+    }
+    
+    FILE* fp = fopen(filename, "rb");
+    if (!fp) {
+        X11UT_LOG_ERROR("无法打开JPEG文件: %s (%s)", filename, strerror(errno));
+        return false;
+    }
+    
+    struct jpeg_decompress_struct cinfo;
+    struct jpeg_error_mgr jerr;
+    
+    cinfo.err = jpeg_std_error(&jerr);
+    jpeg_create_decompress(&cinfo);
+    jpeg_stdio_src(&cinfo, fp);
+    
+    if (jpeg_read_header(&cinfo, TRUE) != JPEG_HEADER_OK) {
+        jpeg_destroy_decompress(&cinfo);
+        fclose(fp);
+        X11UT_LOG_ERROR("无效的JPEG文件: %s", filename);
+        return false;
+    }
+    
+    // 设置输出为RGB格式
+    cinfo.out_color_space = JCS_RGB;
+    
+    if (!jpeg_start_decompress(&cinfo)) {
+        jpeg_destroy_decompress(&cinfo);
+        fclose(fp);
+        X11UT_LOG_ERROR("JPEG开始解压失败: %s", filename);
+        return false;
+    }
+    
+    *width = cinfo.output_width;
+    *height = cinfo.output_height;
+    
+    X11UT_LOG_DEBUG("JPEG图像: %dx%d, 颜色组件: %d", 
+                   *width, *height, cinfo.output_components);
+    
+    // 分配内存
+    size_t pixel_count = (*width) * (*height);
+    *pixels = malloc(pixel_count * 3);
+    if (!*pixels) {
+        jpeg_destroy_decompress(&cinfo);
+        fclose(fp);
+        X11UT_LOG_ERROR("无法分配像素内存: %s", filename);
+        return false;
+    }
+    
+    // 读取扫描线
+    int row_stride = (*width) * 3;
+    unsigned char* row_buffer = malloc(row_stride);
+    if (!row_buffer) {
+        free(*pixels);
+        jpeg_destroy_decompress(&cinfo);
+        fclose(fp);
+        X11UT_LOG_ERROR("无法分配行缓冲区: %s", filename);
+        return false;
+    }
+    
+    int y = 0;
+    while (cinfo.output_scanline < cinfo.output_height) {
+        JSAMPROW row_pointer[1];
+        row_pointer[0] = row_buffer;
+        
+        if (jpeg_read_scanlines(&cinfo, row_pointer, 1) != 1) {
+            break;
+        }
+        
+        memcpy(&((*pixels)[y * row_stride]), row_buffer, row_stride);
+        y++;
+    }
+    
+    free(row_buffer);
+    
+    jpeg_finish_decompress(&cinfo);
+    jpeg_destroy_decompress(&cinfo);
+    fclose(fp);
+    
+    X11UT_LOG_DEBUG("JPEG加载成功: %s, 尺寸: %dx%d", filename, *width, *height);
+    return true;
+}
+
+// ==================== BMP加载函数 ====================
+
+#pragma pack(push, 1)
+typedef struct {
+    uint16_t type;
+    uint32_t size;
+    uint16_t reserved1;
+    uint16_t reserved2;
+    uint32_t offset;
+} x11ut__bmp_file_header_t;
+
+typedef struct {
+    uint32_t size;
+    int32_t width;
+    int32_t height;
+    uint16_t planes;
+    uint16_t bits_per_pixel;
+    uint32_t compression;
+    uint32_t image_size;
+    int32_t x_pixels_per_meter;
+    int32_t y_pixels_per_meter;
+    uint32_t colors_used;
+    uint32_t important_colors;
+} x11ut__bmp_info_header_t;
+#pragma pack(pop)
+
+static bool x11ut__load_bmp(const char* filename, unsigned char** pixels, int* width, int* height) {
+    if (!filename || !pixels || !width || !height) {
+        X11UT_LOG_ERROR("BMP加载: 无效参数");
+        return false;
+    }
+    
+    FILE* fp = fopen(filename, "rb");
+    if (!fp) {
+        X11UT_LOG_ERROR("无法打开BMP文件: %s (%s)", filename, strerror(errno));
+        return false;
+    }
+    
+    x11ut__bmp_file_header_t file_header;
+    if (fread(&file_header, sizeof(file_header), 1, fp) != 1) {
+        fclose(fp);
+        X11UT_LOG_ERROR("无法读取BMP文件头: %s", filename);
+        return false;
+    }
+    
+    // 检查BMP签名
+    if (file_header.type != 0x4D42) {  // 'BM'
+        fclose(fp);
+        X11UT_LOG_ERROR("不是有效的BMP文件: %s", filename);
+        return false;
+    }
+    
+    x11ut__bmp_info_header_t info_header;
+    if (fread(&info_header, sizeof(info_header), 1, fp) != 1) {
+        fclose(fp);
+        X11UT_LOG_ERROR("无法读取BMP信息头: %s", filename);
+        return false;
+    }
+    
+    // 只支持24位和32位BMP
+    if (info_header.bits_per_pixel != 24 && info_header.bits_per_pixel != 32) {
+        fclose(fp);
+        X11UT_LOG_ERROR("只支持24位或32位BMP: %s (位深度: %d)", 
+                       filename, info_header.bits_per_pixel);
+        return false;
+    }
+    
+    // 宽度和高度（高度可能为负，表示从上到下的扫描线）
+    *width = abs(info_header.width);
+    *height = abs(info_header.height);
+    int channels = info_header.bits_per_pixel / 8;
+    
+    X11UT_LOG_DEBUG("BMP图像: %dx%d, 位深度: %d, 压缩: %d", 
+                   *width, *height, info_header.bits_per_pixel, info_header.compression);
+    
+    // 移动到像素数据开始位置
+    fseek(fp, file_header.offset, SEEK_SET);
+    
+    // 计算行大小（BMP行以4字节对齐）
+    int row_size = ((*width) * channels + 3) & ~3;
+    int padding = row_size - (*width) * channels;
+    
+    // 分配内存
+    size_t pixel_count = (*width) * (*height);
+    *pixels = malloc(pixel_count * 3);
+    if (!*pixels) {
+        fclose(fp);
+        X11UT_LOG_ERROR("无法分配像素内存: %s", filename);
+        return false;
+    }
+    
+    // 读取像素数据
+    unsigned char* row_buffer = malloc(row_size);
+    if (!row_buffer) {
+        free(*pixels);
+        fclose(fp);
+        X11UT_LOG_ERROR("无法分配行缓冲区: %s", filename);
+        return false;
+    }
+    
+    int direction = (info_header.height < 0) ? 1 : -1;  // 从上到下或从下到上
+    int start_y = (info_header.height < 0) ? 0 : (*height - 1);
+    int end_y = (info_header.height < 0) ? *height : -1;
+    
+    for (int y = start_y; y != end_y; y += direction) {
+        if (fread(row_buffer, 1, row_size, fp) != row_size) {
+            free(row_buffer);
+            free(*pixels);
+            fclose(fp);
+            X11UT_LOG_ERROR("读取BMP行数据失败: %s", filename);
+            return false;
+        }
+        
+        unsigned char* src = row_buffer;
+        unsigned char* dest = &((*pixels)[y * (*width) * 3]);
+        
+        for (int x = 0; x < *width; x++) {
+            // BMP存储顺序是BGR(A)
+            dest[x * 3 + 2] = src[0];  // R
+            dest[x * 3 + 1] = src[1];  // G
+            dest[x * 3 + 0] = src[2];  // B
+            src += channels;
+        }
+    }
+    
+    free(row_buffer);
+    fclose(fp);
+    
+    X11UT_LOG_DEBUG("BMP加载成功: %s, 尺寸: %dx%d", filename, *width, *height);
+    return true;
+}
+
+// ==================== 图像缩放函数 ====================
+
+static unsigned char* x11ut__resize_image(const unsigned char* src_pixels, int src_width, int src_height, 
+                                          int dest_width, int dest_height) {
+    if (!src_pixels || src_width <= 0 || src_height <= 0 || dest_width <= 0 || dest_height <= 0) {
+        X11UT_LOG_ERROR("图像缩放: 无效参数");
+        return NULL;
+    }
+    
+    // 分配目标图像内存
+    unsigned char* dest_pixels = malloc(dest_width * dest_height * 3);
+    if (!dest_pixels) {
+        X11UT_LOG_ERROR("无法分配缩放图像内存");
+        return NULL;
+    }
+    
+    X11UT_LOG_DEBUG("缩放图像: %dx%d -> %dx%d", src_width, src_height, dest_width, dest_height);
+    
+    // 简单最近邻插值算法
+    float x_ratio = (float)src_width / dest_width;
+    float y_ratio = (float)src_height / dest_height;
+    
+    for (int y = 0; y < dest_height; y++) {
+        int src_y = (int)(y * y_ratio);
+        if (src_y >= src_height) src_y = src_height - 1;
+        
+        for (int x = 0; x < dest_width; x++) {
+            int src_x = (int)(x * x_ratio);
+            if (src_x >= src_width) src_x = src_width - 1;
+            
+            int src_index = (src_y * src_width + src_x) * 3;
+            int dest_index = (y * dest_width + x) * 3;
+            
+            dest_pixels[dest_index] = src_pixels[src_index];
+            dest_pixels[dest_index + 1] = src_pixels[src_index + 1];
+            dest_pixels[dest_index + 2] = src_pixels[src_index + 2];
+        }
+    }
+    
+    return dest_pixels;
+}
+
+// ==================== RGB转XPM格式函数 ====================
+
+
+// ==================== RGB转XPM格式函数（修复版） ====================
+
+static char** x11ut__rgb_to_xpm(const unsigned char* pixels, int width, int height) {
+    if (!pixels || width <= 0 || height <= 0) {
+        X11UT_LOG_ERROR("RGB转XPM: 无效参数");
+        return NULL;
+    }
+    
+    X11UT_LOG_DEBUG("转换为XPM格式: %dx%d", width, height);
+    
+    // 分析图像中的颜色数量
+    // 使用简单的方法：最多支持256色
+    typedef struct {
+        unsigned char r, g, b;
+        int index;
+    } color_entry_t;
+    
+    color_entry_t color_table[256];
+    int color_count = 0;
+    
+    // 建立颜色表
+    for (int i = 0; i < width * height; i++) {
+        unsigned char r = pixels[i * 3];
+        unsigned char g = pixels[i * 3 + 1];
+        unsigned char b = pixels[i * 3 + 2];
+        
+        // 简化颜色以减少调色板大小
+        // 将每个颜色通道量化为4位（16级）
+        r = (r >> 4) << 4;
+        g = (g >> 4) << 4;
+        b = (b >> 4) << 4;
+        
+        bool found = false;
+        for (int j = 0; j < color_count; j++) {
+            if (color_table[j].r == r && color_table[j].g == g && color_table[j].b == b) {
+                found = true;
+                break;
+            }
+        }
+        
+        if (!found && color_count < 256) {
+            color_table[color_count].r = r;
+            color_table[color_count].g = g;
+            color_table[color_count].b = b;
+            color_table[color_count].index = color_count;
+            color_count++;
+            
+            if (color_count >= 64) {
+                // 限制颜色数量以提高性能
+                break;
+            }
+        }
+    }
+    
+    X11UT_LOG_DEBUG("图像颜色数: %d", color_count);
+    
+    // 如果颜色太多，使用更简单的量化
+    if (color_count > 32) {
+        color_count = 0;
+        
+        // 使用3位颜色量化（512种颜色）
+        for (int i = 0; i < width * height; i++) {
+            unsigned char r = pixels[i * 3] & 0xE0;  // 高3位
+            unsigned char g = pixels[i * 3 + 1] & 0xE0;
+            unsigned char b = pixels[i * 3 + 2] & 0xE0;
+            
+            bool found = false;
+            for (int j = 0; j < color_count; j++) {
+                if (color_table[j].r == r && color_table[j].g == g && color_table[j].b == b) {
+                    found = true;
+                    break;
+                }
+            }
+            
+            if (!found && color_count < 32) {
+                color_table[color_count].r = r;
+                color_table[color_count].g = g;
+                color_table[color_count].b = b;
+                color_table[color_count].index = color_count;
+                color_count++;
+            }
+        }
+    }
+    
+    X11UT_LOG_DEBUG("量化后颜色数: %d", color_count);
+    
+    // 每像素字符数：根据颜色数量决定
+    int chars_per_pixel = 1;
+    if (color_count > 94) {
+        chars_per_pixel = 2;
+    }
+    
+    // 计算XPM行数：1个头信息行 + 颜色数行 + 高度行 + 1个NULL结束符
+    int total_lines = 1 + color_count + height + 1;
+    
+    // 分配XPM字符串数组
+    char** xpm_data = malloc(sizeof(char*) * total_lines);
+    if (!xpm_data) {
+        X11UT_LOG_ERROR("无法分配XPM数组内存");
+        return NULL;
+    }
+    
+    // 第一行：宽度 高度 颜色数 每像素字符数
+    char header[256];
+    snprintf(header, sizeof(header), "%d %d %d %d", width, height, color_count, chars_per_pixel);
+    xpm_data[0] = strdup(header);
+    
+    // 颜色表行
+    const char* color_chars = ".#abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+    
+    for (int i = 0; i < color_count; i++) {
+        char color_line[256];
+        char color_key[3] = {0};
+        
+        if (chars_per_pixel == 1) {
+            color_key[0] = color_chars[i % strlen(color_chars)];
+        } else {
+            int idx1 = i / strlen(color_chars);
+            int idx2 = i % strlen(color_chars);
+            color_key[0] = color_chars[idx1];
+            color_key[1] = color_chars[idx2];
+        }
+        
+        snprintf(color_line, sizeof(color_line), "%s c #%02X%02X%02X", 
+                color_key, 
+                color_table[i].r, color_table[i].g, color_table[i].b);
+        
+        xpm_data[1 + i] = strdup(color_line);
+    }
+    
+    // 像素数据行
+    for (int y = 0; y < height; y++) {
+        // 分配行内存
+        char* pixel_line = malloc(width * chars_per_pixel + 1);
+        if (!pixel_line) {
+            // 清理已分配的内存
+            for (int j = 0; j < 1 + color_count + y; j++) {
+                free(xpm_data[j]);
+            }
+            free(xpm_data);
+            X11UT_LOG_ERROR("无法分配像素行内存");
+            return NULL;
+        }
+        
+        for (int x = 0; x < width; x++) {
+            unsigned char r = pixels[(y * width + x) * 3];
+            unsigned char g = pixels[(y * width + x) * 3 + 1];
+            unsigned char b = pixels[(y * width + x) * 3 + 2];
+            
+            // 量化颜色
+            r = r & 0xE0;  // 使用高3位
+            g = g & 0xE0;
+            b = b & 0xE0;
+            
+            // 查找颜色索引
+            int color_index = -1;
+            for (int i = 0; i < color_count; i++) {
+                if (color_table[i].r == r && color_table[i].g == g && color_table[i].b == b) {
+                    color_index = i;
+                    break;
+                }
+            }
+            
+            // 如果没找到，使用最接近的颜色
+            if (color_index == -1) {
+                // 简单的方法：使用第一个颜色
+                color_index = 0;
+                
+                // 或者可以计算最接近的颜色
+                if (color_count > 0) {
+                    int min_distance = 255 * 255 * 3;
+                    for (int i = 0; i < color_count; i++) {
+                        int dr = r - color_table[i].r;
+                        int dg = g - color_table[i].g;
+                        int db = b - color_table[i].b;
+                        int distance = dr*dr + dg*dg + db*db;
+                        if (distance < min_distance) {
+                            min_distance = distance;
+                            color_index = i;
+                        }
+                    }
+                }
+            }
+            
+            // 写入颜色字符
+            if (color_index >= 0) {
+                if (chars_per_pixel == 1) {
+                    pixel_line[x] = color_chars[color_index % strlen(color_chars)];
+                } else {
+                    int idx1 = color_index / strlen(color_chars);
+                    int idx2 = color_index % strlen(color_chars);
+                    pixel_line[x * 2] = color_chars[idx1];
+                    pixel_line[x * 2 + 1] = color_chars[idx2];
+                }
+            } else {
+                // 没有颜色可用，使用默认字符
+                if (chars_per_pixel == 1) {
+                    pixel_line[x] = '.';
+                } else {
+                    pixel_line[x * 2] = '.';
+                    pixel_line[x * 2 + 1] = '.';
+                }
+            }
+        }
+        
+        // 终止字符串
+        if (chars_per_pixel == 1) {
+            pixel_line[width] = '\0';
+        } else {
+            pixel_line[width * 2] = '\0';
+        }
+        
+        xpm_data[1 + color_count + y] = pixel_line;
+    }
+    
+    // 最后一行：NULL结束符
+    xpm_data[1 + color_count + height] = NULL;
+    
+    X11UT_LOG_DEBUG("XPM转换完成，总行数: %d", total_lines - 1);
+    return xpm_data;
+}
+
+
+// ==================== 释放XPM数据 ====================
+
+static void x11ut__free_xpm_data(char** xpm_data) {
+    if (!xpm_data) return;
+    
+    for (int i = 0; xpm_data[i] != NULL; i++) {
+        free(xpm_data[i]);
+    }
+    free(xpm_data);
+}
+
+// ==================== XPM格式验证函数 ====================
+
+static bool x11ut__validate_xpm_data(char** xpm_data) {
+    if (!xpm_data || !xpm_data[0]) {
+        X11UT_LOG_ERROR("XPM验证: 空数据");
+        return false;
+    }
+    
+    // 解析第一行
+    char* header = xpm_data[0];
+    int width = 0, height = 0, colors = 0, chars_per_pixel = 0;
+    
+    if (sscanf(header, "%d %d %d %d", &width, &height, &colors, &chars_per_pixel) != 4) {
+        X11UT_LOG_ERROR("XPM验证: 无法解析头信息");
+        return false;
+    }
+    
+    // 基本验证
+    if (width <= 0 || height <= 0 || colors <= 0 || chars_per_pixel <= 0) {
+        X11UT_LOG_ERROR("XPM验证: 无效的尺寸或颜色数");
+        return false;
+    }
+    
+    if (chars_per_pixel > 2) {
+        X11UT_LOG_ERROR("XPM验证: 每像素字符数太大");
+        return false;
+    }
+    
+    // 检查颜色表
+    for (int i = 1; i <= colors; i++) {
+        if (!xpm_data[i]) {
+            X11UT_LOG_ERROR("XPM验证: 颜色表行 %d 为空", i);
+            return false;
+        }
+        
+        // 验证颜色行格式: "字符 c #RRGGBB"
+        char* line = xpm_data[i];
+        int len = strlen(line);
+        
+        if (len < 11) {  // 最小长度: "a c #000000" = 11字符
+            X11UT_LOG_ERROR("XPM验证: 颜色行 %d 太短", i);
+            return false;
+        }
+        
+        // 检查是否有 " c #"
+        char* c_pos = strstr(line, " c #");
+        if (!c_pos) {
+            X11UT_LOG_ERROR("XPM验证: 颜色行 %d 格式错误", i);
+            return false;
+        }
+    }
+    
+    // 检查像素数据行
+    for (int y = 0; y < height; y++) {
+        int line_idx = 1 + colors + y;
+        if (!xpm_data[line_idx]) {
+            X11UT_LOG_ERROR("XPM验证: 像素行 %d 为空", y);
+            return false;
+        }
+        
+        // 检查行长度
+        int expected_len = width * chars_per_pixel;
+        int actual_len = strlen(xpm_data[line_idx]);
+        
+        if (actual_len != expected_len) {
+            X11UT_LOG_ERROR("XPM验证: 像素行 %d 长度错误: 期望 %d, 实际 %d", 
+                           y, expected_len, actual_len);
+            return false;
+        }
+    }
+    
+    // 检查NULL结束符
+    if (xpm_data[1 + colors + height] != NULL) {
+        X11UT_LOG_ERROR("XPM验证: 缺少NULL结束符");
+        return false;
+    }
+    
+    X11UT_LOG_DEBUG("XPM验证成功: %dx%d, %d 颜色, %d 字符/像素", 
+                   width, height, colors, chars_per_pixel);
+    return true;
+}
+
+// ==================== 图像转换主函数 ====================
+
+
+
+// ==================== 图像转换主函数（修复版） ====================
+
+static char** x11ut__convert_image_to_xpm(const char* input_file, int* width, int* height) {
+    if (!input_file || !width || !height) {
+        X11UT_LOG_ERROR("图像转换: 无效参数");
+        return NULL;
+    }
+    
+    X11UT_LOG_INFO("开始转换图像: %s", input_file);
+    
+    // 检查文件扩展名
+    const char* ext = strrchr(input_file, '.');
+    if (!ext) {
+        X11UT_LOG_ERROR("无法确定图像格式: %s", input_file);
+        return NULL;
+    }
+    
+    ext++;  // 跳过点号
+    
+    unsigned char* pixels = NULL;
+    int orig_width = 0, orig_height = 0;
+    bool success = false;
+    
+    // 根据扩展名加载图像
+    if (strcasecmp(ext, "png") == 0) {
+        success = x11ut__load_png(input_file, &pixels, &orig_width, &orig_height);
+    } else if (strcasecmp(ext, "jpg") == 0 || strcasecmp(ext, "jpeg") == 0) {
+        success = x11ut__load_jpeg(input_file, &pixels, &orig_width, &orig_height);
+    } else if (strcasecmp(ext, "bmp") == 0) {
+        success = x11ut__load_bmp(input_file, &pixels, &orig_width, &orig_height);
+    } else {
+        X11UT_LOG_ERROR("不支持的图像格式: %s", ext);
+        return NULL;
+    }
+    
+    if (!success || !pixels) {
+        X11UT_LOG_ERROR("无法加载图像: %s", input_file);
+        return NULL;
+    }
+    
+    // 确定目标尺寸（适合托盘图标）
+    int target_width = 24;
+    int target_height = 24;
+    
+    // 如果图像不是目标尺寸，进行缩放
+    unsigned char* resized_pixels = pixels;
+    if (orig_width != target_width || orig_height != target_height) {
+        X11UT_LOG_DEBUG("缩放图像到 %dx%d", target_width, target_height);
+        resized_pixels = x11ut__resize_image(pixels, orig_width, orig_height, 
+                                           target_width, target_height);
+        if (resized_pixels) {
+            free(pixels);  // 释放原始图像
+            pixels = NULL;
+            *width = target_width;
+            *height = target_height;
+        } else {
+            X11UT_LOG_WARNING("图像缩放失败，使用原始尺寸");
+            *width = orig_width;
+            *height = orig_height;
+            resized_pixels = pixels;
+        }
+    } else {
+        *width = orig_width;
+        *height = orig_height;
+    }
+    
+    // 转换为XPM格式
+    char** xpm_data = x11ut__rgb_to_xpm(resized_pixels, *width, *height);
+    
+    // 清理
+    if (resized_pixels) {
+        free(resized_pixels);
+    }
+    
+    if (!xpm_data) {
+        X11UT_LOG_ERROR("XPM转换失败: %s", input_file);
+        return NULL;
+    }
+    
+    // 验证XPM数据
+    if (!x11ut__validate_xpm_data(xpm_data)) {
+        X11UT_LOG_ERROR("XPM数据验证失败: %s", input_file);
+        x11ut__free_xpm_data(xpm_data);
+        if (resized_pixels) free(resized_pixels);
+        return NULL;
+    }    
+    
+    X11UT_LOG_INFO("图像转换成功: %s -> XPM (%dx%d)", input_file, *width, *height);
+    
+    // 调试：打印XPM数据
+    #ifdef X11UT_DEBUG_XPM
+    X11UT_LOG_DEBUG("生成的XPM数据:");
+    for (int i = 0; xpm_data[i] != NULL; i++) {
+        X11UT_LOG_DEBUG("行 %d: %s", i, xpm_data[i]);
+    }
+    #endif
+    
+    return xpm_data;
 }
 
 // ==================== 错误处理 ====================
@@ -2257,7 +3120,8 @@ static void x11ut__test_fonts(x11ut__tray_t* tray) {
 
 // ==================== 主函数 ====================
 
-// 显示帮助信息
+
+// 修改帮助信息函数
 static void x11ut__print_help(const char* program_name) {
     printf("用法: %s [选项]\n", program_name);
     printf("选项:\n");
@@ -2267,6 +3131,7 @@ static void x11ut__print_help(const char* program_name) {
     printf("  --light                启用亮色模式\n");
     printf("  -t, --test-icon        生成并使用测试图标（圆形图标）\n");
     printf("  -s, --icon-size <尺寸>  设置图标尺寸 (默认: 24)\n");
+    printf("  -i, --icon <文件>      使用指定的PNG/JPG/BMP图像文件作为图标\n");
     printf("  --log-level <级别>     设置日志级别: 0-5 (0:无, 1:错误, 2:警告, 3:信息, 4:调试, 5:详细)\n");
     printf("                        或: none, error, warning, info, debug, verbose\n");
     printf("  --log-file <文件>      将日志输出到文件\n");
@@ -2277,16 +3142,19 @@ static void x11ut__print_help(const char* program_name) {
     printf("  %s -t                  # 使用测试图标（圆形）\n", program_name);
     printf("  %s -t -s 32           # 使用32x32的测试图标\n", program_name);
     printf("  %s -l zh --light -t   # 中文 + 亮色主题 + 测试图标\n", program_name);
+    printf("  %s -i icon.png        # 使用PNG图像作为图标\n", program_name);
+    printf("  %s -i photo.jpg -s 48 # 使用JPG图像，尺寸48x48\n", program_name);
+    printf("  %s -i image.bmp       # 使用BMP图像作为图标\n", program_name);
     printf("  %s --log-level debug   # 启用调试日志\n", program_name);
     printf("  %s --log-level 0       # 禁用所有日志\n", program_name);
 }
 
-// 解析命令行参数
+// 修改参数解析函数
 static void x11ut__parse_args(int argc, char* argv[], 
                               bool* dark_mode, bool* english_mode,
                               bool* use_test_icon, int* icon_size,
                               x11ut__log_level_t* log_level,
-                              char** log_file) {
+                              char** log_file, char** icon_file) {
     // 默认值
     *dark_mode = true;      // 默认暗色模式
     *english_mode = false;  // 默认中文模式
@@ -2294,6 +3162,7 @@ static void x11ut__parse_args(int argc, char* argv[],
     *icon_size = 24;        // 默认图标尺寸
     *log_level = X11UT_LOG_INFO;  // 默认INFO级别
     *log_file = NULL;       // 默认不记录到文件
+    *icon_file = NULL;      // 默认不使用外部图标文件
     
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "-h") == 0 || strcmp(argv[i], "--help") == 0) {
@@ -2337,6 +3206,15 @@ static void x11ut__parse_args(int argc, char* argv[],
                 x11ut__print_help(argv[0]);
                 exit(1);
             }
+        } else if (strcmp(argv[i], "-i") == 0 || strcmp(argv[i], "--icon") == 0) {
+            if (i + 1 < argc) {
+                *icon_file = argv[i + 1];
+                i++; // 跳过参数值
+            } else {
+                fprintf(stderr, "错误: -i/--icon 选项需要一个参数 (图像文件路径)\n");
+                x11ut__print_help(argv[0]);
+                exit(1);
+            }
         } else if (strcmp(argv[i], "--log-level") == 0) {
             if (i + 1 < argc) {
                 *log_level = x11ut__parse_log_level(argv[i + 1]);
@@ -2356,8 +3234,8 @@ static void x11ut__parse_args(int argc, char* argv[],
                 exit(1);
             }
         } else if (strcmp(argv[i], "--version") == 0) {
-            printf("X11 托盘图标程序 v1.1.0\n");
-            printf("支持命令行参数、主题切换、语言切换、图标选择、日志系统\n");
+            printf("X11 托盘图标程序 v1.2.0\n");
+            printf("支持命令行参数、主题切换、语言切换、图标选择、图像文件支持、日志系统\n");
             exit(0);
         } else {
             fprintf(stderr, "错误: 未知选项 '%s'\n", argv[i]);
@@ -2365,7 +3243,149 @@ static void x11ut__parse_args(int argc, char* argv[],
             exit(1);
         }
     }
+    
+    // 检查参数冲突
+    if (*icon_file && *use_test_icon) {
+        fprintf(stderr, "警告: 同时指定了图标文件(--icon)和测试图标(--test-icon)，将使用图标文件\n");
+        *use_test_icon = false;
+    }
 }
+
+// ==================== 从XPM数据创建图标 ====================
+
+// ==================== 保存XPM到文件（调试用） ====================
+
+static void x11ut__save_xpm_to_file(const char* filename, char** xpm_data) {
+    if (!filename || !xpm_data) return;
+    
+    FILE* fp = fopen(filename, "w");
+    if (!fp) {
+        X11UT_LOG_ERROR("无法打开XPM调试文件: %s", filename);
+        return;
+    }
+    
+    fprintf(fp, "/* XPM */\n");
+    fprintf(fp, "static char * xpm_data[] = {\n");
+    
+    for (int i = 0; xpm_data[i] != NULL; i++) {
+        fprintf(fp, "  \"%s\"", xpm_data[i]);
+        if (xpm_data[i+1] != NULL) {
+            fprintf(fp, ",");
+        }
+        fprintf(fp, "\n");
+    }
+    
+    fprintf(fp, "};\n");
+    fclose(fp);
+    
+    X11UT_LOG_DEBUG("XPM数据已保存到: %s", filename);
+}
+
+// ==================== 从XPM数据创建图标（修复版） ====================
+
+static bool x11ut__tray_set_icon_from_xpm(x11ut__tray_t* tray, char** xpm_data) {
+    if (!tray || !tray->display || !xpm_data) {
+        X11UT_LOG_ERROR("从XPM设置图标: 无效参数");
+        return false;
+    }
+    
+    X11UT_LOG_DEBUG("从XPM数据创建图标");
+    
+    // 解析XPM数据的第一行获取尺寸信息
+    char* first_line = xpm_data[0];
+    int width = 0, height = 0, colors = 0, chars_per_pixel = 0;
+    
+    if (sscanf(first_line, "%d %d %d %d", &width, &height, &colors, &chars_per_pixel) != 4) {
+        X11UT_LOG_ERROR("无法解析XPM数据头");
+        return false;
+    }
+    
+    X11UT_LOG_DEBUG("XPM尺寸: %dx%d, 颜色数: %d, 每像素字符数: %d", 
+                   width, height, colors, chars_per_pixel);
+    
+    // 验证XPM数据
+    if (width <= 0 || height <= 0 || colors <= 0 || chars_per_pixel <= 0) {
+        X11UT_LOG_ERROR("无效的XPM数据");
+        return false;
+    }
+    
+    // 检查行数
+    int expected_lines = 1 + colors + height + 1; // 头 + 颜色表 + 像素数据 + NULL
+    int actual_lines = 0;
+    while (xpm_data[actual_lines] != NULL) {
+        actual_lines++;
+    }
+    
+    if (actual_lines != 1 + colors + height) {
+        X11UT_LOG_ERROR("XPM行数不匹配: 期望 %d, 实际 %d", expected_lines - 1, actual_lines);
+        return false;
+    }
+    
+    // 创建XPM图像
+    XpmAttributes attrib;
+    memset(&attrib, 0, sizeof(attrib));
+    attrib.valuemask = XpmSize | XpmReturnPixels | XpmColorKey;
+    attrib.color_key = XPM_COLOR;
+    
+    Pixmap pixmap, mask;
+    int result = XpmCreatePixmapFromData(tray->display, tray->window,
+                                         xpm_data, &pixmap, &mask, &attrib);
+    
+    if (result != XpmSuccess) {
+        X11UT_LOG_ERROR("XpmCreatePixmapFromData失败: %d", result);
+        
+        // 尝试提供更多错误信息
+        switch(result) {
+            case XpmColorError: X11UT_LOG_ERROR("XPM错误: 颜色错误"); break;
+            case XpmColorFailed: X11UT_LOG_ERROR("XPM错误: 颜色失败"); break;
+            case XpmNoMemory: X11UT_LOG_ERROR("XPM错误: 内存不足"); break;
+            case XpmOpenFailed: X11UT_LOG_ERROR("XPM错误: 打开失败"); break;
+            case XpmFileInvalid: X11UT_LOG_ERROR("XPM错误: 文件无效"); break;
+            // case XpmNoMemory: X11UT_LOG_ERROR("XPM错误: 无内存"); break;
+            default: X11UT_LOG_ERROR("XPM错误: 未知错误 %d", result); break;
+        }
+        
+        // 调试：打印有问题的XPM数据
+        #ifdef X11UT_DEBUG_XPM
+        X11UT_LOG_DEBUG("有问题的XPM数据: /tmp/debug.xpm");
+        for (int i = 0; xpm_data[i] != NULL; i++) {
+            X11UT_LOG_DEBUG("行 %d: %s", i, xpm_data[i]);
+        }
+        // 保存XPM数据用于调试
+        x11ut__save_xpm_to_file("/tmp/debug.xpm", xpm_data);        
+        #endif
+        
+        return false;
+    }
+    
+    // 更新图标尺寸
+    tray->icon_width = width;
+    tray->icon_height = height;
+    
+    // 重新配置窗口大小
+    XResizeWindow(tray->display, tray->window, width, height);
+    
+    // 释放旧的pixmap
+    if (tray->icon_pixmap) {
+        XFreePixmap(tray->display, tray->icon_pixmap);
+    }
+    
+    tray->icon_pixmap = pixmap;
+    
+    // 设置窗口背景
+    XSetWindowBackgroundPixmap(tray->display, tray->window, tray->icon_pixmap);
+    XClearWindow(tray->display, tray->window);
+    
+    // 清理掩码（如果不需要）
+    if (mask) {
+        XFreePixmap(tray->display, mask);
+    }
+    
+    XFlush(tray->display);
+    X11UT_LOG_DEBUG("从XPM创建图标成功，尺寸: %dx%d", width, height);
+    return true;
+}
+
 
 int main(int argc, char* argv[]) {
     x11ut__tray_t tray;
@@ -2375,9 +3395,10 @@ int main(int argc, char* argv[]) {
     int icon_size;
     x11ut__log_level_t log_level;
     char* log_file = NULL;
+    char* icon_file = NULL;
     
     x11ut__parse_args(argc, argv, &dark_mode, &english_mode, 
-                      &use_test_icon, &icon_size, &log_level, &log_file);
+                      &use_test_icon, &icon_size, &log_level, &log_file, &icon_file);
     
     // 设置日志系统
     x11ut__set_log_level(log_level);
@@ -2386,11 +3407,13 @@ int main(int argc, char* argv[]) {
     }
     
     // 在设置日志级别后输出启动信息
-    X11UT_LOG_INFO("=== X11 托盘图标程序 (支持语言和主题切换) ===");
+    X11UT_LOG_INFO("=== X11 托盘图标程序 (支持图像文件) ===");
     X11UT_LOG_INFO("参数设置:");
     X11UT_LOG_INFO("  - 语言: %s", english_mode ? "英文" : "中文");
     X11UT_LOG_INFO("  - 主题: %s", dark_mode ? "暗色" : "亮色");
-    X11UT_LOG_INFO("  - 图标: %s", use_test_icon ? "测试图标（圆形）" : "默认图标（三条线）");
+    X11UT_LOG_INFO("  - 图标: %s", 
+                   icon_file ? icon_file : 
+                   (use_test_icon ? "测试图标（圆形）" : "默认图标（三条线）"));
     X11UT_LOG_INFO("  - 图标尺寸: %dx%d", icon_size, icon_size);
     X11UT_LOG_INFO("  - 日志级别: %d", log_level);
     X11UT_LOG_INFO("  - 日志文件: %s", log_file ? log_file : "无");
@@ -2415,7 +3438,27 @@ int main(int argc, char* argv[]) {
     }
     
     // 根据参数设置图标
-    if (use_test_icon) {
+    // 在main函数中修改这部分代码：
+    if (icon_file) {
+        // 从图像文件加载并转换为XPM
+        X11UT_LOG_INFO("正在从图像文件加载图标: %s", icon_file);
+        
+        int width = 0, height = 0;
+        char** xpm_data = x11ut__convert_image_to_xpm(icon_file, &width, &height);
+        
+        if (xpm_data) {
+            if (x11ut__tray_set_icon_from_xpm(&tray, xpm_data)) {
+                X11UT_LOG_INFO("图像图标设置成功: %s, 尺寸: %dx%d", icon_file, width, height);
+            } else {
+                X11UT_LOG_WARNING("XPM图标设置失败，使用默认图标");
+                x11ut__draw_default_icon(&tray);
+            }
+            x11ut__free_xpm_data(xpm_data);
+        } else {
+            X11UT_LOG_WARNING("无法加载图像文件，使用默认图标");
+            x11ut__draw_default_icon(&tray);
+        }
+    } else if (use_test_icon) {
         // 生成并设置测试图标
         X11UT_LOG_INFO("正在生成测试图标（圆形），尺寸: %dx%d", icon_size, icon_size);
         
@@ -2464,6 +3507,7 @@ int main(int argc, char* argv[]) {
     
     X11UT_LOG_INFO("托盘程序运行中...");
     X11UT_LOG_INFO("功能特性:");
+    X11UT_LOG_INFO("  - 支持PNG/JPG/BMP图像文件作为图标");
     X11UT_LOG_INFO("  - 支持暗色/亮色主题切换");
     X11UT_LOG_INFO("  - 支持中英文语言切换");
     X11UT_LOG_INFO("  - 支持选择图标类型：默认图标（三条线）或测试图标（圆形）");
@@ -2476,8 +3520,10 @@ int main(int argc, char* argv[]) {
     X11UT_LOG_INFO("  - 分隔线支持");
     X11UT_LOG_INFO("  - 使用Xft字体渲染，支持UTF-8");
     X11UT_LOG_INFO("");
-    X11UT_LOG_INFO("当前图标类型: %s", use_test_icon ? "测试图标（圆形）" : "默认图标（三条线）");
-    X11UT_LOG_INFO("图标尺寸: %dx%d", icon_size, icon_size);
+    X11UT_LOG_INFO("当前图标来源: %s", 
+                   icon_file ? icon_file : 
+                   (use_test_icon ? "测试图标（圆形）" : "默认图标（三条线）"));
+    X11UT_LOG_INFO("图标尺寸: %dx%d", tray.icon_width, tray.icon_height);
     X11UT_LOG_INFO("");
     X11UT_LOG_INFO("鼠标悬停在托盘图标上显示工具提示");
     X11UT_LOG_INFO("点击托盘图标显示菜单");

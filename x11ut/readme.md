@@ -9,6 +9,7 @@
 添加测试参数指定中文/英文选项，是否dark模式，指定字体的功能。
 生成公式API函数列表。
 给这个库实现添加支持png/jpg图标的功能，并在测试用的main函数添加相应的命令行选项。
+添加一个从png/jpg/bmp转换为 托盘支持的 xpm格式图标的函数，注意图片尺寸不固定，需要处理，并在主函数 main 中添加参数支持指定 png/jpg/bmp文件。必须依赖 libpng 和 libjpeg外部库，不要使用stb库。
 
 使用_NET_SYSTEM_TRAY_S0协议
 XEmbed协议也受支持
@@ -16,7 +17,7 @@ StatusNotifierItem协议可用
 
 
 # 编译测试程序
-gcc -std=c99 -DX11UT_TEST -o x11ut_tray_test x11ut_tray.c -lX11 -lXft -lfontconfig -lXrender -DHAVE_LIBPNG -DHAVE_LIBJPEG -lpng -ljpeg -lm -I/usr/include/freetype2/
+gcc -std=c99 -Wall -Wextra -O0 -g -o x11_tray x11tray.c -lX11 -lXft -lXrender -lXpm -DHAVE_LIBPNG -DHAVE_LIBJPEG  -lpng -ljpeg -lm -I/usr/include/freetype2/ -I/opt/vcpkg/installed/x64-linux-dynamic/include/
 
 # 如果需要调试信息
 gcc -std=c99 -DX11UT_TEST -g -o x11ut_tray_test x11ut_tray.c -lX11
@@ -46,78 +47,62 @@ gcc -std=c99 -fPIC -shared -o libx11ut_tray.so x11ut_tray.c -lX11
   - 支持分隔线
   - 点击菜单项后菜单自动隐藏
 
+
+### APIII  
+
+  // ==================== 初始化和管理 ====================
+  bool x11ut__tray_init(x11ut__tray_t* tray, const char* display_name);
+  bool x11ut__tray_set_icon(x11ut__tray_t* tray, int width, int height, const unsigned char* data);
+  bool x11ut__tray_embed(x11ut__tray_t* tray);
+  bool x11ut__tray_process_events(x11ut__tray_t* tray);
+  void x11ut__tray_cleanup(x11ut__tray_t* tray);
   
-  1. 初始化和配置
+  // ==================== 图标相关 ====================
+  bool x11ut__tray_set_icon_with_data(x11ut__tray_t* tray, int width, int height, const unsigned char* data);
+  bool x11ut__tray_set_icon_from_xpm(x11ut__tray_t* tray, char** xpm_data);
   
-      x11ut_create_tray() - 创建托盘实例
+  // ==================== 图像处理API ====================
+  char** x11ut__convert_image_to_xpm(const char* input_file, int* width, int* height);
+  void x11ut__free_xpm_data(char** xpm_data);
+  bool x11ut__validate_xpm_data(char** xpm_data);
   
-      x11ut_destroy_tray() - 销毁托盘实例
+  // ==================== 图像加载API ====================
+  bool x11ut__load_png(const char* filename, unsigned char** pixels, int* width, int* height);
+  bool x11ut__load_jpeg(const char* filename, unsigned char** pixels, int* width, int* height);
+  bool x11ut__load_bmp(const char* filename, unsigned char** pixels, int* width, int* height);
+  unsigned char* x11ut__resize_image(const unsigned char* src_pixels, int src_width, int src_height, 
+                                     int dest_width, int dest_height);
   
-      x11ut_default_config() - 获取默认配置
+  // ==================== 菜单API ====================
+  x11ut__menu_t* x11ut__menu_create(x11ut__tray_t* tray);
+  bool x11ut__menu_add_item(x11ut__tray_t* tray, x11ut__menu_t* menu, const char* label, 
+                           void (*callback)(void*, bool), void* user_data);
+  bool x11ut__menu_add_checkable_item(x11ut__tray_t* tray, x11ut__menu_t* menu, const char* label,
+                                     void (*callback)(void*, bool), void* user_data, bool initial_state);
+  bool x11ut__menu_add_separator(x11ut__tray_t* tray, x11ut__menu_t* menu);
+  bool x11ut__menu_set_checked(x11ut__tray_t* tray, x11ut__menu_t* menu, int index, bool checked);
+  void x11ut__menu_show(x11ut__tray_t* tray, x11ut__menu_t* menu, int x, int y);
+  void x11ut__menu_hide(x11ut__tray_t* tray, x11ut__menu_t* menu);
+  void x11ut__menu_cleanup(x11ut__tray_t* tray, x11ut__menu_t* menu);
   
-  2. 托盘图标操作
+  // ==================== 工具提示API ====================
+  x11ut__tooltip_t* x11ut__tooltip_create(x11ut__tray_t* tray);
+  void x11ut__tooltip_show(x11ut__tray_t* tray, x11ut__tooltip_t* tooltip, const char* text, int x, int y);
+  void x11ut__tooltip_hide(x11ut__tray_t* tray, x11ut__tooltip_t* tooltip);
+  void x11ut__tooltip_cleanup(x11ut__tray_t* tray, x11ut__tooltip_t* tooltip);
   
-      x11ut_set_icon() - 设置托盘图标
+  // ==================== 日志系统API ====================
+  void x11ut__set_log_level(x11ut__log_level_t level);
+  bool x11ut__set_log_file(const char* filename);
+  void x11ut__log_cleanup(void);
   
-      x11ut_embed() - 嵌入到系统托盘
-  
-      x11ut_process_events() - 处理事件
-  
-  3. 运行时设置
-  
-      x11ut_set_dark_mode() - 设置暗色/亮色模式
-  
-      x11ut_set_english_mode() - 设置中英文模式
-  
-      x11ut_set_font() - 设置字体
-  
-  4. 菜单操作
-  
-      x11ut_create_menu() - 创建菜单
-  
-      x11ut_destroy_menu() - 销毁菜单
-  
-      x11ut_menu_add_item() - 添加菜单项
-  
-      x11ut_menu_add_checkable_item() - 添加可勾选菜单项
-  
-      x11ut_menu_add_separator() - 添加分隔线
-  
-      x11ut_menu_set_checked() - 设置勾选状态
-  
-      x11ut_menu_show() - 显示菜单
-  
-      x11ut_menu_hide() - 隐藏菜单
-  
-  5. 工具提示操作
-  
-      x11ut_create_tooltip() - 创建工具提示
-  
-      x11ut_destroy_tooltip() - 销毁工具提示
-  
-      x11ut_tooltip_show() - 显示工具提示
-  
-      x11ut_tooltip_hide() - 隐藏工具提示
-  
-  6. 实用函数
-  
-      x11ut_sleep_ms() - 毫秒级休眠
-  
-      x11ut_is_running() - 检查是否运行中
-  
-      x11ut_set_running() - 设置运行状态
-  
-  编译和测试
-  编译库和测试程序：
-  bash
-  
-  # 编译库
-  gcc -c -fPIC x11systray.c -o x11systray.o -lX11 -lXft
-  gcc -shared x11systray.o -o libx11systray.so -lX11 -lXft
-  
-  # 编译测试程序
-  gcc test_x11systray.c -L. -lx11systray -lX11 -lXft -o test_systray
-  
-  # 设置库路径并运行
-  export LD_LIBRARY_PATH=.:$LD_LIBRARY_PATH
-  ./test_systray --help
+  // ==================== 回调函数示例 ====================
+  // 这些可以作为示例或直接使用
+  static void x11ut__example_callback1(void* data, bool checked);
+  static void x11ut__example_callback2(void* data, bool checked);
+  static void x11ut__test_callback(void* data, bool checked);
+  static void x11ut__settings_callback(void* data, bool checked);
+  static void x11ut__toggle_callback(void* data, bool checked);
+  static void x11ut__exit_callback(void* data, bool checked);
+  static void x11ut__switch_language_callback(void* data, bool checked);
+  static void x11ut__toggle_dark_mode_callback(void* data, bool checked);
