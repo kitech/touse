@@ -76,7 +76,7 @@ typedef struct {
     GC check_gc;         // checkbox图形上下文
 } x11ut__menu_t;
 
-// 颜色结构（暗色主题）
+// 颜色结构（支持暗色和亮色主题）
 typedef struct {
     unsigned long bg_color;        // 背景色
     unsigned long fg_color;        // 前景色（文本）
@@ -125,6 +125,10 @@ typedef struct {
     
     // 颜色
     x11ut__colors_t colors;
+    
+    // 应用状态
+    bool dark_mode;      // 当前是否为暗色模式
+    bool english_mode;   // 当前是否为英文模式
 } x11ut__tray_t;
 
 // ==================== 函数声明 ====================
@@ -165,6 +169,9 @@ static bool x11ut__load_font(x11ut__tray_t* tray, x11ut__menu_t* menu, const cha
 // 绘制函数声明
 static void x11ut__menu_draw(x11ut__tray_t* tray, x11ut__menu_t* menu);
 
+// 创建菜单函数声明
+static void x11ut__create_menu(x11ut__tray_t* tray);
+
 // ==================== 辅助函数 ====================
 
 // 自定义 strdup
@@ -183,18 +190,31 @@ static unsigned long x11ut__rgb_to_color(x11ut__tray_t* tray, int r, int g, int 
     return (r << 16) | (g << 8) | b;
 }
 
-// 初始化颜色（暗色主题）
+// 初始化颜色（支持暗色和亮色主题）
 static void x11ut__init_colors(x11ut__tray_t* tray) {
-    // 暗色主题颜色
-    tray->colors.bg_color = x11ut__rgb_to_color(tray, 45, 45, 45);        // #2D2D2D
-    tray->colors.fg_color = x11ut__rgb_to_color(tray, 224, 224, 224);     // #E0E0E0
-    tray->colors.border_color = x11ut__rgb_to_color(tray, 68, 68, 68);    // #444444
-    tray->colors.hover_bg_color = x11ut__rgb_to_color(tray, 58, 58, 58);  // #3A3A3A
-    tray->colors.hover_fg_color = x11ut__rgb_to_color(tray, 255, 255, 255); // #FFFFFF
-    tray->colors.separator_color = x11ut__rgb_to_color(tray, 68, 68, 68); // #444444
-    tray->colors.check_bg_color = x11ut__rgb_to_color(tray, 70, 70, 70);  // checkbox背景
-    tray->colors.check_fg_color = x11ut__rgb_to_color(tray, 0, 200, 0);   // checkbox勾选颜色
-    tray->colors.check_border_color = x11ut__rgb_to_color(tray, 100, 100, 100); // checkbox边框
+    if (tray->dark_mode) {
+        // 暗色主题颜色
+        tray->colors.bg_color = x11ut__rgb_to_color(tray, 45, 45, 45);        // #2D2D2D
+        tray->colors.fg_color = x11ut__rgb_to_color(tray, 224, 224, 224);     // #E0E0E0
+        tray->colors.border_color = x11ut__rgb_to_color(tray, 68, 68, 68);    // #444444
+        tray->colors.hover_bg_color = x11ut__rgb_to_color(tray, 58, 58, 58);  // #3A3A3A
+        tray->colors.hover_fg_color = x11ut__rgb_to_color(tray, 255, 255, 255); // #FFFFFF
+        tray->colors.separator_color = x11ut__rgb_to_color(tray, 68, 68, 68); // #444444
+        tray->colors.check_bg_color = x11ut__rgb_to_color(tray, 70, 70, 70);  // checkbox背景
+        tray->colors.check_fg_color = x11ut__rgb_to_color(tray, 0, 200, 0);   // checkbox勾选颜色
+        tray->colors.check_border_color = x11ut__rgb_to_color(tray, 100, 100, 100); // checkbox边框
+    } else {
+        // 亮色主题颜色
+        tray->colors.bg_color = x11ut__rgb_to_color(tray, 255, 255, 255);     // #FFFFFF
+        tray->colors.fg_color = x11ut__rgb_to_color(tray, 0, 0, 0);           // #000000
+        tray->colors.border_color = x11ut__rgb_to_color(tray, 200, 200, 200); // #C8C8C8
+        tray->colors.hover_bg_color = x11ut__rgb_to_color(tray, 240, 240, 240); // #F0F0F0
+        tray->colors.hover_fg_color = x11ut__rgb_to_color(tray, 0, 0, 0);     // #000000
+        tray->colors.separator_color = x11ut__rgb_to_color(tray, 200, 200, 200); // #C8C8C8
+        tray->colors.check_bg_color = x11ut__rgb_to_color(tray, 245, 245, 245); // checkbox背景
+        tray->colors.check_fg_color = x11ut__rgb_to_color(tray, 0, 150, 0);   // checkbox勾选颜色
+        tray->colors.check_border_color = x11ut__rgb_to_color(tray, 180, 180, 180); // checkbox边框
+    }
 }
 
 // ==================== 初始化函数 ====================
@@ -221,6 +241,8 @@ bool x11ut__tray_init(x11ut__tray_t* tray, const char* display_name) {
     tray->icon_height = 24;
     tray->running = true;
     tray->embedded = false;
+    tray->dark_mode = true;     // 默认暗色模式
+    tray->english_mode = false; // 默认中文模式
     
     // 初始化颜色
     x11ut__init_colors(tray);
@@ -239,73 +261,127 @@ bool x11ut__tray_init(x11ut__tray_t* tray, const char* display_name) {
     XColor check_bg_color, check_fg_color, check_border_color;
     
     // 背景色
-    bg_color.red = 45 * 256;
-    bg_color.green = 45 * 256;
-    bg_color.blue = 45 * 256;
+    if (tray->dark_mode) {
+        bg_color.red = 45 * 256;
+        bg_color.green = 45 * 256;
+        bg_color.blue = 45 * 256;
+    } else {
+        bg_color.red = 255 * 256;
+        bg_color.green = 255 * 256;
+        bg_color.blue = 255 * 256;
+    }
     bg_color.flags = DoRed | DoGreen | DoBlue;
     XAllocColor(tray->display, tray->colormap, &bg_color);
     tray->colors.bg_color = bg_color.pixel;
     
     // 前景色
-    fg_color.red = 224 * 256;
-    fg_color.green = 224 * 256;
-    fg_color.blue = 224 * 256;
+    if (tray->dark_mode) {
+        fg_color.red = 224 * 256;
+        fg_color.green = 224 * 256;
+        fg_color.blue = 224 * 256;
+    } else {
+        fg_color.red = 0;
+        fg_color.green = 0;
+        fg_color.blue = 0;
+    }
     fg_color.flags = DoRed | DoGreen | DoBlue;
     XAllocColor(tray->display, tray->colormap, &fg_color);
     tray->colors.fg_color = fg_color.pixel;
     
     // 边框色
-    border_color.red = 68 * 256;
-    border_color.green = 68 * 256;
-    border_color.blue = 68 * 256;
+    if (tray->dark_mode) {
+        border_color.red = 68 * 256;
+        border_color.green = 68 * 256;
+        border_color.blue = 68 * 256;
+    } else {
+        border_color.red = 200 * 256;
+        border_color.green = 200 * 256;
+        border_color.blue = 200 * 256;
+    }
     border_color.flags = DoRed | DoGreen | DoBlue;
     XAllocColor(tray->display, tray->colormap, &border_color);
     tray->colors.border_color = border_color.pixel;
     
     // 悬停背景色
-    hover_bg_color.red = 58 * 256;
-    hover_bg_color.green = 58 * 256;
-    hover_bg_color.blue = 58 * 256;
+    if (tray->dark_mode) {
+        hover_bg_color.red = 58 * 256;
+        hover_bg_color.green = 58 * 256;
+        hover_bg_color.blue = 58 * 256;
+    } else {
+        hover_bg_color.red = 240 * 256;
+        hover_bg_color.green = 240 * 256;
+        hover_bg_color.blue = 240 * 256;
+    }
     hover_bg_color.flags = DoRed | DoGreen | DoBlue;
     XAllocColor(tray->display, tray->colormap, &hover_bg_color);
     tray->colors.hover_bg_color = hover_bg_color.pixel;
     
     // 悬停前景色
-    hover_fg_color.red = 255 * 256;
-    hover_fg_color.green = 255 * 256;
-    hover_fg_color.blue = 255 * 256;
+    if (tray->dark_mode) {
+        hover_fg_color.red = 255 * 256;
+        hover_fg_color.green = 255 * 256;
+        hover_fg_color.blue = 255 * 256;
+    } else {
+        hover_fg_color.red = 0;
+        hover_fg_color.green = 0;
+        hover_fg_color.blue = 0;
+    }
     hover_fg_color.flags = DoRed | DoGreen | DoBlue;
     XAllocColor(tray->display, tray->colormap, &hover_fg_color);
     tray->colors.hover_fg_color = hover_fg_color.pixel;
     
     // 分隔线颜色
-    separator_color.red = 68 * 256;
-    separator_color.green = 68 * 256;
-    separator_color.blue = 68 * 256;
+    if (tray->dark_mode) {
+        separator_color.red = 68 * 256;
+        separator_color.green = 68 * 256;
+        separator_color.blue = 68 * 256;
+    } else {
+        separator_color.red = 200 * 256;
+        separator_color.green = 200 * 256;
+        separator_color.blue = 200 * 256;
+    }
     separator_color.flags = DoRed | DoGreen | DoBlue;
     XAllocColor(tray->display, tray->colormap, &separator_color);
     tray->colors.separator_color = separator_color.pixel;
     
     // checkbox背景色
-    check_bg_color.red = 70 * 256;
-    check_bg_color.green = 70 * 256;
-    check_bg_color.blue = 70 * 256;
+    if (tray->dark_mode) {
+        check_bg_color.red = 70 * 256;
+        check_bg_color.green = 70 * 256;
+        check_bg_color.blue = 70 * 256;
+    } else {
+        check_bg_color.red = 245 * 256;
+        check_bg_color.green = 245 * 256;
+        check_bg_color.blue = 245 * 256;
+    }
     check_bg_color.flags = DoRed | DoGreen | DoBlue;
     XAllocColor(tray->display, tray->colormap, &check_bg_color);
     tray->colors.check_bg_color = check_bg_color.pixel;
     
     // checkbox勾选颜色
-    check_fg_color.red = 0;
-    check_fg_color.green = 200 * 256;
-    check_fg_color.blue = 0;
+    if (tray->dark_mode) {
+        check_fg_color.red = 0;
+        check_fg_color.green = 200 * 256;
+        check_fg_color.blue = 0;
+    } else {
+        check_fg_color.red = 0;
+        check_fg_color.green = 150 * 256;
+        check_fg_color.blue = 0;
+    }
     check_fg_color.flags = DoRed | DoGreen | DoBlue;
     XAllocColor(tray->display, tray->colormap, &check_fg_color);
     tray->colors.check_fg_color = check_fg_color.pixel;
     
     // checkbox边框色
-    check_border_color.red = 100 * 256;
-    check_border_color.green = 100 * 256;
-    check_border_color.blue = 100 * 256;
+    if (tray->dark_mode) {
+        check_border_color.red = 100 * 256;
+        check_border_color.green = 100 * 256;
+        check_border_color.blue = 100 * 256;
+    } else {
+        check_border_color.red = 180 * 256;
+        check_border_color.green = 180 * 256;
+        check_border_color.blue = 180 * 256;
+    }
     check_border_color.flags = DoRed | DoGreen | DoBlue;
     XAllocColor(tray->display, tray->colormap, &check_border_color);
     tray->colors.check_border_color = check_border_color.pixel;
@@ -382,9 +458,9 @@ bool x11ut__tray_init(x11ut__tray_t* tray, const char* display_name) {
     return true;
 }
 
-// 绘制默认图标（暗色主题风格）
+// 绘制默认图标
 static void x11ut__draw_default_icon(x11ut__tray_t* tray) {
-    // 清除背景（使用暗色背景）
+    // 清除背景
     XSetForeground(tray->display, tray->gc, tray->colors.bg_color);
     XFillRectangle(tray->display, tray->icon_pixmap, tray->gc,
                    0, 0, tray->icon_width, tray->icon_height);
@@ -506,16 +582,28 @@ static bool x11ut__load_font(x11ut__tray_t* tray, x11ut__menu_t* menu, const cha
             
             // 初始化颜色
             XRenderColor render_color;
-            render_color.red = 224 * 256;   // #E0E0E0
-            render_color.green = 224 * 256;
-            render_color.blue = 224 * 256;
+            if (tray->dark_mode) {
+                render_color.red = 224 * 256;   // #E0E0E0
+                render_color.green = 224 * 256;
+                render_color.blue = 224 * 256;
+            } else {
+                render_color.red = 0;           // #000000
+                render_color.green = 0;
+                render_color.blue = 0;
+            }
             render_color.alpha = 0xffff;
             XftColorAllocValue(tray->display, tray->visual, tray->colormap, 
                               &render_color, &menu->fg_color);
             
-            render_color.red = 255 * 256;   // #FFFFFF
-            render_color.green = 255 * 256;
-            render_color.blue = 255 * 256;
+            if (tray->dark_mode) {
+                render_color.red = 255 * 256;   // #FFFFFF
+                render_color.green = 255 * 256;
+                render_color.blue = 255 * 256;
+            } else {
+                render_color.red = 0;           // #000000
+                render_color.green = 0;
+                render_color.blue = 0;
+            }
             render_color.alpha = 0xffff;
             XftColorAllocValue(tray->display, tray->visual, tray->colormap, 
                               &render_color, &menu->hover_fg_color);
@@ -549,16 +637,28 @@ static bool x11ut__load_font(x11ut__tray_t* tray, x11ut__menu_t* menu, const cha
             
             // 初始化颜色
             XRenderColor render_color;
-            render_color.red = 224 * 256;   // #E0E0E0
-            render_color.green = 224 * 256;
-            render_color.blue = 224 * 256;
+            if (tray->dark_mode) {
+                render_color.red = 224 * 256;   // #E0E0E0
+                render_color.green = 224 * 256;
+                render_color.blue = 224 * 256;
+            } else {
+                render_color.red = 0;           // #000000
+                render_color.green = 0;
+                render_color.blue = 0;
+            }
             render_color.alpha = 0xffff;
             XftColorAllocValue(tray->display, tray->visual, tray->colormap, 
                               &render_color, &menu->fg_color);
             
-            render_color.red = 255 * 256;   // #FFFFFF
-            render_color.green = 255 * 256;
-            render_color.blue = 255 * 256;
+            if (tray->dark_mode) {
+                render_color.red = 255 * 256;   // #FFFFFF
+                render_color.green = 255 * 256;
+                render_color.blue = 255 * 256;
+            } else {
+                render_color.red = 0;           // #000000
+                render_color.green = 0;
+                render_color.blue = 0;
+            }
             render_color.alpha = 0xffff;
             XftColorAllocValue(tray->display, tray->visual, tray->colormap, 
                               &render_color, &menu->hover_fg_color);
@@ -587,7 +687,7 @@ x11ut__menu_t* x11ut__menu_create(x11ut__tray_t* tray) {
     
     memset(menu, 0, sizeof(x11ut__menu_t));
     menu->item_height = 30;  // 稍高以容纳中文
-    menu->width = 200;       // 稍宽以容纳中文
+    menu->width = 220;       // 稍宽以容纳中英文
     menu->hover_index = -1;  // 初始无悬停
     
     // 加载字体，优先尝试中文字体
@@ -1036,8 +1136,8 @@ static void x11ut__handle_menu_click(x11ut__tray_t* tray, x11ut__menu_t* menu, i
     // 重新绘制菜单以显示新的勾选状态
     x11ut__menu_draw(tray, menu);
     
-    // 注意：这里不隐藏菜单，允许用户继续操作
-    // x11ut__menu_hide(tray, menu);
+    // 所有菜单项点击后都隐藏菜单
+    x11ut__menu_hide(tray, menu);
 }
 
 // 更新菜单悬停状态
@@ -1160,9 +1260,15 @@ x11ut__tooltip_t* x11ut__tooltip_create(x11ut__tray_t* tray) {
     
     // 初始化颜色
     XRenderColor render_color;
-    render_color.red = 224 * 256;   // #E0E0E0
-    render_color.green = 224 * 256;
-    render_color.blue = 224 * 256;
+    if (tray->dark_mode) {
+        render_color.red = 224 * 256;   // #E0E0E0
+        render_color.green = 224 * 256;
+        render_color.blue = 224 * 256;
+    } else {
+        render_color.red = 0;           // #000000
+        render_color.green = 0;
+        render_color.blue = 0;
+    }
     render_color.alpha = 0xffff;
     XftColorAllocValue(tray->display, tray->visual, tray->colormap, 
                       &render_color, &tooltip->color);
@@ -1398,11 +1504,18 @@ bool x11ut__tray_process_events(x11ut__tray_t* tray) {
                 // 鼠标进入托盘图标
                 if (event.xcrossing.window == tray->window) {
                     if (tray->tooltip) {
-                        // 显示工具提示（包含中文）
-                        x11ut__tooltip_show(tray, tray->tooltip, 
-                                          "系统托盘图标\n点击显示菜单\n测试中文显示",
-                                          event.xcrossing.x_root,
-                                          event.xcrossing.y_root);
+                        // 显示工具提示（根据当前语言）
+                        if (tray->english_mode) {
+                            x11ut__tooltip_show(tray, tray->tooltip, 
+                                              "System Tray Icon\nClick to show menu",
+                                              event.xcrossing.x_root,
+                                              event.xcrossing.y_root);
+                        } else {
+                            x11ut__tooltip_show(tray, tray->tooltip, 
+                                              "系统托盘图标\n点击显示菜单",
+                                              event.xcrossing.x_root,
+                                              event.xcrossing.y_root);
+                        }
                     }
                 }
                 break;
@@ -1532,6 +1645,125 @@ static void x11ut__exit_callback(void* data, bool checked) {
     }
 }
 
+// ==================== 语言和主题切换回调函数 ====================
+
+// 切换语言回调函数
+static void x11ut__switch_language_callback(void* data, bool checked) {
+    x11ut__tray_t* tray = (x11ut__tray_t*)data;
+    if (!tray) return;
+    
+    // 切换语言模式
+    tray->english_mode = !tray->english_mode;
+    
+    if (tray->english_mode) {
+        printf("已切换到英文模式\n");
+    } else {
+        printf("已切换到中文模式\n");
+    }
+    
+    // 重新创建菜单（使用新的语言）
+    if (tray->menu) {
+        // 先清理旧菜单
+        x11ut__menu_cleanup(tray, tray->menu);
+        tray->menu = NULL;
+        
+        // 创建新菜单
+        x11ut__create_menu(tray);
+    }
+}
+
+// 切换主题回调函数
+static void x11ut__toggle_dark_mode_callback(void* data, bool checked) {
+    x11ut__tray_t* tray = (x11ut__tray_t*)data;
+    if (!tray) return;
+    
+    // 切换主题模式
+    tray->dark_mode = !tray->dark_mode;
+    
+    if (tray->dark_mode) {
+        printf("已切换到暗色主题\n");
+    } else {
+        printf("已切换到亮色主题\n");
+    }
+    
+    // 重新初始化颜色
+    x11ut__init_colors(tray);
+    
+    // 重新绘制托盘图标
+    x11ut__draw_default_icon(tray);
+    XCopyArea(tray->display, tray->icon_pixmap, tray->window, tray->gc,
+              0, 0, tray->icon_width, tray->icon_height, 0, 0);
+    
+    // 重新创建菜单（使用新主题）
+    if (tray->menu) {
+        // 先清理旧菜单
+        x11ut__menu_cleanup(tray, tray->menu);
+        tray->menu = NULL;
+        
+        // 创建新菜单
+        x11ut__create_menu(tray);
+    }
+}
+
+// ==================== 创建菜单函数 ====================
+
+// 创建菜单（根据当前语言和主题）
+static void x11ut__create_menu(x11ut__tray_t* tray) {
+    // 创建菜单
+    tray->menu = x11ut__menu_create(tray);
+    if (!tray->menu) {
+        fprintf(stderr, "警告: 无法创建菜单，字体加载失败\n");
+        return;
+    }
+    
+    // 根据当前语言添加菜单项
+    if (tray->english_mode) {
+        // 英文菜单
+        x11ut__menu_add_item(tray, tray->menu, "Switch Language", x11ut__switch_language_callback, tray);
+        x11ut__menu_add_item(tray, tray->menu, "Toggle Dark Mode", x11ut__toggle_dark_mode_callback, tray);
+        x11ut__menu_add_separator(tray, tray->menu);
+        
+        // 添加普通菜单项
+        x11ut__menu_add_item(tray, tray->menu, "Option 1 (English)", x11ut__example_callback1, "Test Data");
+        x11ut__menu_add_item(tray, tray->menu, "Option 2 (English)", x11ut__example_callback2, NULL);
+        x11ut__menu_add_separator(tray, tray->menu);
+        
+        // 添加可勾选菜单项
+        x11ut__menu_add_checkable_item(tray, tray->menu, "Auto Start", x11ut__toggle_callback, NULL, false);
+        x11ut__menu_add_checkable_item(tray, tray->menu, "Enable Notifications", x11ut__toggle_callback, NULL, true);
+        x11ut__menu_add_checkable_item(tray, tray->menu, "Dark Theme", x11ut__toggle_callback, NULL, tray->dark_mode);
+        x11ut__menu_add_separator(tray, tray->menu);
+        
+        // 继续添加其他菜单项
+        x11ut__menu_add_item(tray, tray->menu, "Test Function", x11ut__test_callback, NULL);
+        x11ut__menu_add_item(tray, tray->menu, "Settings", x11ut__settings_callback, NULL);
+        x11ut__menu_add_separator(tray, tray->menu);
+        x11ut__menu_add_item(tray, tray->menu, "Exit Program", x11ut__exit_callback, tray);
+    } else {
+        // 中文菜单
+        x11ut__menu_add_item(tray, tray->menu, "切换语言", x11ut__switch_language_callback, tray);
+        x11ut__menu_add_item(tray, tray->menu, "切换暗色模式", x11ut__toggle_dark_mode_callback, tray);
+        x11ut__menu_add_separator(tray, tray->menu);
+        
+        // 添加普通菜单项
+        x11ut__menu_add_item(tray, tray->menu, "选项1 (中文)", x11ut__example_callback1, "测试数据");
+        x11ut__menu_add_item(tray, tray->menu, "选项2 (中文)", x11ut__example_callback2, NULL);
+        x11ut__menu_add_separator(tray, tray->menu);
+        
+        // 添加可勾选菜单项
+        x11ut__menu_add_checkable_item(tray, tray->menu, "自动启动", x11ut__toggle_callback, NULL, false);
+        x11ut__menu_add_checkable_item(tray, tray->menu, "启用通知", x11ut__toggle_callback, NULL, true);
+        x11ut__menu_add_checkable_item(tray, tray->menu, "暗色主题", x11ut__toggle_callback, NULL, tray->dark_mode);
+        x11ut__menu_add_separator(tray, tray->menu);
+        
+        // 继续添加其他菜单项
+        x11ut__menu_add_item(tray, tray->menu, "测试功能", x11ut__test_callback, NULL);
+        x11ut__menu_add_item(tray, tray->menu, "设置", x11ut__settings_callback, NULL);
+        x11ut__menu_add_separator(tray, tray->menu);
+        x11ut__menu_add_item(tray, tray->menu, "退出程序", x11ut__exit_callback, tray);
+    }
+}
+
 // ==================== 字体测试函数 ====================
 
 static void x11ut__test_fonts(x11ut__tray_t* tray) {
@@ -1565,7 +1797,7 @@ static void x11ut__test_fonts(x11ut__tray_t* tray) {
 int main(int argc, char* argv[]) {
     x11ut__tray_t tray;
     
-    printf("=== X11 托盘图标程序 (暗色主题，支持checkbox) ===\n");
+    printf("=== X11 托盘图标程序 (支持语言和主题切换) ===\n");
     printf("区域设置: %s\n", setlocale(LC_ALL, ""));
     
     // 初始化
@@ -1594,35 +1826,15 @@ int main(int argc, char* argv[]) {
     }
     
     // 创建菜单
-    tray.menu = x11ut__menu_create(&tray);
-    if (tray.menu) {
-        // 添加普通菜单项
-        x11ut__menu_add_item(&tray, tray.menu, "选项1 (Option 1)", x11ut__example_callback1, "测试数据");
-        x11ut__menu_add_item(&tray, tray.menu, "选项2 (Option 2)", x11ut__example_callback2, NULL);
-        x11ut__menu_add_separator(&tray, tray.menu);
-        
-        // 添加可勾选菜单项
-        x11ut__menu_add_checkable_item(&tray, tray.menu, "自动启动 (Auto Start)", x11ut__toggle_callback, NULL, false);
-        x11ut__menu_add_checkable_item(&tray, tray.menu, "启用通知 (Enable Notifications)", x11ut__toggle_callback, NULL, true);
-        x11ut__menu_add_checkable_item(&tray, tray.menu, "暗色主题 (Dark Theme)", x11ut__toggle_callback, NULL, true);
-        x11ut__menu_add_separator(&tray, tray.menu);
-        
-        // 继续添加其他菜单项
-        x11ut__menu_add_item(&tray, tray.menu, "测试功能 (Test Function)", x11ut__test_callback, NULL);
-        x11ut__menu_add_item(&tray, tray.menu, "设置 (Settings)", x11ut__settings_callback, NULL);
-        x11ut__menu_add_separator(&tray, tray.menu);
-        x11ut__menu_add_item(&tray, tray.menu, "退出程序 (Exit Program)", x11ut__exit_callback, &tray);
-    } else {
-        fprintf(stderr, "警告: 无法创建菜单，字体加载失败\n");
-    }
+    x11ut__create_menu(&tray);
     
     // 创建工具提示
     tray.tooltip = x11ut__tooltip_create(&tray);
     
     printf("\n托盘程序运行中...\n");
     printf("功能特性:\n");
-    printf("  - 暗色主题界面\n");
-    printf("  - 支持中文显示\n");
+    printf("  - 支持暗色/亮色主题切换\n");
+    printf("  - 支持中英文语言切换\n");
     printf("  - 菜单项左对齐\n");
     printf("  - 支持checkbox菜单项\n");
     printf("  - 菜单项鼠标悬停效果\n");
@@ -1637,7 +1849,7 @@ int main(int argc, char* argv[]) {
     printf("  - 鼠标悬停有视觉反馈\n");
     printf("  - 支持checkbox，点击可切换状态\n");
     printf("  - 支持分隔线\n");
-    printf("  - 暗色主题配色\n");
+    printf("  - 点击菜单项后菜单自动隐藏\n");
     printf("\n按 Ctrl+C 退出程序\n\n");
     
     // 主事件循环
