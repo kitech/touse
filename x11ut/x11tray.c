@@ -4,6 +4,7 @@
 #include <X11/Xlib.h>
 #include <X11/Xatom.h>
 #include <X11/Xutil.h>
+#include <X11/Xft/Xft.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -12,6 +13,8 @@
 #include <unistd.h>
 #include <time.h>
 #include <locale.h>
+#include <wchar.h>
+#include <iconv.h>
 
 // ==================== 错误处理 ====================
 
@@ -29,11 +32,26 @@ static int x11ut__error_handler(Display* display, XErrorEvent* error) {
 // 菜单项结构
 typedef struct x11ut__menu_item {
     char* label;
+    char* utf8_label;  // UTF-8编码的标签
     void (*callback)(void*);
     void* user_data;
     bool is_separator;  // 是否是分隔线
     struct x11ut__menu_item* next;
 } x11ut__menu_item_t;
+
+// 工具提示结构
+typedef struct {
+    Window window;
+    char* text;
+    XftFont* font;
+    XftDraw* draw;
+    XftColor color;
+    Pixmap pixmap;
+    bool visible;
+    int width;
+    int height;
+    int padding;
+} x11ut__tooltip_t;
 
 // 菜单结构
 typedef struct {
@@ -45,10 +63,13 @@ typedef struct {
     int height;
     int item_height;
     int hover_index;     // 当前鼠标悬停的菜单项索引
-    XFontStruct* font;   // X11字体
-    GC text_gc;          // 文本图形上下文
+    XftFont* font;       // Xft字体
+    XftDraw* draw;       // Xft绘制上下文
+    XftColor fg_color;   // 前景色
+    XftColor hover_fg_color; // 悬停前景色
     GC hover_gc;         // 悬停图形上下文
     GC separator_gc;     // 分隔线图形上下文
+    GC border_gc;        // 边框图形上下文
 } x11ut__menu_t;
 
 // 颜色结构（暗色主题）
@@ -65,6 +86,8 @@ typedef struct {
 typedef struct {
     Display* display;
     int screen;
+    Visual* visual;
+    Colormap colormap;
     Window window;
     Window tray_window;
     GC gc;
@@ -76,6 +99,7 @@ typedef struct {
     Atom net_wm_window_type_dock;
     Atom net_wm_window_type_menu;
     Atom net_wm_state_skip_taskbar;
+    Atom net_wm_window_type_tooltip;
     Atom xembed_info;
     
     // 状态
@@ -84,6 +108,9 @@ typedef struct {
     
     // 菜单
     x11ut__menu_t* menu;
+    
+    // 工具提示
+    x11ut__tooltip_t* tooltip;
     
     // 图标尺寸
     int icon_width;
@@ -105,18 +132,25 @@ bool x11ut__tray_process_events(x11ut__tray_t* tray);
 
 // 菜单函数
 x11ut__menu_t* x11ut__menu_create(x11ut__tray_t* tray);
-bool x11ut__menu_add_item(x11ut__menu_t* menu, const char* label, void (*callback)(void*), void* user_data);
-bool x11ut__menu_add_separator(x11ut__menu_t* menu);
+bool x11ut__menu_add_item(x11ut__tray_t* tray, x11ut__menu_t* menu, const char* label, 
+                         void (*callback)(void*), void* user_data);
+bool x11ut__menu_add_separator(x11ut__tray_t* tray, x11ut__menu_t* menu);
 void x11ut__menu_show(x11ut__tray_t* tray, x11ut__menu_t* menu, int x, int y);
 void x11ut__menu_hide(x11ut__tray_t* tray, x11ut__menu_t* menu);
 void x11ut__menu_cleanup(x11ut__tray_t* tray, x11ut__menu_t* menu);
+
+// 工具提示函数
+x11ut__tooltip_t* x11ut__tooltip_create(x11ut__tray_t* tray);
+void x11ut__tooltip_show(x11ut__tray_t* tray, x11ut__tooltip_t* tooltip, const char* text, int x, int y);
+void x11ut__tooltip_hide(x11ut__tray_t* tray, x11ut__tooltip_t* tooltip);
+void x11ut__tooltip_cleanup(x11ut__tray_t* tray, x11ut__tooltip_t* tooltip);
 
 // 工具函数
 void x11ut__tray_cleanup(x11ut__tray_t* tray);
 static void x11ut__draw_default_icon(x11ut__tray_t* tray);
 static void x11ut__msleep(long milliseconds);
 static void x11ut__init_colors(x11ut__tray_t* tray);
-static bool x11ut__load_font(x11ut__tray_t* tray, x11ut__menu_t* menu);
+static bool x11ut__load_font(x11ut__tray_t* tray, x11ut__menu_t* menu, const char* font_name);
 
 // ==================== 辅助函数 ====================
 
@@ -165,6 +199,8 @@ bool x11ut__tray_init(x11ut__tray_t* tray, const char* display_name) {
     }
     
     tray->screen = DefaultScreen(tray->display);
+    tray->visual = DefaultVisual(tray->display, tray->screen);
+    tray->colormap = DefaultColormap(tray->display, tray->screen);
     tray->icon_width = 24;
     tray->icon_height = 24;
     tray->running = true;
@@ -179,12 +215,10 @@ bool x11ut__tray_init(x11ut__tray_t* tray, const char* display_name) {
     tray->net_wm_window_type_dock = XInternAtom(tray->display, "_NET_WM_WINDOW_TYPE_DOCK", False);
     tray->net_wm_window_type_menu = XInternAtom(tray->display, "_NET_WM_WINDOW_TYPE_MENU", False);
     tray->net_wm_state_skip_taskbar = XInternAtom(tray->display, "_NET_WM_STATE_SKIP_TASKBAR", False);
+    tray->net_wm_window_type_tooltip = XInternAtom(tray->display, "_NET_WM_WINDOW_TYPE_TOOLTIP", False);
     tray->xembed_info = XInternAtom(tray->display, "_XEMBED_INFO", False);
     
     // 创建颜色映射
-    Colormap colormap = DefaultColormap(tray->display, tray->screen);
-    
-    // 为自定义颜色分配颜色单元
     XColor bg_color, fg_color, border_color, hover_bg_color, hover_fg_color, separator_color;
     
     // 背景色
@@ -192,7 +226,7 @@ bool x11ut__tray_init(x11ut__tray_t* tray, const char* display_name) {
     bg_color.green = 45 * 256;
     bg_color.blue = 45 * 256;
     bg_color.flags = DoRed | DoGreen | DoBlue;
-    XAllocColor(tray->display, colormap, &bg_color);
+    XAllocColor(tray->display, tray->colormap, &bg_color);
     tray->colors.bg_color = bg_color.pixel;
     
     // 前景色
@@ -200,7 +234,7 @@ bool x11ut__tray_init(x11ut__tray_t* tray, const char* display_name) {
     fg_color.green = 224 * 256;
     fg_color.blue = 224 * 256;
     fg_color.flags = DoRed | DoGreen | DoBlue;
-    XAllocColor(tray->display, colormap, &fg_color);
+    XAllocColor(tray->display, tray->colormap, &fg_color);
     tray->colors.fg_color = fg_color.pixel;
     
     // 边框色
@@ -208,7 +242,7 @@ bool x11ut__tray_init(x11ut__tray_t* tray, const char* display_name) {
     border_color.green = 68 * 256;
     border_color.blue = 68 * 256;
     border_color.flags = DoRed | DoGreen | DoBlue;
-    XAllocColor(tray->display, colormap, &border_color);
+    XAllocColor(tray->display, tray->colormap, &border_color);
     tray->colors.border_color = border_color.pixel;
     
     // 悬停背景色
@@ -216,7 +250,7 @@ bool x11ut__tray_init(x11ut__tray_t* tray, const char* display_name) {
     hover_bg_color.green = 58 * 256;
     hover_bg_color.blue = 58 * 256;
     hover_bg_color.flags = DoRed | DoGreen | DoBlue;
-    XAllocColor(tray->display, colormap, &hover_bg_color);
+    XAllocColor(tray->display, tray->colormap, &hover_bg_color);
     tray->colors.hover_bg_color = hover_bg_color.pixel;
     
     // 悬停前景色
@@ -224,7 +258,7 @@ bool x11ut__tray_init(x11ut__tray_t* tray, const char* display_name) {
     hover_fg_color.green = 255 * 256;
     hover_fg_color.blue = 255 * 256;
     hover_fg_color.flags = DoRed | DoGreen | DoBlue;
-    XAllocColor(tray->display, colormap, &hover_fg_color);
+    XAllocColor(tray->display, tray->colormap, &hover_fg_color);
     tray->colors.hover_fg_color = hover_fg_color.pixel;
     
     // 分隔线颜色
@@ -232,7 +266,7 @@ bool x11ut__tray_init(x11ut__tray_t* tray, const char* display_name) {
     separator_color.green = 68 * 256;
     separator_color.blue = 68 * 256;
     separator_color.flags = DoRed | DoGreen | DoBlue;
-    XAllocColor(tray->display, colormap, &separator_color);
+    XAllocColor(tray->display, tray->colormap, &separator_color);
     tray->colors.separator_color = separator_color.pixel;
     
     // 创建窗口
@@ -252,7 +286,7 @@ bool x11ut__tray_init(x11ut__tray_t* tray, const char* display_name) {
     // 选择输入事件
     XSelectInput(tray->display, tray->window,
                  ExposureMask | ButtonPressMask | ButtonReleaseMask |
-                 StructureNotifyMask);
+                 StructureNotifyMask | EnterWindowMask | LeaveWindowMask);
     
     // 设置窗口属性
     XSizeHints hints;
@@ -420,30 +454,73 @@ bool x11ut__tray_embed(x11ut__tray_t* tray) {
 // ==================== 菜单函数 ====================
 
 // 加载字体（支持中文）
-static bool x11ut__load_font(x11ut__tray_t* tray, x11ut__menu_t* menu) {
+static bool x11ut__load_font(x11ut__tray_t* tray, x11ut__menu_t* menu, const char* font_name) {
     if (!tray || !tray->display || !menu) return false;
     
-    // 尝试加载中文字体，使用字体列表
+    // 如果指定了字体名，尝试加载
+    if (font_name) {
+        menu->font = XftFontOpenName(tray->display, tray->screen, font_name);
+        if (menu->font) {
+            printf("成功加载指定字体: %s\n", font_name);
+            
+            // 初始化颜色
+            XRenderColor render_color;
+            render_color.red = 224 * 256;   // #E0E0E0
+            render_color.green = 224 * 256;
+            render_color.blue = 224 * 256;
+            render_color.alpha = 0xffff;
+            XftColorAllocValue(tray->display, tray->visual, tray->colormap, 
+                              &render_color, &menu->fg_color);
+            
+            render_color.red = 255 * 256;   // #FFFFFF
+            render_color.green = 255 * 256;
+            render_color.blue = 255 * 256;
+            render_color.alpha = 0xffff;
+            XftColorAllocValue(tray->display, tray->visual, tray->colormap, 
+                              &render_color, &menu->hover_fg_color);
+            
+            return true;
+        }
+    }
+    
+    // 尝试加载中文字体
     const char* font_names[] = {
-        "-*-*-medium-r-normal-*-14-*-*-*-*-*-*-*",  // X逻辑字体描述
-        "fixed",
-        "6x13",
-        "9x15",
+        "WenQuanYi Micro Hei:size=12",           // 文泉驿微米黑
+        "Noto Sans CJK SC:size=12",             // Noto中文字体
+        "DejaVu Sans:size=12",                  // DejaVu
+        "Sans:size=12",                         // 通用无衬线字体
+        "fixed:size=12",                        // 固定字体
         NULL
     };
     
     // 尝试加载字体
     for (int i = 0; font_names[i] != NULL; i++) {
-        menu->font = XLoadQueryFont(tray->display, font_names[i]);
+        menu->font = XftFontOpenName(tray->display, tray->screen, font_names[i]);
         if (menu->font) {
             printf("成功加载字体: %s\n", font_names[i]);
+            
+            // 初始化颜色
+            XRenderColor render_color;
+            render_color.red = 224 * 256;   // #E0E0E0
+            render_color.green = 224 * 256;
+            render_color.blue = 224 * 256;
+            render_color.alpha = 0xffff;
+            XftColorAllocValue(tray->display, tray->visual, tray->colormap, 
+                              &render_color, &menu->fg_color);
+            
+            render_color.red = 255 * 256;   // #FFFFFF
+            render_color.green = 255 * 256;
+            render_color.blue = 255 * 256;
+            render_color.alpha = 0xffff;
+            XftColorAllocValue(tray->display, tray->visual, tray->colormap, 
+                              &render_color, &menu->hover_fg_color);
+            
             return true;
         }
     }
     
-    fprintf(stderr, "警告: 无法加载任何字体，使用默认字体\n");
-    menu->font = XLoadQueryFont(tray->display, "fixed");
-    return (menu->font != NULL);
+    fprintf(stderr, "错误: 无法加载任何字体\n");
+    return false;
 }
 
 // 创建菜单
@@ -454,12 +531,28 @@ x11ut__menu_t* x11ut__menu_create(x11ut__tray_t* tray) {
     if (!menu) return NULL;
     
     memset(menu, 0, sizeof(x11ut__menu_t));
-    menu->item_height = 28;  // 稍高以容纳中文
-    menu->width = 180;       // 稍宽以容纳中文
+    menu->item_height = 30;  // 稍高以容纳中文
+    menu->width = 200;       // 稍宽以容纳中文
     menu->hover_index = -1;  // 初始无悬停
     
-    // 加载字体
-    if (!x11ut__load_font(tray, menu)) {
+    // 加载字体，优先尝试中文字体
+    const char* chinese_fonts[] = {
+        "WenQuanYi Micro Hei:size=12",
+        "Noto Sans CJK SC:size=12",
+        "DejaVu Sans:size=12",
+        "Sans:size=12",
+        NULL
+    };
+    
+    bool font_loaded = false;
+    for (int i = 0; chinese_fonts[i] != NULL; i++) {
+        if (x11ut__load_font(tray, menu, chinese_fonts[i])) {
+            font_loaded = true;
+            break;
+        }
+    }
+    
+    if (!font_loaded) {
         free(menu);
         return NULL;
     }
@@ -470,42 +563,39 @@ x11ut__menu_t* x11ut__menu_create(x11ut__tray_t* tray) {
     attrs.background_pixel = tray->colors.bg_color;
     attrs.border_pixel = tray->colors.border_color;
     attrs.event_mask = ExposureMask | ButtonPressMask | ButtonReleaseMask |
-                       LeaveWindowMask | FocusChangeMask | PointerMotionMask;  // 添加鼠标移动事件
+                       LeaveWindowMask | FocusChangeMask | PointerMotionMask |
+                       EnterWindowMask;  // 添加鼠标进入事件
     
-    // 创建菜单窗口 - 使用override_redirect
+    // 创建菜单窗口
     menu->window = XCreateWindow(tray->display,
                                  RootWindow(tray->display, tray->screen),
                                  0, 0, menu->width, 100,
                                  1,  // 边框宽度
                                  CopyFromParent,  // 深度
-                                 CopyFromParent,  // 类
+                                 InputOutput,     // 类
                                  CopyFromParent,  // 视觉
                                  CWOverrideRedirect | CWBackPixel | 
                                  CWBorderPixel | CWEventMask,
                                  &attrs);
     
     if (!menu->window) {
-        if (menu->font) XFreeFont(tray->display, menu->font);
+        if (menu->font) XftFontClose(tray->display, menu->font);
         free(menu);
         return NULL;
     }
     
+    // 创建Xft绘制上下文
+    menu->draw = XftDrawCreate(tray->display, menu->window,
+                              tray->visual, tray->colormap);
+    
     // 创建图形上下文
     XGCValues gc_vals;
     
-    // 文本图形上下文
-    gc_vals.foreground = tray->colors.fg_color;
-    gc_vals.background = tray->colors.bg_color;
-    gc_vals.font = menu->font->fid;
-    menu->text_gc = XCreateGC(tray->display, menu->window,
-                             GCForeground | GCBackground | GCFont, &gc_vals);
-    
     // 悬停图形上下文
-    gc_vals.foreground = tray->colors.hover_fg_color;
-    gc_vals.background = tray->colors.hover_bg_color;
-    gc_vals.font = menu->font->fid;
+    gc_vals.foreground = tray->colors.hover_bg_color;
+    gc_vals.background = tray->colors.bg_color;
     menu->hover_gc = XCreateGC(tray->display, menu->window,
-                              GCForeground | GCBackground | GCFont, &gc_vals);
+                              GCForeground | GCBackground, &gc_vals);
     
     // 分隔线图形上下文
     gc_vals.foreground = tray->colors.separator_color;
@@ -514,7 +604,14 @@ x11ut__menu_t* x11ut__menu_create(x11ut__tray_t* tray) {
     menu->separator_gc = XCreateGC(tray->display, menu->window,
                                   GCForeground | GCBackground | GCLineWidth, &gc_vals);
     
-    // 设置窗口类型为菜单（无装饰）
+    // 边框图形上下文
+    gc_vals.foreground = tray->colors.border_color;
+    gc_vals.background = tray->colors.bg_color;
+    gc_vals.line_width = 1;
+    menu->border_gc = XCreateGC(tray->display, menu->window,
+                               GCForeground | GCBackground | GCLineWidth, &gc_vals);
+    
+    // 设置窗口类型为菜单
     Atom window_type = XInternAtom(tray->display, "_NET_WM_WINDOW_TYPE", False);
     XChangeProperty(tray->display, menu->window, window_type,
                    XA_ATOM, 32, PropModeReplace,
@@ -524,14 +621,18 @@ x11ut__menu_t* x11ut__menu_create(x11ut__tray_t* tray) {
 }
 
 // 添加菜单项
-bool x11ut__menu_add_item(x11ut__menu_t* menu, const char* label, 
-                         void (*callback)(void*), void* user_data) {
+bool x11ut__menu_add_item(x11ut__tray_t* tray, x11ut__menu_t* menu, 
+                         const char* label, void (*callback)(void*), 
+                         void* user_data) {
     if (!menu || !label) return false;
     
     x11ut__menu_item_t* item = malloc(sizeof(x11ut__menu_item_t));
     if (!item) return false;
     
-    item->label = x11ut__strdup(label);
+    // 存储UTF-8标签
+    item->utf8_label = x11ut__strdup(label);
+    item->label = x11ut__strdup(label);  // 直接复制，假设已经是UTF-8
+    
     item->callback = callback;
     item->user_data = user_data;
     item->is_separator = false;
@@ -549,17 +650,31 @@ bool x11ut__menu_add_item(x11ut__menu_t* menu, const char* label,
     menu->item_count++;
     menu->height = menu->item_count * menu->item_height + 10;
     
+    // 更新菜单宽度（基于最长标签）
+    if (menu->font) {
+        XGlyphInfo extents;
+        XftTextExtentsUtf8(tray->display, menu->font, 
+                          (const FcChar8*)item->utf8_label, 
+                          strlen(item->utf8_label), &extents);
+        
+        int needed_width = extents.width + 30; // 左边距15 + 右边距15
+        if (needed_width > menu->width) {
+            menu->width = needed_width;
+        }
+    }
+    
     return true;
 }
 
 // 添加分隔线
-bool x11ut__menu_add_separator(x11ut__menu_t* menu) {
+bool x11ut__menu_add_separator(x11ut__tray_t* tray, x11ut__menu_t* menu) {
     if (!menu) return false;
     
     x11ut__menu_item_t* item = malloc(sizeof(x11ut__menu_item_t));
     if (!item) return false;
     
     item->label = NULL;
+    item->utf8_label = NULL;
     item->callback = NULL;
     item->user_data = NULL;
     item->is_separator = true;
@@ -578,12 +693,6 @@ bool x11ut__menu_add_separator(x11ut__menu_t* menu) {
     menu->height = menu->item_count * menu->item_height + 10;
     
     return true;
-}
-
-// 计算文本宽度
-static int x11ut__text_width(x11ut__menu_t* menu, const char* text) {
-    if (!menu || !menu->font || !text) return 0;
-    return XTextWidth(menu->font, text, strlen(text));
 }
 
 // 绘制菜单
@@ -618,21 +727,21 @@ static void x11ut__menu_draw(x11ut__tray_t* tray, x11ut__menu_t* menu) {
             
             // 绘制背景（如果是悬停项）
             if (is_hover) {
-                XSetForeground(tray->display, bg_gc, tray->colors.hover_bg_color);
-                XFillRectangle(tray->display, menu->window, bg_gc, 1, y, 
-                             menu->width - 2, menu->item_height);
+                XFillRectangle(tray->display, menu->window, menu->hover_gc, 
+                               1, y, menu->width - 2, menu->item_height);
             }
             
-            // 绘制文本
-            if (item->label) {
-                int text_width = x11ut__text_width(menu, item->label);
-                int text_x = (menu->width - text_width) / 2;
-                int text_y = y + menu->item_height/2 + menu->font->ascent/2;
+            // 绘制文本（左对齐）
+            if (item->utf8_label && menu->font) {
+                int text_x = 15;  // 左对齐，左边距15像素
+                int text_y = y + menu->item_height/2 + 5;
                 
-                // 使用适当的GC绘制文本
-                GC text_gc = is_hover ? menu->hover_gc : menu->text_gc;
-                XDrawString(tray->display, menu->window, text_gc,
-                           text_x, text_y, item->label, strlen(item->label));
+                // 使用适当的颜色绘制文本
+                XftColor* color = is_hover ? &menu->hover_fg_color : &menu->fg_color;
+                XftDrawStringUtf8(menu->draw, color, menu->font,
+                                 text_x, text_y,
+                                 (const FcChar8*)item->utf8_label,
+                                 strlen(item->utf8_label));
             }
         }
         
@@ -642,9 +751,8 @@ static void x11ut__menu_draw(x11ut__tray_t* tray, x11ut__menu_t* menu) {
     }
     
     // 绘制边框
-    XSetForeground(tray->display, bg_gc, tray->colors.border_color);
-    XDrawRectangle(tray->display, menu->window, bg_gc, 0, 0, 
-                  menu->width - 1, menu->height - 1);
+    XDrawRectangle(tray->display, menu->window, menu->border_gc, 
+                   0, 0, menu->width - 1, menu->height - 1);
     
     XFreeGC(tray->display, bg_gc);
 }
@@ -660,8 +768,7 @@ void x11ut__menu_show(x11ut__tray_t* tray, x11ut__menu_t* menu, int x, int y) {
     int screen_width = DisplayWidth(tray->display, tray->screen);
     int screen_height = DisplayHeight(tray->display, tray->screen);
     
-    // 调整菜单位置 - 在点击位置附近显示
-    // 默认显示在点击位置下方
+    // 调整菜单位置
     int menu_x = x;
     int menu_y = y;
     
@@ -736,7 +843,7 @@ static void x11ut__handle_menu_click(x11ut__tray_t* tray, x11ut__menu_t* menu, i
     
     // 如果是分隔线，忽略点击
     if (item && !item->is_separator && item->callback) {
-        printf("点击菜单项: %s\n", item->label);
+        printf("点击菜单项: %s\n", item->utf8_label ? item->utf8_label : item->label);
         item->callback(item->user_data);
     }
     
@@ -793,10 +900,15 @@ void x11ut__menu_cleanup(x11ut__tray_t* tray, x11ut__menu_t* menu) {
         x11ut__menu_hide(tray, menu);
         
         // 释放资源
-        if (menu->font) XFreeFont(tray->display, menu->font);
-        if (menu->text_gc) XFreeGC(tray->display, menu->text_gc);
+        if (menu->draw) XftDrawDestroy(menu->draw);
+        if (menu->font) XftFontClose(tray->display, menu->font);
+        if (menu->fg_color.pixel) XftColorFree(tray->display, tray->visual, 
+                                               tray->colormap, &menu->fg_color);
+        if (menu->hover_fg_color.pixel) XftColorFree(tray->display, tray->visual, 
+                                                     tray->colormap, &menu->hover_fg_color);
         if (menu->hover_gc) XFreeGC(tray->display, menu->hover_gc);
         if (menu->separator_gc) XFreeGC(tray->display, menu->separator_gc);
+        if (menu->border_gc) XFreeGC(tray->display, menu->border_gc);
         
         XDestroyWindow(tray->display, menu->window);
     }
@@ -805,11 +917,231 @@ void x11ut__menu_cleanup(x11ut__tray_t* tray, x11ut__menu_t* menu) {
     while (item) {
         x11ut__menu_item_t* next = item->next;
         if (item->label) free(item->label);
+        if (item->utf8_label) free(item->utf8_label);
         free(item);
         item = next;
     }
     
     free(menu);
+}
+
+// ==================== 工具提示函数 ====================
+
+// 创建工具提示
+x11ut__tooltip_t* x11ut__tooltip_create(x11ut__tray_t* tray) {
+    if (!tray || !tray->display) return NULL;
+    
+    x11ut__tooltip_t* tooltip = malloc(sizeof(x11ut__tooltip_t));
+    if (!tooltip) return NULL;
+    
+    memset(tooltip, 0, sizeof(x11ut__tooltip_t));
+    tooltip->padding = 10;
+    
+    // 尝试加载字体，优先使用菜单的字体
+    if (tray->menu && tray->menu->font) {
+        tooltip->font = tray->menu->font;
+    } else {
+        // 尝试加载中文字体
+        const char* font_names[] = {
+            "WenQuanYi Micro Hei:size=10",
+            "Noto Sans CJK SC:size=10",
+            "DejaVu Sans:size=10",
+            "Sans:size=10",
+            "fixed:size=10",
+            NULL
+        };
+        
+        for (int i = 0; font_names[i] != NULL; i++) {
+            tooltip->font = XftFontOpenName(tray->display, tray->screen, font_names[i]);
+            if (tooltip->font) {
+                printf("工具提示字体: %s\n", font_names[i]);
+                break;
+            }
+        }
+    }
+    
+    if (!tooltip->font) {
+        free(tooltip);
+        return NULL;
+    }
+    
+    // 初始化颜色
+    XRenderColor render_color;
+    render_color.red = 224 * 256;   // #E0E0E0
+    render_color.green = 224 * 256;
+    render_color.blue = 224 * 256;
+    render_color.alpha = 0xffff;
+    XftColorAllocValue(tray->display, tray->visual, tray->colormap, 
+                      &render_color, &tooltip->color);
+    
+    // 创建工具提示窗口属性
+    XSetWindowAttributes attrs;
+    attrs.override_redirect = True;
+    attrs.background_pixel = tray->colors.bg_color;
+    attrs.border_pixel = tray->colors.border_color;
+    attrs.event_mask = ExposureMask;
+    
+    // 创建工具提示窗口
+    tooltip->window = XCreateWindow(tray->display,
+                                   RootWindow(tray->display, tray->screen),
+                                   0, 0, 100, 50,
+                                   1,  // 边框宽度
+                                   CopyFromParent,
+                                   InputOutput,
+                                   CopyFromParent,
+                                   CWOverrideRedirect | CWBackPixel | 
+                                   CWBorderPixel | CWEventMask,
+                                   &attrs);
+    
+    if (!tooltip->window) {
+        // 注意：如果字体是从菜单借用的，不要关闭它
+        if (tooltip->font != tray->menu->font) {
+            XftFontClose(tray->display, tooltip->font);
+        }
+        XftColorFree(tray->display, tray->visual, tray->colormap, &tooltip->color);
+        free(tooltip);
+        return NULL;
+    }
+    
+    // 创建Xft绘制上下文
+    tooltip->draw = XftDrawCreate(tray->display, tooltip->window,
+                                 tray->visual, tray->colormap);
+    
+    // 设置窗口类型为工具提示
+    Atom window_type = XInternAtom(tray->display, "_NET_WM_WINDOW_TYPE", False);
+    XChangeProperty(tray->display, tooltip->window, window_type,
+                   XA_ATOM, 32, PropModeReplace,
+                   (unsigned char*)&tray->net_wm_window_type_tooltip, 1);
+    
+    return tooltip;
+}
+
+// 显示工具提示
+void x11ut__tooltip_show(x11ut__tray_t* tray, x11ut__tooltip_t* tooltip, 
+                        const char* text, int x, int y) {
+    if (!tray || !tray->display || !tooltip || !text) return;
+    
+    // 设置文本
+    if (tooltip->text) free(tooltip->text);
+    tooltip->text = x11ut__strdup(text);
+    
+    // 计算文本尺寸
+    if (tooltip->font) {
+        XGlyphInfo extents;
+        XftTextExtentsUtf8(tray->display, tooltip->font, 
+                          (const FcChar8*)tooltip->text, 
+                          strlen(tooltip->text), &extents);
+        
+        tooltip->width = extents.width + tooltip->padding * 2;
+        tooltip->height = extents.height + tooltip->padding * 2;
+        
+        // 调整位置
+        int screen_width = DisplayWidth(tray->display, tray->screen);
+        int screen_height = DisplayHeight(tray->display, tray->screen);
+        
+        // 默认显示在鼠标右下方
+        int tip_x = x + 10;
+        int tip_y = y + 10;
+        
+        // 如果太靠右，向左调整
+        if (tip_x + tooltip->width > screen_width) {
+            tip_x = x - tooltip->width - 10;
+        }
+        
+        // 如果太靠下，向上调整
+        if (tip_y + tooltip->height > screen_height) {
+            tip_y = y - tooltip->height - 10;
+        }
+        
+        // 确保在屏幕内
+        if (tip_x < 10) tip_x = 10;
+        if (tip_y < 10) tip_y = 10;
+        
+        // 移动和调整大小
+        XMoveResizeWindow(tray->display, tooltip->window, tip_x, tip_y,
+                         tooltip->width, tooltip->height);
+        
+        // 绘制工具提示
+        if (tooltip->pixmap) {
+            XFreePixmap(tray->display, tooltip->pixmap);
+        }
+        
+        tooltip->pixmap = XCreatePixmap(tray->display, tooltip->window,
+                                       tooltip->width, tooltip->height,
+                                       DefaultDepth(tray->display, tray->screen));
+        
+        // 创建临时GC
+        XGCValues gc_vals;
+        gc_vals.foreground = tray->colors.bg_color;
+        gc_vals.background = tray->colors.bg_color;
+        GC bg_gc = XCreateGC(tray->display, tooltip->window, 
+                            GCForeground | GCBackground, &gc_vals);
+        
+        // 绘制背景
+        XSetForeground(tray->display, bg_gc, tray->colors.bg_color);
+        XFillRectangle(tray->display, tooltip->pixmap, bg_gc, 
+                      0, 0, tooltip->width, tooltip->height);
+        
+        // 绘制边框
+        XSetForeground(tray->display, bg_gc, tray->colors.border_color);
+        XDrawRectangle(tray->display, tooltip->pixmap, bg_gc, 
+                      0, 0, tooltip->width - 1, tooltip->height - 1);
+        
+        XFreeGC(tray->display, bg_gc);
+        
+        // 设置窗口背景
+        XSetWindowBackgroundPixmap(tray->display, tooltip->window, tooltip->pixmap);
+        
+        // 映射窗口
+        XMapWindow(tray->display, tooltip->window);
+        tooltip->visible = true;
+        
+        // 绘制文本
+        XClearWindow(tray->display, tooltip->window);
+        
+        int text_x = tooltip->padding;
+        int text_y = tooltip->padding + tooltip->font->ascent;
+        
+        XftDrawStringUtf8(tooltip->draw, &tooltip->color, tooltip->font,
+                         text_x, text_y,
+                         (const FcChar8*)tooltip->text,
+                         strlen(tooltip->text));
+        
+        XFlush(tray->display);
+    }
+}
+
+// 隐藏工具提示
+void x11ut__tooltip_hide(x11ut__tray_t* tray, x11ut__tooltip_t* tooltip) {
+    if (!tray || !tray->display || !tooltip || !tooltip->visible) return;
+    
+    XUnmapWindow(tray->display, tooltip->window);
+    tooltip->visible = false;
+    XFlush(tray->display);
+}
+
+// 清理工具提示
+void x11ut__tooltip_cleanup(x11ut__tray_t* tray, x11ut__tooltip_t* tooltip) {
+    if (!tooltip) return;
+    
+    if (tray && tray->display && tooltip->window) {
+        x11ut__tooltip_hide(tray, tooltip);
+        
+        // 释放资源
+        if (tooltip->draw) XftDrawDestroy(tooltip->draw);
+        // 如果字体是从菜单借用的，不要关闭它
+        if (tooltip->font && (!tray->menu || tooltip->font != tray->menu->font)) {
+            XftFontClose(tray->display, tooltip->font);
+        }
+        if (tooltip->color.pixel) XftColorFree(tray->display, tray->visual, 
+                                               tray->colormap, &tooltip->color);
+        if (tooltip->pixmap) XFreePixmap(tray->display, tooltip->pixmap);
+        
+        XDestroyWindow(tray->display, tooltip->window);
+    }
+    
+    if (tooltip->text) free(tooltip->text);
+    free(tooltip);
 }
 
 // ==================== 事件处理 ====================
@@ -829,6 +1161,18 @@ bool x11ut__tray_process_events(x11ut__tray_t* tray) {
                               0, 0, tray->icon_width, tray->icon_height, 0, 0);
                 } else if (tray->menu && event.xexpose.window == tray->menu->window) {
                     x11ut__menu_draw(tray, tray->menu);
+                } else if (tray->tooltip && event.xexpose.window == tray->tooltip->window) {
+                    // 重新绘制工具提示
+                    if (tray->tooltip->text && tray->tooltip->font) {
+                        int text_x = tray->tooltip->padding;
+                        int text_y = tray->tooltip->padding + tray->tooltip->font->ascent;
+                        
+                        XftDrawStringUtf8(tray->tooltip->draw, &tray->tooltip->color, 
+                                         tray->tooltip->font,
+                                         text_x, text_y,
+                                         (const FcChar8*)tray->tooltip->text,
+                                         strlen(tray->tooltip->text));
+                    }
                 }
                 break;
                 
@@ -857,17 +1201,28 @@ bool x11ut__tray_process_events(x11ut__tray_t* tray) {
                 }
                 break;
                 
-            case FocusOut:
-                // 当菜单失去焦点时隐藏
-                if (tray->menu && event.xfocus.window == tray->menu->window) {
-                    x11ut__msleep(50);
-                    x11ut__menu_hide(tray, tray->menu);
+            case EnterNotify:
+                // 鼠标进入托盘图标
+                if (event.xcrossing.window == tray->window) {
+                    if (tray->tooltip) {
+                        // 显示工具提示（包含中文）
+                        x11ut__tooltip_show(tray, tray->tooltip, 
+                                          "系统托盘图标\n点击显示菜单\n测试中文显示",
+                                          event.xcrossing.x_root,
+                                          event.xcrossing.y_root);
+                    }
                 }
                 break;
                 
             case LeaveNotify:
-                // 鼠标离开菜单窗口时隐藏菜单
-                if (tray->menu && event.xcrossing.window == tray->menu->window) {
+                // 鼠标离开托盘图标
+                if (event.xcrossing.window == tray->window) {
+                    if (tray->tooltip) {
+                        x11ut__tooltip_hide(tray, tray->tooltip);
+                    }
+                }
+                // 鼠标离开菜单窗口
+                else if (tray->menu && event.xcrossing.window == tray->menu->window) {
                     // 检查鼠标是否真的离开了菜单区域
                     Window root, child;
                     int root_x, root_y, win_x, win_y;
@@ -882,6 +1237,14 @@ bool x11ut__tray_process_events(x11ut__tray_t* tray) {
                         x11ut__msleep(100);
                         x11ut__menu_hide(tray, tray->menu);
                     }
+                }
+                break;
+                
+            case FocusOut:
+                // 当菜单失去焦点时隐藏
+                if (tray->menu && event.xfocus.window == tray->menu->window) {
+                    x11ut__msleep(50);
+                    x11ut__menu_hide(tray, tray->menu);
                 }
                 break;
                 
@@ -923,6 +1286,11 @@ void x11ut__tray_cleanup(x11ut__tray_t* tray) {
             x11ut__menu_cleanup(tray, tray->menu);
         }
         
+        // 清理工具提示
+        if (tray->tooltip) {
+            x11ut__tooltip_cleanup(tray, tray->tooltip);
+        }
+        
         // 清理资源
         if (tray->gc) XFreeGC(tray->display, tray->gc);
         if (tray->icon_pixmap) XFreePixmap(tray->display, tray->icon_pixmap);
@@ -960,6 +1328,34 @@ static void x11ut__exit_callback(void* data) {
     }
 }
 
+// ==================== 字体测试函数 ====================
+
+static void x11ut__test_fonts(x11ut__tray_t* tray) {
+    printf("=== 字体测试 ===\n");
+    
+    // 测试一些常见的中文字体
+    const char* test_fonts[] = {
+        "WenQuanYi Micro Hei:size=12",
+        "Noto Sans CJK SC:size=12",
+        "DejaVu Sans:size=12",
+        "Sans:size=12",
+        "fixed:size=12",
+        NULL
+    };
+    
+    for (int i = 0; test_fonts[i] != NULL; i++) {
+        XftFont* font = XftFontOpenName(tray->display, tray->screen, test_fonts[i]);
+        if (font) {
+            printf("✓ 字体可用: %s\n", test_fonts[i]);
+            XftFontClose(tray->display, font);
+        } else {
+            printf("✗ 字体不可用: %s\n", test_fonts[i]);
+        }
+    }
+    
+    printf("=== 字体测试结束 ===\n\n");
+}
+
 // ==================== 主函数 ====================
 
 int main(int argc, char* argv[]) {
@@ -973,6 +1369,9 @@ int main(int argc, char* argv[]) {
         fprintf(stderr, "无法初始化托盘\n");
         return 1;
     }
+    
+    // 测试字体
+    x11ut__test_fonts(&tray);
     
     // 设置图标
     if (!x11ut__tray_set_icon(&tray, 24, 24, NULL)) {
@@ -994,22 +1393,31 @@ int main(int argc, char* argv[]) {
     tray.menu = x11ut__menu_create(&tray);
     if (tray.menu) {
         // 添加菜单项（包含中文）
-        x11ut__menu_add_item(tray.menu, "Option 1", x11ut__example_callback1, "Test Data");
-        x11ut__menu_add_item(tray.menu, "Option 2", x11ut__example_callback2, NULL);
-        x11ut__menu_add_separator(tray.menu);
-        x11ut__menu_add_item(tray.menu, "Test Function", x11ut__test_callback, NULL);
-        x11ut__menu_add_item(tray.menu, "Settings", x11ut__settings_callback, NULL);
-        x11ut__menu_add_separator(tray.menu);
-        x11ut__menu_add_item(tray.menu, "Exit Program", x11ut__exit_callback, &tray);
+        x11ut__menu_add_item(&tray, tray.menu, "选项1 (Option 1)", x11ut__example_callback1, "测试数据");
+        x11ut__menu_add_item(&tray, tray.menu, "选项2 (Option 2)", x11ut__example_callback2, NULL);
+        x11ut__menu_add_separator(&tray, tray.menu);
+        x11ut__menu_add_item(&tray, tray.menu, "测试功能 (Test Function)", x11ut__test_callback, NULL);
+        x11ut__menu_add_item(&tray, tray.menu, "设置 (Settings)", x11ut__settings_callback, NULL);
+        x11ut__menu_add_separator(&tray, tray.menu);
+        x11ut__menu_add_item(&tray, tray.menu, "退出程序 (Exit Program)", x11ut__exit_callback, &tray);
+    } else {
+        fprintf(stderr, "警告: 无法创建菜单，字体加载失败\n");
     }
+    
+    // 创建工具提示
+    tray.tooltip = x11ut__tooltip_create(&tray);
     
     printf("\n托盘程序运行中...\n");
     printf("功能特性:\n");
     printf("  - 暗色主题界面\n");
+    printf("  - 支持中文显示\n");
+    printf("  - 菜单项左对齐\n");
     printf("  - 菜单项鼠标悬停效果\n");
+    printf("  - 工具提示支持\n");
     printf("  - 分隔线支持\n");
-    printf("  - 简单的字体渲染\n");
-    printf("\n点击托盘图标显示菜单\n");
+    printf("  - 使用Xft字体渲染，支持UTF-8\n");
+    printf("\n鼠标悬停在托盘图标上显示工具提示\n");
+    printf("点击托盘图标显示菜单\n");
     printf("菜单特性:\n");
     printf("  - 无标题栏，真正的弹出菜单外观\n");
     printf("  - 显示在托盘图标附近\n");
