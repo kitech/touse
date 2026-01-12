@@ -30,7 +30,10 @@ pub fn children(pid int, recu bool) []int{
 
 pub fn cmdline(pid int) string {
     file := "/proc/$pid/cmdline"
-    return os.read_file(file) or {vcp.error(err.str())}
+    bcc := os.read_file(file) or {vcp.error(err.str())}
+    scc := ''
+    for c in bcc { scc += if c==0 {' '} else { c.repeat(1) } }
+    return scc
 }
 pub fn executable(pid int) string {
     file := "/proc/$pid/exe"

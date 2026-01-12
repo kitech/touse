@@ -89,7 +89,7 @@ void psutil_free_arguments(char **args, int count) {
 }
 
 /* Get all running processes */
-int psutil_get_all_processes(ProcessInfo** processes, int* count) {
+int psutil_get_all_processes_duped(ProcessInfo** processes, int* count) {
     int mib[4] = {CTL_KERN, KERN_PROC, KERN_PROC_ALL, 0};
     size_t size;
     
@@ -191,7 +191,7 @@ int psutil_get_process_name(int pid, char* buffer, size_t buffer_size) {
 }
 
 /* Free process list memory */
-void psutil_free_processes(ProcessInfo* processes) {
+void psutil_free_processes_duped(ProcessInfo* processes) {
     if (processes) {
         free(processes);
     }
@@ -224,7 +224,7 @@ int psutil_get_current_pid(void) {
 /* ... 其他函数保持不变 ... */
 
 /* Check if process exists - improved version */
-int psutil_process_exists(int pid) {
+int psutil_process_exists_duped(int pid) {
     if (pid <= 0) {
         return 0;
     }

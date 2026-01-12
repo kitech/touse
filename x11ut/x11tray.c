@@ -1189,6 +1189,7 @@ typedef struct {
 // ==================== 函数声明 ====================
 
 // 初始化函数
+x11ut__tray_t* x11ut__tray_new() { return malloc(sizeof(x11ut__tray_t)); }
 bool x11ut__tray_init(x11ut__tray_t* tray, const char* display_name);
 bool x11ut__tray_set_icon(x11ut__tray_t* tray, int width, int height, const unsigned char* data);
 bool x11ut__tray_embed(x11ut__tray_t* tray);
@@ -3551,7 +3552,11 @@ static bool x11ut__tray_set_icon_from_xpm(x11ut__tray_t* tray, char** xpm_data) 
     return true;
 }
 
+#ifdef X11UT_CCODE_ASLIB
+int x11ut_main_aslib(int argc, char* argv[]) {
+#else
 int main(int argc, char* argv[]) {
+#endif
     x11ut__tray_t tray;
     memset(&tray, 0, sizeof(x11ut__tray_t));
     

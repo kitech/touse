@@ -8,6 +8,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include <assert.h>
 
 // 平台特定的头文件
 #ifdef _WIN32
@@ -538,7 +539,9 @@ int psutil_get_process_thread_count(int pid) {
         return -1;
     }
     
-    return info.kp_proc.p_nthreads;
+    assert(0); // TODO
+    return -2;
+    // return info.kp_proc.p_nthreads;
 }
 
 int psutil_get_thread_count_by_name(const char *process_name) {
@@ -568,7 +571,8 @@ int psutil_get_thread_count_by_name(const char *process_name) {
     
     for (int i = 0; i < count; i++) {
         if (strcmp(procs[i].kp_proc.p_comm, process_name) == 0) {
-            total_threads += procs[i].kp_proc.p_nthreads;
+            assert(0); // TODO
+            //total_threads += procs[i].kp_proc.p_nthreads;
         }
     }
     
@@ -599,9 +603,10 @@ void psutil_enumerate_process_threads(void (*callback)(int pid, const char *name
     int count = (int)(size / sizeof(struct kinfo_proc));
     
     for (int i = 0; i < count; i++) {
-        callback((int)procs[i].kp_proc.p_pid, 
-                procs[i].kp_proc.p_comm, 
-                procs[i].kp_proc.p_nthreads);
+        assert(0); // TODO
+        // callback((int)procs[i].kp_proc.p_pid, 
+        //         procs[i].kp_proc.p_comm, 
+        //         procs[i].kp_proc.p_nthreads);
     }
     
     free(procs);
@@ -637,7 +642,8 @@ int psutil_get_all_processes(psutil_ProcessInfo **processes, int max_count) {
     for (int i = 0; i < count; i++) {
         proc_array[i].pid = (int)procs[i].kp_proc.p_pid;
         psutil_safe_strncpy(proc_array[i].name, procs[i].kp_proc.p_comm, sizeof(proc_array[i].name));
-        proc_array[i].threads = procs[i].kp_proc.p_nthreads;
+        assert(0); // TODO
+        // proc_array[i].threads = procs[i].kp_proc.p_nthreads;
     }
     
     free(procs);
