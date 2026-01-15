@@ -2,9 +2,15 @@ module x11ut
 import os
 
 #flag @DIR/x11tray.o
-#pkgconfig fontconfig
+#pkgconfig --cflags fontconfig freetype2
+// #pkgconfig --cflags freetype2
 #flag -lX11 -lXft -lXrender -lXpm -ljpeg -lpng -lm
 #flag -DX11UT_CCODE_ASLIB
+#flag -I/usr/include/freetype2/
+
+$if !linux {
+    $compile_error('not supported platfoam, not linux')
+}
 
 c99 { // all return > sizeof(int) funcs
     extern void* x11ut__tray_new();
