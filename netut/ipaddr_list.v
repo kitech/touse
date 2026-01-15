@@ -7,6 +7,8 @@ import json
 // 使用C99编写跨平台监听IP地址变化的函数，函数名加前缀 netut__，注意是双下划线
 #flag @DIR/ip_monitor.o
 
+#flag darwin -framework SystemConfiguration
+
 @[importc: "netut_get_all_ip_addresses"]
 pub fn get_all_ip_addresses() voidptr
 @[importc: "netut_free_ip_list"]

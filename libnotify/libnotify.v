@@ -17,8 +17,16 @@ $if $pkgconfig('libnotify') {
 #flag darwin -L /nix/store/qdhb5960ii9q94nhgx0pgds55n53czpy-glib-2.86.1/lib
 #flag -lnotify -lglib-2.0 -lgobject-2.0
 
-#include "libnotify/notify.h"
-#include "libnotify/notification.h"
+// #include "libnotify/notify.h"
+// #include "libnotify/notification.h"
+// notification.h:112: error: '}' expected (got "__attribute__")
+// need comment
+
+c99 { // all return > sizeof(int)
+    extern char* notify_get_app_name();
+    extern void* notify_get_server_caps();
+    extern void* notify_notification_new();
+}
 
 fn C.notify_init(app_name byteptr) u8
 fn C.notify_uninit()

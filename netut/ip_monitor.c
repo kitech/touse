@@ -21,6 +21,7 @@
 #elif defined(__APPLE__)
     #include <SystemConfiguration/SystemConfiguration.h>
     #include <CoreFoundation/CoreFoundation.h>
+    #include <arpa/inet.h>
 #elif defined(__linux__)
     #include <unistd.h>
     #include <sys/types.h>

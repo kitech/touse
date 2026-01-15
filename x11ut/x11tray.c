@@ -2798,8 +2798,11 @@ void x11ut__tooltip_show(x11ut__tray_t* tray, x11ut__tooltip_t* tooltip,
     if (!tray || !tray->display || !tooltip || !text) return;
     
     // 设置文本
-    if (tooltip->text) free(tooltip->text);
-    tooltip->text = x11ut__strdup(text);
+    if (tooltip->text) {}
+    else{
+        if (tooltip->text) free(tooltip->text);
+        tooltip->text = x11ut__strdup(text);
+    }
     if (!tooltip->text) {
         X11UT_LOG_ERROR("无法复制工具提示文本");
         return;
@@ -2971,8 +2974,8 @@ bool x11ut__tray_process_events(x11ut__tray_t* tray) {
                                    event.xbutton.x_root, event.xbutton.y_root);
                     if (tray->menu) {
                         x11ut__menu_show(tray, tray->menu, 
-                                       event.xbutton.x_root, 
-                                       event.xbutton.y_root);
+                                       event.xbutton.x_root-5,
+                                       event.xbutton.y_root+10);
                     }
                 } else if (tray->menu && event.xbutton.window == tray->menu->window) {
                     x11ut__handle_menu_click(tray, tray->menu, 
@@ -3194,6 +3197,21 @@ static void x11ut__toggle_dark_mode_callback(void* data, bool checked) {
         
         // 创建新菜单
         x11ut__create_menu(tray);
+    }
+}
+
+void x11ut__tray_set_menu(x11ut__tray_t* tray, x11ut__menu_t* menu) {
+    tray->menu = menu;
+}
+void x11ut__tray_set_tooltip(x11ut__tray_t* tray, const char* tip) {
+    if (!tray) { return; }
+    
+    if (tray->tooltip==0) {
+        tray->tooltip = x11ut__tooltip_create(tray);
+    }
+    if (tip) {
+        if (tray->tooltip->text) free(tray->tooltip->text);
+        tray->tooltip->text = strdup(tip);
     }
 }
 
