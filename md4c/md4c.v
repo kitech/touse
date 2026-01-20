@@ -18,8 +18,12 @@ fn process_output(data charptr, len int, ctx &Context) {
 }
 
 pub fn tohtml(ipt string) !string {
+    flags := C.MD_FLAG_PERMISSIVEAUTOLINKS |
+        C.MD_FLAG_TABLES | C.MD_FLAG_STRIKETHROUGH |
+        C.MD_FLAG_TASKLISTS | C.MD_FLAG_WIKILINKS
+    
     ctx := &Context{}
-    rv := C.md_html(ipt.str, ipt.len, process_output, ctx, 0, 0)
+    rv := C.md_html(ipt.str, ipt.len, process_output, ctx, flags, flags)
     if rv!=0 {
         return errorws('md parse error', rv)
     }

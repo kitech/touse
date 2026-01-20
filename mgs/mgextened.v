@@ -18,8 +18,8 @@ pub fn (r &Mgr) runloop(interval ... int) {
 pub fn (c &Conn) http_reply_error(stcode int, error string) {
     c.http_reply(stcode, "", error)
 }
-pub fn (c &Conn) http_reply_ok() {
-    c.http_reply(200, "", "It's just works\n")
+pub fn (c &Conn) http_reply_ok(extra string) {
+    c.http_reply(200, "", "It's just works $extra\n")
 }
 
 struct Globvars {

@@ -79,7 +79,7 @@ pub union Retval {
     ircpp.Retval
 pub:
     mset Mset
-    mset_iter MsetIterator
+    // mset_iter MsetIterator // too large
     msetty MsetType
     elem MsetElem
 

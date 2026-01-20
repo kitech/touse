@@ -90,7 +90,13 @@ pub const type_pointer = voidptr(&C.ffi_type_pointer)
 // pub const	type_uint = $if x64 || amd64 || arm64 { type_uint64 } $else { type_uint32}
 
 @[typedef]
-pub struct C.ffi_type {}
+pub struct C.ffi_type {
+pub:
+    size usize = 0
+    alignment u16 = 0
+    type u16 = 0
+    elements voidptr = nil
+}
 
 pub type Type = C.ffi_type
 
@@ -251,6 +257,8 @@ pub fn callany[T](symoradr Symbol, args ...Anyer) T {
     return callfca6[T](symoradr.resolve(), ...args)
 }
 
+const sret_minsize = 2*sizeof(usize)
+
 pub fn callfca6[T](sym voidptr, args ...Anyer) T {
 	// const array must unsafe, it's compiler's fault
 	mut argctys := unsafe { [16]int{} }
@@ -279,23 +287,39 @@ pub fn callfca6[T](sym voidptr, args ...Anyer) T {
 	retoty := match typeof[T]().idx {
 		typeof[f64]().idx { type_double }
 		typeof[f32]().idx { type_float }
-		-1 { type_pointer }
-		else { type_pointer }
+		-1 { type_uint64 }
+		else { type_uint64 }
 	}
 
+	tysz, tystr := sizeof(T), typeof(T{}).name
+	// dump('${tysz}, ${tystr}')
+	if tysz>=sret_minsize { retoty = create_struct_ffitype(sret_minsize.int()) }
+	
 	cif := Cif{}
 	stv := prep_cif0(&cif, retoty, argotys[..args.len])
 	assert stv == ok
 
-	struct DerefMem {data0 [2]Cif} // max 32, or return value invalid
+	struct DerefMem {data0 [32]u8} // max 32, or return value invalid
 	retval := DerefMem {}
-	assert sizeof(retval) >= sizeof(T)
-	rv := call(&cif, sym, retval, argvals[..args.len])
-	// assert rv == &retval
+	assert sizeof(retval) >= sizeof(T), tystr
+	
+	rv := call(&cif, sym, &retval, argvals[..args.len])
+	assert rv == &retval
+
 	if abs1() {
 		return unsafe { *(&T(rv)) }
 	}
 	return T{}
+}
+
+fn create_struct_ffitype(len int) &C.ffi_type {
+    tyobj := &C.ffi_type{}
+    tyobj.type = ctype_struct.u16()
+	elems := []voidptr{len: len*2+1}
+	for i in 0..len { elems[i] = type_uint8 }
+	tyobj.elements = elems.data
+
+    return tyobj
 }
 
 // usage: slen := ffi.callfca8('strlen', 0, c'abc')
