@@ -1144,6 +1144,29 @@ typedef struct {
     unsigned long check_border_color; // checkbox边框色
 } x11ut__colors_t;
 
+// ==================== 气泡通知功能 ====================
+
+// 气泡通知结构体
+typedef struct {
+    Window window;
+    Pixmap pixmap;
+    GC gc;
+    XftFont* font;
+    XftDraw* draw;
+    XftColor text_color;
+    char* title;
+    char* message;
+    int width;
+    int height;
+    int padding;
+    bool visible;
+    time_t show_time;
+    int duration_ms;  // 显示时长（毫秒）
+    int fade_step;    // 淡出步进
+    int opacity;      // 透明度 (0-255)
+    Atom opacity_atom;
+} x11ut__notification_t;
+
 // 托盘图标结构
 typedef struct {
     Display* display;
@@ -1170,6 +1193,8 @@ typedef struct {
     
     // 菜单
     x11ut__menu_t* menu;
+    
+    x11ut__notification_t* notification;
     
     // 工具提示
     x11ut__tooltip_t* tooltip;
@@ -2685,6 +2710,654 @@ void x11ut__menu_cleanup(x11ut__tray_t* tray, x11ut__menu_t* menu) {
     free(menu);
 }
 
+
+// 创建气泡通知
+static x11ut__notification_t* x11ut__notification_create(x11ut__tray_t* tray) {
+    if (!tray || !tray->display) return NULL;
+    
+    x11ut__notification_t* notif = malloc(sizeof(x11ut__notification_t));
+    if (!notif) return NULL;
+    
+    memset(notif, 0, sizeof(x11ut__notification_t));
+    notif->padding = 15;
+    notif->duration_ms = 3000;  // 默认3秒
+    notif->opacity = 255;       // 完全不透明
+    notif->fade_step = 10;      // 淡出步长
+    
+    // 尝试加载字体
+    const char* font_names[] = {
+        "WenQuanYi Micro Hei:size=11",
+        "Noto Sans CJK SC:size=11",
+        "DejaVu Sans:size=11",
+        "Sans:size=11",
+        NULL
+    };
+    
+    for (int i = 0; font_names[i] != NULL; i++) {
+        notif->font = XftFontOpenName(tray->display, tray->screen, font_names[i]);
+        if (notif->font) {
+            X11UT_LOG_DEBUG("通知字体: %s", font_names[i]);
+            break;
+        }
+    }
+    
+    if (!notif->font) {
+        free(notif);
+        return NULL;
+    }
+    
+    // 初始化颜色
+    XRenderColor render_color;
+    if (tray->dark_mode) {
+        render_color.red = 224 * 256;   // #E0E0E0
+        render_color.green = 224 * 256;
+        render_color.blue = 224 * 256;
+    } else {
+        render_color.red = 0;           // #000000
+        render_color.green = 0;
+        render_color.blue = 0;
+    }
+    render_color.alpha = 0xffff;
+    
+    if (!XftColorAllocValue(tray->display, tray->visual, tray->colormap, 
+                           &render_color, &notif->text_color)) {
+        X11UT_LOG_ERROR("无法分配通知文本颜色");
+        XftFontClose(tray->display, notif->font);
+        free(notif);
+        return NULL;
+    }
+    
+    // 创建通知窗口属性
+    XSetWindowAttributes attrs;
+    attrs.override_redirect = True;  // 绕过窗口管理器
+    attrs.background_pixel = tray->dark_mode ? 
+        x11ut__rgb_to_color(tray, 40, 40, 40) :  // 暗色背景
+        x11ut__rgb_to_color(tray, 245, 245, 245); // 亮色背景
+    
+    if (tray->dark_mode) {
+        attrs.border_pixel = x11ut__rgb_to_color(tray, 70, 70, 70);  // 暗色边框
+    } else {
+        attrs.border_pixel = x11ut__rgb_to_color(tray, 200, 200, 200); // 亮色边框
+    }
+    
+    attrs.event_mask = ExposureMask | ButtonPressMask | ButtonReleaseMask |
+                      EnterWindowMask | LeaveWindowMask;
+    
+    // 创建通知窗口
+    notif->window = XCreateWindow(tray->display,
+                                 RootWindow(tray->display, tray->screen),
+                                 0, 0, 300, 100,  // 初始尺寸，后续会调整
+                                 1,  // 边框宽度
+                                 CopyFromParent,
+                                 InputOutput,
+                                 CopyFromParent,
+                                 CWOverrideRedirect | CWBackPixel | 
+                                 CWBorderPixel | CWEventMask,
+                                 &attrs);
+    
+    if (!notif->window) {
+        X11UT_LOG_ERROR("无法创建通知窗口");
+        XftColorFree(tray->display, tray->visual, tray->colormap, &notif->text_color);
+        XftFontClose(tray->display, notif->font);
+        free(notif);
+        return NULL;
+    }
+    
+    // 设置窗口类型为通知
+    Atom window_type = XInternAtom(tray->display, "_NET_WM_WINDOW_TYPE", False);
+    Atom notif_atom = XInternAtom(tray->display, "_NET_WM_WINDOW_TYPE_NOTIFICATION", False);
+    if (notif_atom == None) {
+        // 如果通知类型不可用，使用对话框类型
+        notif_atom = XInternAtom(tray->display, "_NET_WM_WINDOW_TYPE_DIALOG", False);
+    }
+    
+    if (notif_atom != None) {
+        XChangeProperty(tray->display, notif->window, window_type,
+                       XA_ATOM, 32, PropModeReplace,
+                       (unsigned char*)&notif_atom, 1);
+    }
+    
+    // 设置窗口保持在顶层
+    Atom wm_state = XInternAtom(tray->display, "_NET_WM_STATE", False);
+    Atom wm_state_above = XInternAtom(tray->display, "_NET_WM_STATE_ABOVE", False);
+    
+    if (wm_state != None && wm_state_above != None) {
+        Atom states[1] = {wm_state_above};
+        XChangeProperty(tray->display, notif->window, wm_state,
+                       XA_ATOM, 32, PropModeReplace,
+                       (unsigned char*)states, 1);
+    }
+    
+    // 设置窗口提示（WM_HINTS）
+    XWMHints* wm_hints = XAllocWMHints();
+    if (wm_hints) {
+        wm_hints->flags = StateHint | InputHint;
+        wm_hints->initial_state = NormalState;
+        wm_hints->input = True;
+        XSetWMHints(tray->display, notif->window, wm_hints);
+        XFree(wm_hints);
+    }
+    
+    // 设置窗口标题
+    XStoreName(tray->display, notif->window, "Notification");
+    
+    // 创建图形上下文
+    XGCValues gc_vals;
+    if (tray->dark_mode) {
+        gc_vals.foreground = x11ut__rgb_to_color(tray, 40, 40, 40);   // 背景色
+    } else {
+        gc_vals.foreground = x11ut__rgb_to_color(tray, 245, 245, 245);
+    }
+    gc_vals.background = gc_vals.foreground;
+    gc_vals.line_width = 1;
+    
+    notif->gc = XCreateGC(tray->display, notif->window, 
+                         GCForeground | GCBackground | GCLineWidth, &gc_vals);
+    
+    // 创建Xft绘制上下文
+    notif->draw = XftDrawCreate(tray->display, notif->window,
+                               tray->visual, tray->colormap);
+    
+    // 获取透明度原子（如果支持）
+    notif->opacity_atom = XInternAtom(tray->display, "_NET_WM_WINDOW_OPACITY", False);
+    
+    X11UT_LOG_DEBUG("创建通知窗口成功，窗口ID: 0x%lx", notif->window);
+    return notif;
+}
+
+// 计算文本尺寸（支持多行）
+static void x11ut__calculate_text_size(x11ut__tray_t* tray, x11ut__notification_t* notif,
+                                      const char* title, const char* message,
+                                      int* width, int* height) {
+    if (!tray || !notif || !notif->font) {
+        if (width) *width = 300;
+        if (height) *height = 100;
+        return;
+    }
+    
+    XGlyphInfo extents;
+    int max_width = 0;
+    int total_height = 0;
+    
+    // 计算标题尺寸
+    if (title && strlen(title) > 0) {
+        XftTextExtentsUtf8(tray->display, notif->font, 
+                          (const FcChar8*)title, 
+                          strlen(title), &extents);
+        max_width = extents.width;
+        total_height += extents.height + 5;  // 标题高度 + 间距
+    }
+    
+    // 计算消息尺寸（可能有多行）
+    if (message && strlen(message) > 0) {
+        // 分割成多行（每行大约60个字符）
+        char* msg_copy = strdup(message);
+        char* line = strtok(msg_copy, "\n");
+        int line_count = 0;
+        
+        while (line) {
+            XftTextExtentsUtf8(tray->display, notif->font, 
+                              (const FcChar8*)line, 
+                              strlen(line), &extents);
+            
+            if (extents.width > max_width) {
+                max_width = extents.width;
+            }
+            
+            total_height += extents.height;
+            line = strtok(NULL, "\n");
+            line_count++;
+            
+            if (line) {
+                total_height += 2;  // 行间距
+            }
+        }
+        
+        free(msg_copy);
+        
+        // 如果没有换行符，尝试自动换行
+        if (line_count == 1 && max_width > 400) {
+            // 自动换行逻辑
+            const char* msg = message;
+            int msg_len = strlen(msg);
+            int chars_per_line = 50;  // 每行大约50个字符
+            
+            int estimated_lines = (msg_len + chars_per_line - 1) / chars_per_line;
+            total_height += (estimated_lines - 1) * (notif->font->height + 2);
+            max_width = 400;  // 限制最大宽度
+        }
+    }
+    
+    // 添加内边距
+    if (width) {
+        *width = max_width + notif->padding * 2;
+        if (*width < 200) *width = 200;  // 最小宽度
+        if (*width > 500) *width = 500;  // 最大宽度
+    }
+    
+    if (height) {
+        *height = total_height + notif->padding * 2;
+        if (*height < 80) *height = 80;  // 最小高度
+        if (*height > 300) *height = 300; // 最大高度
+    }
+}
+
+// 绘制气泡通知
+static void x11ut__notification_draw(x11ut__tray_t* tray, x11ut__notification_t* notif) {
+    if (!tray || !tray->display || !notif || !notif->window) return;
+    
+    X11UT_LOG_VERBOSE("绘制通知窗口");
+    
+    // 创建背景色
+    XGCValues gc_vals;
+    if (tray->dark_mode) {
+        gc_vals.foreground = x11ut__rgb_to_color(tray, 40, 40, 40);   // 暗色背景
+    } else {
+        gc_vals.foreground = x11ut__rgb_to_color(tray, 245, 245, 245); // 亮色背景
+    }
+    gc_vals.background = gc_vals.foreground;
+    
+    GC bg_gc = XCreateGC(tray->display, notif->window, 
+                        GCForeground | GCBackground, &gc_vals);
+    if (!bg_gc) {
+        X11UT_LOG_ERROR("无法创建背景GC");
+        return;
+    }
+    
+    // 清除背景
+    XSetForeground(tray->display, bg_gc, gc_vals.foreground);
+    XFillRectangle(tray->display, notif->window, bg_gc, 
+                   0, 0, notif->width, notif->height);
+    
+    // 绘制边框
+    if (tray->dark_mode) {
+        XSetForeground(tray->display, bg_gc, x11ut__rgb_to_color(tray, 70, 70, 70));
+    } else {
+        XSetForeground(tray->display, bg_gc, x11ut__rgb_to_color(tray, 200, 200, 200));
+    }
+    XDrawRectangle(tray->display, notif->window, bg_gc, 
+                   0, 0, notif->width - 1, notif->height - 1);
+    
+    // 绘制标题（如果有）
+    int y = notif->padding;
+    if (notif->title && strlen(notif->title) > 0 && notif->font) {
+        // 使用粗体效果（通过绘制两次稍微偏移）
+        int title_x = notif->padding;
+        int title_y = y + notif->font->ascent;
+        
+        // 绘制标题阴影（稍微偏移）
+        if (tray->dark_mode) {
+            XRenderColor shadow_color;
+            shadow_color.red = 0;
+            shadow_color.green = 0;
+            shadow_color.blue = 0;
+            shadow_color.alpha = 0xffff;
+            XftColor shadow_xft_color;
+            if (XftColorAllocValue(tray->display, tray->visual, tray->colormap,
+                                  &shadow_color, &shadow_xft_color)) {
+                XftDrawStringUtf8(notif->draw, &shadow_xft_color, notif->font,
+                                 title_x + 1, title_y + 1,
+                                 (const FcChar8*)notif->title,
+                                 strlen(notif->title));
+                XftColorFree(tray->display, tray->visual, tray->colormap, &shadow_xft_color);
+            }
+        }
+        
+        // 绘制标题文本
+        XftDrawStringUtf8(notif->draw, &notif->text_color, notif->font,
+                         title_x, title_y,
+                         (const FcChar8*)notif->title,
+                         strlen(notif->title));
+        
+        y += notif->font->height + 10;  // 标题高度 + 间距
+    }
+    
+    // 绘制消息（支持多行）
+    if (notif->message && strlen(notif->message) > 0 && notif->font) {
+        char* msg_copy = strdup(notif->message);
+        char* line = strtok(msg_copy, "\n");
+        int line_y = y;
+        
+        while (line) {
+            int line_x = notif->padding;
+            int line_height = notif->font->ascent + 2;  // 行高
+            
+            // 如果行太长，自动换行
+            if (strlen(line) > 60) {
+                // 简单的自动换行算法
+                char* temp_line = strdup(line);
+                int line_len = strlen(temp_line);
+                int chars_per_line = 60;
+                
+                for (int i = 0; i < line_len; i += chars_per_line) {
+                    int chunk_len = (i + chars_per_line < line_len) ? 
+                                   chars_per_line : line_len - i;
+                    
+                    char chunk[61];
+                    strncpy(chunk, temp_line + i, chunk_len);
+                    chunk[chunk_len] = '\0';
+                    
+                    // 绘制这一块
+                    XftDrawStringUtf8(notif->draw, &notif->text_color, notif->font,
+                                     line_x, line_y + notif->font->ascent,
+                                     (const FcChar8*)chunk, chunk_len);
+                    
+                    line_y += line_height + 2;
+                }
+                
+                free(temp_line);
+            } else {
+                // 直接绘制整行
+                XftDrawStringUtf8(notif->draw, &notif->text_color, notif->font,
+                                 line_x, line_y + notif->font->ascent,
+                                 (const FcChar8*)line, strlen(line));
+                line_y += line_height + 2;
+            }
+            
+            line = strtok(NULL, "\n");
+        }
+        
+        free(msg_copy);
+    }
+    
+    // 绘制关闭按钮（右上角的小x）
+    int close_btn_size = 16;
+    int close_btn_x = notif->width - close_btn_size - 5;
+    int close_btn_y = 5;
+    
+    // 绘制关闭按钮背景
+    XSetForeground(tray->display, bg_gc, 
+                   tray->dark_mode ? 
+                   x11ut__rgb_to_color(tray, 60, 60, 60) :
+                   x11ut__rgb_to_color(tray, 220, 220, 220));
+    XFillRectangle(tray->display, notif->window, bg_gc,
+                  close_btn_x, close_btn_y, close_btn_size, close_btn_size);
+    
+    // 绘制关闭按钮边框
+    XSetForeground(tray->display, bg_gc,
+                   tray->dark_mode ? 
+                   x11ut__rgb_to_color(tray, 100, 100, 100) :
+                   x11ut__rgb_to_color(tray, 180, 180, 180));
+    XDrawRectangle(tray->display, notif->window, bg_gc,
+                  close_btn_x, close_btn_y, close_btn_size, close_btn_size);
+    
+    // 绘制x符号
+    XSetForeground(tray->display, bg_gc,
+                   tray->dark_mode ? 
+                   x11ut__rgb_to_color(tray, 224, 224, 224) :
+                   x11ut__rgb_to_color(tray, 60, 60, 60));
+    
+    int x_padding = 4;
+    XDrawLine(tray->display, notif->window, bg_gc,
+             close_btn_x + x_padding, close_btn_y + x_padding,
+             close_btn_x + close_btn_size - x_padding, 
+             close_btn_y + close_btn_size - x_padding);
+    XDrawLine(tray->display, notif->window, bg_gc,
+             close_btn_x + close_btn_size - x_padding, close_btn_y + x_padding,
+             close_btn_x + x_padding, close_btn_y + close_btn_size - x_padding);
+    
+    XFreeGC(tray->display, bg_gc);
+}
+
+// 显示气泡通知
+static void x11ut__notification_show(x11ut__tray_t* tray, x11ut__notification_t* notif,
+                                    const char* title, const char* message, int duration_ms) {
+    if (!tray || !tray->display || !notif || !notif->window) return;
+    
+    // 设置通知内容
+    if (notif->title) free(notif->title);
+    if (notif->message) free(notif->message);
+    
+    notif->title = title ? strdup(title) : NULL;
+    notif->message = message ? strdup(message) : NULL;
+    
+    if (duration_ms > 0) {
+        notif->duration_ms = duration_ms;
+    }
+    
+    // 计算窗口尺寸
+    int width, height;
+    x11ut__calculate_text_size(tray, notif, title, message, &width, &height);
+    
+    notif->width = width;
+    notif->height = height;
+    
+    // 获取屏幕尺寸
+    int screen_width = DisplayWidth(tray->display, tray->screen);
+    int screen_height = DisplayHeight(tray->display, tray->screen);
+    
+    // 获取托盘图标窗口位置
+    int tray_x = 0, tray_y = 0, tray_width = 0, tray_height = 0;
+    Window root, child;
+    int win_x, win_y;
+    unsigned int win_width, win_height, border, depth;
+    
+    if (XGetGeometry(tray->display, tray->window, &root, &win_x, &win_y, 
+                     &win_width, &win_height, &border, &depth)) {
+        // 获取窗口在屏幕中的位置
+        int tmp_x, tmp_y;
+        XTranslateCoordinates(tray->display, tray->window, root,
+                              0, 0, &tray_x, &tray_y, &child);
+        tray_width = win_width;
+        tray_height = win_height;
+    } else {
+        // 如果无法获取托盘位置，使用默认右下角
+        tray_x = screen_width - width - 20;
+        tray_y = screen_height - height - 20;
+        tray_width = tray->icon_width;
+        tray_height = tray->icon_height;
+    }
+    
+    // 计算通知位置 - 尝试在托盘附近显示
+    int x, y;
+    
+    // 计算托盘中心位置
+    int tray_center_x = tray_x + tray_width / 2;
+    int tray_center_y = tray_y + tray_height / 2;
+    
+    // 尝试将通知显示在托盘图标的右下方
+    x = tray_x;// + tray_width + 5;  // 右侧偏移5像素
+    y = tray_y + tray_height;
+    
+    // 如果右侧空间不足，尝试左侧
+    if (x + width > screen_width - 10) {
+        x = tray_x - width - 5;  // 左侧偏移5像素
+        if (x < 10) x = 10;  // 确保不超出左边界
+    }
+    
+    // 如果下方空间不足，尝试上方
+    if (y + height > screen_height - 10) {
+        y = tray_y - height - 5;  // 上方偏移5像素
+        if (y < 10) y = 10;  // 确保不超出上边界
+    }
+    
+    // 如果上方也不够，尝试将通知放在托盘上方但调整垂直位置
+    if (y < 10) {
+        y = 10;
+        // 尝试将通知放在托盘左侧或右侧，但垂直居中
+        if (tray_center_x - width / 2 > 10 && 
+            tray_center_x + width / 2 < screen_width - 10) {
+            x = tray_center_x - width / 2;
+        }
+    }
+    
+    // 确保通知不超出屏幕边界
+    if (x + width > screen_width - 10) {
+        x = screen_width - width - 10;
+    }
+    if (x < 10) {
+        x = 10;
+    }
+    if (y + height > screen_height - 10) {
+        y = screen_height - height - 10;
+    }
+    if (y < 10) {
+        y = 10;
+    }
+    
+    // 如果已经有通知显示，向上偏移
+    // 这里可以扩展为支持多个通知堆叠
+    
+    // 移动和调整窗口大小
+    XMoveResizeWindow(tray->display, notif->window, x, y, width, height);
+    
+    // 设置透明度（如果不透明度原子可用）
+    if (notif->opacity_atom != None && notif->opacity < 255) {
+        unsigned long opacity = (unsigned long)(notif->opacity * 0xFFFFFFFF / 255);
+        XChangeProperty(tray->display, notif->window, notif->opacity_atom,
+                       XA_CARDINAL, 32, PropModeReplace,
+                       (unsigned char*)&opacity, 1);
+    }
+    
+    // 绘制通知
+    x11ut__notification_draw(tray, notif);
+    
+    // 映射窗口
+    XMapWindow(tray->display, notif->window);
+    XRaiseWindow(tray->display, notif->window);
+    
+    // 记录显示时间
+    notif->show_time = time(NULL);
+    notif->visible = true;
+    notif->opacity = 255;  // 重置为完全不透明
+    
+    XFlush(tray->display);
+    
+    X11UT_LOG_DEBUG("显示通知: %s - %s (持续时间: %dms)", 
+                   title ? title : "无标题", 
+                   message ? message : "无消息", 
+                   duration_ms);
+}
+
+// 隐藏气泡通知
+static void x11ut__notification_hide(x11ut__tray_t* tray, x11ut__notification_t* notif) {
+    if (!tray || !tray->display || !notif || !notif->window || !notif->visible) return;
+    
+    XUnmapWindow(tray->display, notif->window);
+    notif->visible = false;
+    X11UT_LOG_DEBUG("隐藏通知");
+    XFlush(tray->display);
+}
+
+// 更新气泡通知（用于淡出效果）
+static void x11ut__notification_update(x11ut__tray_t* tray, x11ut__notification_t* notif) {
+    if (!tray || !notif || !notif->visible) return;
+    
+    // 检查是否应该开始淡出
+    time_t now = time(NULL);
+    long elapsed_ms = (now - notif->show_time) * 1000;
+    
+    if (elapsed_ms >= notif->duration_ms) {
+        // 开始淡出
+        notif->opacity -= notif->fade_step;
+        
+        if (notif->opacity <= 0) {
+            x11ut__notification_hide(tray, notif);
+        } else if (notif->opacity_atom != None) {
+            // 更新窗口透明度
+            unsigned long opacity = (unsigned long)(notif->opacity * 0xFFFFFFFF / 255);
+            XChangeProperty(tray->display, notif->window, notif->opacity_atom,
+                           XA_CARDINAL, 32, PropModeReplace,
+                           (unsigned char*)&opacity, 1);
+            XFlush(tray->display);
+        }
+    }
+}
+
+// 检查点击是否在关闭按钮内
+static bool x11ut__notification_is_close_click(x11ut__notification_t* notif, int x, int y) {
+    if (!notif || !notif->visible) return false;
+    
+    int close_btn_size = 16;
+    int close_btn_x = notif->width - close_btn_size - 5;
+    int close_btn_y = 5;
+    
+    return (x >= close_btn_x && x <= close_btn_x + close_btn_size &&
+            y >= close_btn_y && y <= close_btn_y + close_btn_size);
+}
+
+// 处理通知窗口点击
+static void x11ut__handle_notification_click(x11ut__tray_t* tray, x11ut__notification_t* notif,
+                                            int x, int y) {
+    if (!notif || !notif->visible) return;
+    
+    // 检查是否点击了关闭按钮
+    if (x11ut__notification_is_close_click(notif, x, y)) {
+        X11UT_LOG_DEBUG("点击通知关闭按钮");
+        x11ut__notification_hide(tray, notif);
+        return;
+    }
+    
+    // 点击通知主体区域
+    X11UT_LOG_DEBUG("点击通知内容区域");
+    
+    // 这里可以添加点击通知时的回调函数
+    // 例如：打开相关应用、执行特定操作等
+    
+    // 暂时只是隐藏通知
+    x11ut__notification_hide(tray, notif);
+}
+
+// 清理通知资源
+static void x11ut__notification_cleanup(x11ut__tray_t* tray, x11ut__notification_t* notif) {
+    if (!notif) return;
+    
+    X11UT_LOG_DEBUG("清理通知资源");
+    
+    if (tray && tray->display && notif->window) {
+        x11ut__notification_hide(tray, notif);
+        
+        // 释放资源
+        if (notif->draw) XftDrawDestroy(notif->draw);
+        if (notif->font) XftFontClose(tray->display, notif->font);
+        if (notif->text_color.pixel) XftColorFree(tray->display, tray->visual, 
+                                                 tray->colormap, &notif->text_color);
+        if (notif->gc) XFreeGC(tray->display, notif->gc);
+        if (notif->pixmap) XFreePixmap(tray->display, notif->pixmap);
+        
+        XDestroyWindow(tray->display, notif->window);
+    }
+    
+    if (notif->title) free(notif->title);
+    if (notif->message) free(notif->message);
+    
+    free(notif);
+}
+
+// ==================== notification API函数 ====================
+
+// 显示气泡通知的API函数
+void x11ut__show_notification(x11ut__tray_t* tray, const char* title, 
+                             const char* message, int duration_ms) {
+    if (!tray || !tray->notification) {
+        X11UT_LOG_ERROR("通知系统未初始化");
+        return;
+    }
+    
+    x11ut__notification_show(tray, tray->notification, title, message, duration_ms);
+}
+
+// 隐藏当前通知的API函数
+void x11ut__hide_notification(x11ut__tray_t* tray) {
+    if (!tray || !tray->notification) {
+        return;
+    }
+    
+    x11ut__notification_hide(tray, tray->notification);
+}
+
+// 设置通知持续时间的API函数
+void x11ut__set_notification_duration(x11ut__tray_t* tray, int duration_ms) {
+    if (!tray || !tray->notification) {
+        return;
+    }
+    
+    if (duration_ms > 0) {
+        tray->notification->duration_ms = duration_ms;
+        X11UT_LOG_DEBUG("设置通知持续时间为: %dms", duration_ms);
+    }
+}
+
 // ==================== 工具提示函数 ====================
 
 // 创建工具提示
@@ -2965,7 +3638,11 @@ bool x11ut__tray_process_events(x11ut__tray_t* tray) {
                                          strlen(tray->tooltip->text));
                     }
                     X11UT_LOG_VERBOSE("重绘工具提示");
-                }
+                } else if (tray->notification && event.xexpose.window == tray->notification->window) {
+                        // 重新绘制通知
+                        x11ut__notification_draw(tray, tray->notification);
+                        X11UT_LOG_VERBOSE("重绘通知");
+                    }
                 break;
                 
             case ButtonPress:
@@ -3036,6 +3713,14 @@ bool x11ut__tray_process_events(x11ut__tray_t* tray) {
                         x11ut__msleep(100);
                         x11ut__menu_hide(tray, tray->menu);
                     }
+                }                
+                // 鼠标离开通知窗口
+                else if (tray->notification && event.xcrossing.window == tray->notification->window) {
+                    X11UT_LOG_VERBOSE("鼠标离开通知窗口");
+                    // 可以在这里重置淡出计时器
+                    if (tray->notification->visible) {
+                        tray->notification->show_time = time(NULL);
+                    }
                 }
                 break;
                 
@@ -3060,6 +3745,11 @@ bool x11ut__tray_process_events(x11ut__tray_t* tray) {
                 }
                 break;
         }
+    }
+    
+    // 更新通知（检查淡出）
+    if (tray->notification) {
+        x11ut__notification_update(tray, tray->notification);
     }
     
     return true;
@@ -3274,6 +3964,69 @@ static void x11ut__create_menu(x11ut__tray_t* tray) {
     }
     
     X11UT_LOG_DEBUG("创建菜单完成，共 %d 个菜单项", tray->menu->item_count);
+}
+
+// ==================== 添加通知测试函数 ====================
+
+// 测试通知回调函数
+static void x11ut__show_test_notification_callback(void* data, bool checked) {
+    x11ut__tray_t* tray = (x11ut__tray_t*)data;
+    if (!tray) return;
+    
+    if (tray->english_mode) {
+        if (checked) {
+            x11ut__notification_show(tray, tray->notification,
+                                   "Test Notification",
+                                   "This is a test notification with a longer message to demonstrate multi-line support.\nNotification will auto-hide after 5 seconds.",
+                                   5000);
+        } else {
+            x11ut__notification_show(tray, tray->notification,
+                                   "Information",
+                                   "Notification feature is now enabled.\nYou can test different types of notifications.",
+                                   4000);
+        }
+    } else {
+        if (checked) {
+            x11ut__notification_show(tray, tray->notification,
+                                   "测试通知",
+                                   "这是一个测试通知，包含较长的消息以演示多行支持。\n通知将在5秒后自动隐藏。",
+                                   5000);
+        } else {
+            x11ut__notification_show(tray, tray->notification,
+                                   "信息",
+                                   "通知功能已启用。\n您可以测试不同类型的通知。",
+                                   4000);
+        }
+    }
+}
+
+// 添加通知菜单项
+static void x11ut__add_notification_menu_items(x11ut__tray_t* tray) {
+    if (!tray || !tray->menu) return;
+    
+    if (tray->english_mode) {
+        // 英文通知菜单项
+        x11ut__menu_add_separator(tray, tray->menu);
+        x11ut__menu_add_item(tray, tray->menu, "Show Test Notification", 
+                           x11ut__show_test_notification_callback, tray);
+        x11ut__menu_add_item(tray, tray->menu, "Info Notification", 
+                           x11ut__show_test_notification_callback, tray);
+        x11ut__menu_add_item(tray, tray->menu, "Warning Notification", 
+                           x11ut__show_test_notification_callback, tray);
+        x11ut__menu_add_item(tray, tray->menu, "Error Notification", 
+                           x11ut__show_test_notification_callback, tray);
+    } else {
+        // 中文通知菜单项
+        x11ut__menu_add_separator(tray, tray->menu);
+        x11ut__menu_add_item(tray, tray->menu, "显示测试通知", 
+                           x11ut__show_test_notification_callback, tray);
+        x11ut__menu_add_item(tray, tray->menu, "信息通知", 
+                           x11ut__show_test_notification_callback, tray);
+        x11ut__menu_add_item(tray, tray->menu, "警告通知", 
+                           x11ut__show_test_notification_callback, tray);
+        x11ut__menu_add_item(tray, tray->menu, "错误通知", 
+                           x11ut__show_test_notification_callback, tray);
+    }
 }
 
 // ==================== 字体测试函数 ====================
@@ -3679,7 +4432,7 @@ int main(int argc, char* argv[]) {
     
     // 等待系统托盘
     X11UT_LOG_INFO("等待系统托盘...");
-    x11ut__msleep(1000);
+    x11ut__msleep(1001); // this need?
     
     // 嵌入到系统托盘
     if (!x11ut__tray_embed(&tray)) {
@@ -3688,6 +4441,18 @@ int main(int argc, char* argv[]) {
     
     // 创建菜单
     x11ut__create_menu(&tray);
+
+    // 创建通知窗口
+    tray.notification = x11ut__notification_create(&tray);
+    if (!tray.notification) {
+        X11UT_LOG_WARNING("无法创建通知窗口，通知功能将不可用");
+    } else {
+        X11UT_LOG_INFO("通知功能已启用");
+    }
+    // 添加通知相关的菜单项
+    if (tray.notification) {
+        x11ut__add_notification_menu_items(&tray);
+    }    
     
     // 创建工具提示
     tray.tooltip = x11ut__tooltip_create(&tray);
@@ -3706,6 +4471,11 @@ int main(int argc, char* argv[]) {
     X11UT_LOG_INFO("  - 工具提示支持");
     X11UT_LOG_INFO("  - 分隔线支持");
     X11UT_LOG_INFO("  - 使用Xft字体渲染，支持UTF-8");
+    X11UT_LOG_INFO("  - 支持气泡通知功能");
+    X11UT_LOG_INFO("  - 通知自动隐藏和淡出效果");
+    X11UT_LOG_INFO("  - 支持多行文本通知");
+    X11UT_LOG_INFO("  - 可点击关闭按钮");
+    X11UT_LOG_INFO("  - 鼠标悬停暂停淡出");
     X11UT_LOG_INFO("");
     X11UT_LOG_INFO("当前图标来源: %s", 
                    icon_file ? icon_file : 
@@ -3724,6 +4494,21 @@ int main(int argc, char* argv[]) {
     X11UT_LOG_INFO("");
     X11UT_LOG_INFO("按 Ctrl+C 退出程序");
     
+    // 显示一个欢迎通知
+    if (tray.notification) {
+        if (tray.english_mode) {
+            x11ut__notification_show(&tray, tray.notification,
+                                   "Welcome",
+                                   "Notification system is ready.\nClick the tray icon and select 'Show Test Notification' to test.",
+                                   5000);
+        } else {
+            x11ut__notification_show(&tray, tray.notification,
+                                   "欢迎使用",
+                                   "通知系统已就绪。\n点击托盘图标并选择'显示测试通知'进行测试。",
+                                   5000);
+        }
+    }
+    
     // 主事件循环
     while (tray.running) {
         x11ut__tray_process_events(&tray);
@@ -3732,6 +4517,10 @@ int main(int argc, char* argv[]) {
     
     // 清理
     X11UT_LOG_INFO("正在清理资源...");
+    // 清理通知资源
+    if (tray.notification) {
+        x11ut__notification_cleanup(&tray, tray.notification);
+    }    
     x11ut__tray_cleanup(&tray);
     x11ut__log_cleanup();
     X11UT_LOG_INFO("程序退出");

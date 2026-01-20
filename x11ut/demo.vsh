@@ -33,7 +33,7 @@ fn run_byapi() {
 }
 
 ///
-if abs1() { run_byapi() }
+if abs0() { run_byapi() }
 else {
     rv := x11ut.main_demo(os.args.len, vcp.vargs2cargs().data)
 }
