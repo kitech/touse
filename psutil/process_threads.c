@@ -520,10 +520,21 @@ void psutil_free_processes(psutil_ProcessInfo *processes) {
 // ==================== macOS 实现 ====================
 #elif __APPLE__
 
+#include <libproc.h>
+int psutil_get_process_thread_count_legacy(int pid) {
+	struct proc_taskinfo task_info;
+	int ret = proc_pidinfo(pid, PROC_PIDTASKINFO, 0, &task_info, sizeof(task_info));
+	if (ret <= 0) {
+		return -1;
+	}
+	return task_info.pti_threadnum;
+}
+
 int psutil_get_process_thread_count(int pid) {
     if (pid <= 0) {
         return -1;
     }
+    if (1) return psutil_get_process_thread_count_legacy(pid);
     
     int mib[4] = {CTL_KERN, KERN_PROC, KERN_PROC_PID, pid};
     struct kinfo_proc info;

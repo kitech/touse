@@ -175,6 +175,7 @@ static void netut__mac_callback(SCDynamicStoreRef store, CFArrayRef changed_keys
     if (!monitor || !monitor->callback || !changed_keys) return;
     
     CFIndex count = CFArrayGetCount(changed_keys);
+    
     for (CFIndex i = 0; i < count; i++) {
         CFStringRef key = (CFStringRef)CFArrayGetValueAtIndex(changed_keys, i);
         
@@ -193,6 +194,7 @@ static void netut__mac_callback(SCDynamicStoreRef store, CFArrayRef changed_keys
             
             // 检查IPv4地址
             CFDictionaryRef ipv4_info = SCDynamicStoreCopyValue(store, ipv4_key);
+            // if (!ipv4_info) { ipv4_info = SCDynamicStoreCopyValue(store, ipv4_key_2); }
             if (ipv4_info) {
                 CFArrayRef addresses = CFDictionaryGetValue(ipv4_info, CFSTR("Addresses"));
                 if (addresses) {
@@ -211,6 +213,7 @@ static void netut__mac_callback(SCDynamicStoreRef store, CFArrayRef changed_keys
             
             // 检查IPv6地址
             CFDictionaryRef ipv6_info = SCDynamicStoreCopyValue(store, ipv6_key);
+            // if (!ipv6_info) { ipv6_info = SCDynamicStoreCopyValue(store, ipv6_key_2); }
             if (ipv6_info) {
                 CFArrayRef addresses = CFDictionaryGetValue(ipv6_info, CFSTR("Addresses"));
                 if (addresses) {
@@ -229,6 +232,13 @@ static void netut__mac_callback(SCDynamicStoreRef store, CFArrayRef changed_keys
             
             CFRelease(ipv4_key);
             CFRelease(ipv6_key);
+        } else if (CFStringHasPrefix(key, CFSTR("State:/Network/Global"))) {
+            // CFStringRef ipv4_key_2 = CFStringCreateWithFormat(NULL, NULL, 
+            //     CFSTR("State:/Network/Global/IPv4"));
+            // CFStringRef ipv6_key_2 = CFStringCreateWithFormat(NULL, NULL,
+            //     CFSTR("State:/Network/Global/IPv6")); 
+            // 通知IPv4地址变化
+            monitor->callback("iface_TODO", "IP_TODO", AF_INET, NETUT_IP_CHANGED, monitor->user_data);
         }
     }
 }
@@ -422,9 +432,11 @@ int netut_start_ip_monitor_event(netut_ip_monitor_t *monitor) {
     // 设置监控的键
     CFStringRef keys[] = {
         CFSTR("State:/Network/Interface/.*/IPv4"),
-        CFSTR("State:/Network/Interface/.*/IPv6")
+        CFSTR("State:/Network/Interface/.*/IPv6"),
+        CFSTR("State:/Network/Global/IPv4"),
+        CFSTR("State:/Network/Global/IPv6")
     };
-    CFArrayRef watch_keys = CFArrayCreate(NULL, (const void**)keys, 2, &kCFTypeArrayCallBacks);
+    CFArrayRef watch_keys = CFArrayCreate(NULL, (const void**)keys, 4, &kCFTypeArrayCallBacks);
     
     if (!SCDynamicStoreSetNotificationKeys(monitor->store_ref, watch_keys, NULL)) {
         CFRelease(monitor->store_ref);

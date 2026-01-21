@@ -474,7 +474,7 @@ int netut_format_ip_list_json(const netut_ip_list_t *list,
         snprintf(buffer, buffer_size,
                 "{\"error\":true,\"code\":%d,\"message\":\"%s\"}",
                 list->error_code, list->error_msg);
-        return -1;
+        return -2;
     }
     
     char *ptr = buffer;
@@ -484,7 +484,7 @@ int netut_format_ip_list_json(const netut_ip_list_t *list,
     // 开始JSON数组
     written = snprintf(ptr, remaining, "{\"count\":%d,\"addresses\":[", list->count);
     if (written < 0 || written >= remaining) {
-        return -1;
+        return -3;
     }
     ptr += written;
     remaining -= written;
@@ -497,7 +497,7 @@ int netut_format_ip_list_json(const netut_ip_list_t *list,
         if (!first) {
             written = snprintf(ptr, remaining, ",");
             if (written < 0 || written >= remaining) {
-                return -1;
+                return -4;
             }
             ptr += written;
             remaining -= written;
@@ -519,7 +519,7 @@ int netut_format_ip_list_json(const netut_ip_list_t *list,
                           current->is_loopback ? "loopback" : "regular");
         
         if (written < 0 || written >= remaining) {
-            return -1;
+            return -5;
         }
         ptr += written;
         remaining -= written;
@@ -531,7 +531,7 @@ int netut_format_ip_list_json(const netut_ip_list_t *list,
     if (remaining > 2) {
         written = snprintf(ptr, remaining, "],\"error\":false}");
         if (written < 0 || written >= remaining) {
-            return -1;
+            return -6;
         }
     }
     

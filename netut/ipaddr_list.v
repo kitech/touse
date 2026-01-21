@@ -9,6 +9,10 @@ import json
 
 #flag darwin -framework SystemConfiguration
 
+c99 { // need extern for return size>sizeof(int32)
+    extern void* netut_get_all_ip_addresses();
+}
+
 @[importc: "netut_get_all_ip_addresses"]
 pub fn get_all_ip_addresses() voidptr
 @[importc: "netut_free_ip_list"]
@@ -20,24 +24,20 @@ pub fn print_ip_list(voidptr)
 @[importc: "netut_format_ip_list_json"]
 pub fn ip_list_json(iplst voidptr, buf charptr, bufsz usize) int
 
-pub fn get_ipaddrs() []string{
+pub fn get_ipaddrs() ![]string{
     iplst := get_all_ip_addresses()
 
-    bufsz := 386    
+    bufsz := 986
     buf := [bufsz]i8{}
     rv := ip_list_json(iplst, charptr(&buf[0]), usize(bufsz))
     assert rv==0
     defer { free_ip_list(iplst) }
     
     jstr := charptr(&buf[0]).tosref()
-    // dump(jstr)    
-    addrs := json.decode(Addresses, jstr) or { panic(err) }
+    // dump(jstr)
+    addrs := json.decode(Addresses, jstr) !
     // dump(addrs)
-    
-    res := []string{}
-    for i in 0..addrs.count { 
-        res << addrs.addresses[i].address
-    }
+    res := addrs.addresses.map(|x| x.address)
     
     return res
 }
