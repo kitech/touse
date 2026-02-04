@@ -191,6 +191,12 @@ pub fn (op &Opml) count() int {
     return op.body.count()
 }
 
+pub fn (op &Opml) geturl(idx int) string {
+    n := op.body.at(idx)
+    u := n.attr('xmlUrl')
+    return u
+}
+
 pub fn (op &Opml) find_byurl(url string) int {
     count := op.count()
     for i in 0..count {
