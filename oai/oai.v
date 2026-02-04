@@ -1,6 +1,7 @@
 module oai
 
 import json
+import vcp.json as jsonx
 import vcp.curlv
 
 pub const chat_path = '/v1/chat/completions'
@@ -10,6 +11,9 @@ pub struct Oai {
     pub:
     host   string = 'http://127.0.0.1:5001'
     apikey string
+    
+    sess_id string
+    pmsg_id   i64 // parent_message_id, our go msg 1, first come msg 2
 }
 
 pub struct Message {
@@ -89,6 +93,9 @@ pub struct Req {
     model string
     stream bool = false
     messages []Message
+
+    sess_id  string  // if empty auto create new one
+    pmsg_id   i64
 }
 
 pub fn (o &Oai) chat(prompt string) !Resp {
@@ -97,7 +104,7 @@ pub fn (o &Oai) chat(prompt string) !Resp {
 // model: deepseek-chat
 pub fn (o &Oai) chat_with_model(prompt string, model string) !Resp {
     
-    req := Req {}
+    req := Req {sess_id: o.sess_id, pmsg_id: o.pmsg_id}
     req.model = model
     req.messages << Message{content: prompt}
     data := json.encode(req)
@@ -113,6 +120,11 @@ pub fn (o &Oai) chat_with_model(prompt string, model string) !Resp {
         return errorwc(err.error, res.stcode)
     }
     jso := json.decode(Resp, res.data) !
+    if jso.id != '' && jso.id != o.sess_id {
+        // not save here, outer save and pass in
+        // include sess_id and pmsg_id
+        // o.sess_id = jso.id
+    }
     return jso
 }
 
