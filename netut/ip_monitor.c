@@ -622,8 +622,11 @@ int netut_process_ip_events(netut_ip_monitor_t *monitor, int timeout_ms) {
     } else if (result == 0) {
         return 1; // 超时
     } else if (result < 0) {
-        if (errno == EINTR) {
-            return 1; // 被信号中断，视为超时
+        if (errno == EINTR) {   // in case infinite loop, sleep little
+            // printf("select EINTR %d %d %s:%d\n", errno, monitor->netlink_fd, __FILE__, __LINE__);
+            // sleep(1);
+            usleep(686000);
+            return 2; // 被信号中断，视为超时
         }
         monitor->error_code = errno;
         sprintf(monitor->error_msg, "select失败: %s", strerror(errno));

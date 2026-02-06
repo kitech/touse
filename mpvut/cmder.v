@@ -96,7 +96,7 @@ pub fn (o &UnixSocketSender) read_response_skip_event() !string {
         buf := []u8{len:999}
         n := o.con.read(mut buf) !
         resjcc := buf[..n].bytestr()
-        assert resjcc.starts_with("{") && resjcc.ends_with("}\n")
+        assert resjcc.starts_with("{") && resjcc.ends_with("}\n"), resjcc
         // log.info("* << $n $resjcc".trim_space().compact()+" :${@FILE_LINE}\n")
         
         if resjcc.starts_with('{"event":') {

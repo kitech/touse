@@ -87,7 +87,7 @@ fn onip_change(interface_name charptr, ip_address charptr, family int, event_typ
     onip_change_2(interface_name.tosdup(), ip_address.tosdup(), family, event_type, cbval)
 }
 fn onip_change_2(interface_name string, ip_address string, family int, event_type int, cbval voidptr) {
-    println("ifn $interface_name, ip $ip_address, $family, $event_type")
+    // println("ifn $interface_name, ip $ip_address, $family, $event_type \t${FILE_LINE}")
     p := &Cbpair(cbval)
     p.cb(interface_name, ip_address, family, event_type, p.val)
 }
