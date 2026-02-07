@@ -9,7 +9,15 @@ $if $pkgconfig('libnotify') {
     #pkgconfig --cflags libnotify
     // #pkgconfig --libs libnotify    
 }
-#flag darwin -L $env('HOME')/.nix-profile/lib
+$if macos {
+    #flag darwin -L $env('HOME')/.nix-profile/lib
+    #flag darwin -I $env('HOME')/.nix-profile/include
+    #flag darwin -I /Users/me/.nix-profile/include/gio-unix-2.0
+    #flag darwin -I /Users/me/.nix-profile/include/glib-2.0
+    #flag darwin -I /nix/store/20bwdj8mm59yxgzra1ma6cwqaifks2x1-glib-2.84.3/lib/glib-2.0/include
+    //#flag darwin -I /opt/vcpkg/root/installed/x64-osx-dynamic/include/glib-2.0/
+    //#flag darwin -I /opt/vcpkg/root/installed/x64-osx-dynamic/include/gio-unix-2.0/
+}
 #flag -lnotify -lglib-2.0 -lgobject-2.0
 
 // #include "libnotify/notify.h"

@@ -7,7 +7,13 @@ import json
 // 使用C99编写跨平台监听IP地址变化的函数，函数名加前缀 netut__，注意是双下划线
 #flag @DIR/ip_monitor.o
 
-#flag darwin -framework SystemConfiguration
+$if macos && tinyc {
+    #flag -lFoundation
+    #flag -lIOKit
+    #flag /System/Library/Frameworks/Foundation.framework/Resources/BridgeSupport/Foundation.dylib
+} $else {
+    #flag darwin -framework SystemConfiguration
+}
 
 c99 { // need extern for return size>sizeof(int32)
     extern void* netut_get_all_ip_addresses();

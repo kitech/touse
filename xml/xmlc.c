@@ -29,7 +29,7 @@
 #include <ctype.h>
 
 #ifndef __MACH__
-#include <malloc.h>
+// #include <malloc.h>
 #endif
 
 #include <stdarg.h>

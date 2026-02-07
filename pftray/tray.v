@@ -13,7 +13,14 @@ $if windows {
     // need manual compile this .o
     // cc -c tray_darwin.m
     #flag @DIR/tray_darwin.o
-    #flag -framework Cocoa
+    $if tinyc {
+        #flag -L @DIR/macsys/lib
+        // #flag -lCocoa
+        #flag -lAppKit
+        #flag -lFoundation
+    } $else {
+        #flag -framework Cocoa
+    }
 } $else {
     $if withqt6 ? {
         #flag @DIR/tray_linux.o
