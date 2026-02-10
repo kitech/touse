@@ -2,7 +2,9 @@ module mgs
 
 import vcp
 
-// binding version: 7.16-202510
+// binding version: 7.20-202601, without extra build args
+// gcc -shared -g -O2 -fPIC -DMG_ENABLE_DIRECTORY_LISTING=1 mongoose.c -o libmongoose.so
+// static version: vcpkg install mongoose
 #flag -lmongoose
 #include <mongoose.h>
 
@@ -225,10 +227,28 @@ pub fn (c &Conn) ws_printf() {
     
 }
 
-pub fn (C &Conn) ws_vprintf() {
+pub fn (c &Conn) ws_vprintf() {
     
 }
 
+///////////////////
+
+pub fn (r &HttpMsg) status() int {
+    return C.mg_http_status(r)
+}
+
+pub fn url_decode(s string) string {
+    buf := [s.len*2]i8{}
+    len := C.mg_url_decode(s.str, s.len, &buf[0], s.len*2, 0)
+    return charptr(&buf[0]).tosdup(len)
+}
+pub fn url_encode(s string) string {
+    buf := [s.len*5]i8{}
+    len := C.mg_url_encode(s.str, s.len, &buf[0], s.len*5)
+    return charptr(&buf[0]).tosdup(len.int())
+}
+
+////////////////
 
 pub enum Ev  {
     error = C.MG_EV_ERROR      // Error                        char *error_message
@@ -286,6 +306,9 @@ fn C.mg_http_send_redirect(...voidptr)
 fn C.mbuf_remove(...voidptr)
 fn C.mg_http_serve_dir(...voidptr)
 fn C.mg_http_serve_file(...voidptr)
+fn C.mg_http_status(...voidptr) int
+fn C.mg_url_decode(...voidptr) int
+fn C.mg_url_encode(...voidptr) usize
 
 fn C.mg_ws_connect(...voidptr) &Conn
 fn C.mg_ws_upgrade(...voidptr)

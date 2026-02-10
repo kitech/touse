@@ -121,31 +121,57 @@ pub struct HttpServeRewriteOpts {
 }
 
 pub fn (c &Conn) http_serve_dir_rewrite(req &HttpMsg, opts &HttpServeRewriteOpts) {
-    requri := req.uri.tov()
+    requri := url_decode(req.uri.tov())
     rootdir := tos3(opts.root_dir)
     path := opts.baseuri
-    
+    pathpfx := requri[1..]
+
+    dump(requri)
+    dump(path)
+    dump(opts)    
     if opts.baseuri == "" {
         c.http_serve_dir(req, &HttpServeOpts(opts))
         return
     }
     
     dstfile := http_rewrite(path, requri, rootdir)
-    // log.info("Rewrite ${requri} => ${dstfile} \t:${@FILE_LINE}")
+    log.info("Rewrite ${requri} => ${dstfile} \t:${@FILE_LINE}")
     if dstfile == "" || !os.exists(dstfile) {
         c.http_reply(404, "")
-    }else{
-    // c.http_serve_dir(req, &opts)
-    c.http_serve_file(req, dstfile, &HttpServeOpts(opts))
+    } else if os.is_dir(dstfile) {
+        // c.http_serve_dir(req, &HttpServeOpts(opts))
+        data := dir_to_list_html(pathpfx, dstfile)
+        c.http_reply(200, ['content-type: text/html; charset=utf8'], '$dstfile:<br/>\n${data}')
+    } else {
+        // c.http_serve_dir(req, &opts)
+        c.http_serve_file(req, dstfile, &HttpServeOpts(opts))
     }
+}
+
+fn dir_to_list_html(pathpfx string, dir string) string {
+    dirs := os.ls(dir) or {panic(err)}
+    data := ''
+    arr := dirs.map(fn(x string) string {
+        fsize := os.file_size(os.join_path(dir, x))
+        return dir_list_html_format(0, fsize, pathpfx, x)
+    })
+    data = arr.join('\n')
+    pdir := dir_list_html_format(0, 0, pathpfx, '..')
+    return data    
+}
+
+fn dir_list_html_format(idx int, size u64, pathpfx string, name string) string {
+    href := if name=='..' { os.dir(pathpfx) } else { "${pathpfx}/${name}" }
+    return '<li> ${size} <a href="/${href}">$name</a></li><br/>'
 }
 
 pub fn http_rewrite(baseuri string, requri string, rootdir string) string {
     assert requri.starts_with(baseuri), baseuri+" "+requri
     dstfile := os.join_path(rootdir, requri[baseuri.len..])
-    // log.info("rewrite222 dstfile \t:${@FILE_LINE}")
+    log.info("rewrited $dstfile \t:${@FILE_LINE}")
     if !os.exists(dstfile) { return dstfile }
     if os.real_path(dstfile).starts_with(os.real_path(rootdir)) { return dstfile }
+    if dstfile.count('..')==0 && dstfile.starts_with(rootdir) { return dstfile }
     // maybe ../../ like 
     return ""
 }

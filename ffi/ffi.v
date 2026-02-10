@@ -293,7 +293,7 @@ pub fn callfca6[T](sym voidptr, args ...Anyer) T {
 
 	tysz, tystr := sizeof(T), typeof(T{}).name
 	// dump('${tysz}, ${tystr}')
-	if tysz>=sret_minsize { retoty = create_struct_ffitype(sret_minsize.int()) }
+	if tysz>=sret_minsize { retoty = create_struct_ffitype(int(sret_minsize)) }
 	
 	cif := Cif{}
 	stv := prep_cif0(&cif, retoty, argotys[..args.len])
@@ -314,7 +314,7 @@ pub fn callfca6[T](sym voidptr, args ...Anyer) T {
 
 fn create_struct_ffitype(len int) &C.ffi_type {
     tyobj := &C.ffi_type{}
-    tyobj.type = ctype_struct.u16()
+    tyobj.type = u16(ctype_struct)
 	elems := []voidptr{len: len*2+1}
 	for i in 0..len { elems[i] = type_uint8 }
 	tyobj.elements = elems.data

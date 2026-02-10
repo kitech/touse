@@ -1,8 +1,11 @@
 module psutil
 
 // Link required libraries for macOS
-#flag darwin -framework CoreFoundation
-#flag darwin -framework CoreServices
+$if macos && tinyc {
+} $else {
+    #flag darwin -framework CoreFoundation
+    #flag darwin -framework CoreServices
+}
 #flag @DIR/psutil_macos.o
 
 // Use @[importc] to map C functions directly
