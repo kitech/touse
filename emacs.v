@@ -1,16 +1,19 @@
+@[has_globals]
 module emacs
 
 import dl
 import flag
-import vcp
 import time
 import os
 
+import vcp
+import vcp.reflect as refl
+
 #include <emacs-module.h>
-#include "@VMODROOT/emacs/emacs.h"
+#include "@DIR/emacsx.h"
 
 // this #flag fix v -shared result symbol not found
-// #flag @VEXEROOT/thirdparty/tcc/lib/libtcc.a
+// #flag @VEXEROOT/thirdparty/tcc/lib/tcc/libtcc1.a
 // #flag @VEXEROOT/thirdparty/tcc/lib/tcc/bcheck.o
 // tcc_backtrace symbol here
 #flag @VEXEROOT/thirdparty/tcc/lib/tcc/bt-log.o
@@ -21,6 +24,7 @@ import os
 
 // 这篇文档讲的详细, https://phst.eu/emacs-modules.html
 
+@[markused]
 __global plugin_is_GPL_compatible = 1
 
 fn init() {
@@ -70,7 +74,9 @@ fn eminit(rt &Runtime) int {
 
 fn emcheckenv(e &Env) {
 	expsz := u32(0)
-	if MAJOR_VERION == 29 {
+	if MAJOR_VERION == 30 {
+		expsz = sizeof(Env30)
+	}else if MAJOR_VERION == 29 {
 		expsz = sizeof(Env29)
 	} else if MAJOR_VERION == 25 {
 		expsz = sizeof(Env25)
@@ -110,8 +116,8 @@ struct Config {
 	basett   bool   @[desc: 'if call basictt test func'; short: t]
 	relayout bool   @[desc: 're layout ui'; short: y]
 	asyncbkd string @[desc: 'sptaskd, emacs process'] //
-	vemver   bool
 	loglvl   string @[desc: 'warn,info,debug,error']
+	vemver   bool
 }
 
 // todo what will happend if load to .so use this library
@@ -121,7 +127,7 @@ struct Emvars {
 pub mut:
 	cfg Config
 
-	callcnt int = 0 // maybe call multiple times by emacs???
+	callcnt i64 = 0 // maybe call multiple times by emacs???
 	elnil   Value
 	eltrue  Value
 	elvoid  Value
@@ -339,7 +345,7 @@ pub fn (me &Env) fcall3(funame string, args ...Anyer) Anyer {
 }
 
 pub fn (me &Env) toel(arg Anyer) Value {
-	itfin := itface2struct(&arg)
+	itfin := refl.itface2struct(&arg)
 	rv := emvs.elnil
 	match arg {
 		string {
@@ -547,7 +553,7 @@ fn elmodfunfwder(e &Env, nargs isize, args &Value, data voidptr) Value {
 	if data == vnil {
 		vcp.warn(e, nargs, data)
 	}
-	vcp.trueprt(nargs > 0, nargs, 'use funvalx instead')
+	vcp.warnif(nargs > 0, nargs, 'use funvalx instead')
 	for idx in 0 .. nargs {
 		item := args[idx]
 		aty := item.typof(e)
@@ -601,7 +607,7 @@ fn elmodfunfwderx(e &Env, nargs isize, args &Value, data voidptr) Value {
 	}
 	if matval == '' {
 		itfin := castptr[Itfacein](data)
-		vcp.warn('nomat', matval, cb.str(), data, itfin.typ)
+		vcp.warn('nomat', matval, cb.str(), data, itfin.itfidx)
 	}
 	return rv
 }
@@ -620,9 +626,9 @@ const refvars = &Refvars{}
 pub fn (me &Env) funvalx(cb FuncurAll) Value {
 	adr := &cb // stack addr, invalid when use
 	adr = vardup(cb)
-	itfin := itface2struct(&cb)
+	itfin := refl.itface2struct(&cb)
 	itfin = castptr[Itfacein](adr)
-	vcp.info(voidptr(adr), itfin.typ)
+	vcp.info(voidptr(adr), itfin.itfidx)
 	// avoid gc adr
 	ref2mut(refvars).refs['${voidptr(adr)}'] = adr
 
@@ -721,10 +727,8 @@ pub mut:
 	private_members &Envpriv
 }
 
-pub struct Env25 {
-	Envheader //
-	// pub:
-	// ...
+pub struct Env30 {
+	Env29
 }
 
 pub struct Env29 {
@@ -809,4 +813,10 @@ pub:
 	make_interactive fn (env voidptr, function voidptr, spec voidptr) = vnil
 
 	make_unibyte_string fn (env voidptr, str charptr, len isize) voidptr = vnil
+}
+
+pub struct Env25 {
+	Envheader //
+	// pub:
+	// ...
 }

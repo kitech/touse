@@ -110,7 +110,7 @@ pub fn (me &Env) defun(funame string, fun Funcin, doc string) {
 	me.fcall2('defalias', sym, fnv)
 }
 
-pub fn (me &Env) defun2(funame string, fun Funcin, doc string) {
+pub fn (me &Env) defun2[T](funame string, fun T, doc string) {
 	fun0 := voidptr(fun)
 	$if T is $function {
 	} $else {

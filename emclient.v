@@ -2,9 +2,11 @@ module emacs
 
 import net
 import net.unix
-import vcp
 import os
 import time
+
+import vcp
+import vcp.reflect as refl
 
 #flag @VMODROOT/emacs/emclient.o
 
@@ -114,7 +116,7 @@ pub fn runon_uithread(proc UifuncType, nowait bool, args ...Anyer) ! {
 		// 		cmd += ' "0x${voidptr(proc)}"'
 		// 	}
 		else {
-			procin := itface2struct(&proc)
+			procin := refl.itface2struct(&proc)
 			// vcp.info(proc.str(), procin.ptr, derefvar[voidptr](procin.ptr))
 			// vcp.info(proc.str(), itfptrof(&proc), derefvar[voidptr](itfptrof(&proc)))
 			cmd += ' "0x${procin.ptr}"'
@@ -122,7 +124,7 @@ pub fn runon_uithread(proc UifuncType, nowait bool, args ...Anyer) ! {
 	}
 	cmd += ' ${args.len}'
 	for idx, arg in args {
-		itfin := itface2struct(&args[idx])
+		itfin := refl.itface2struct(&args[idx])
 		val := anyer_strfy(arg)
 		// match arg { }
 		cmd += ' ${val}'
@@ -160,7 +162,7 @@ pub fn runon_uithread(proc UifuncType, nowait bool, args ...Anyer) ! {
 		res += buf[..n].bytestr()
 	}
 	etime := time.now()
-	vcp.trueprt(time.since(btime) > exptmo, 'why read solong', time.since(btime).str())
+	vcp.warnif(time.since(btime) > exptmo, 'why read solong', time.since(btime).str())
 	// parse result
 	lines := res.split('\n')
 	for idx, line in lines {
@@ -175,7 +177,7 @@ pub fn runon_uithread(proc UifuncType, nowait bool, args ...Anyer) ! {
 }
 
 pub fn anyer_strfy(arg Anyer) string {
-	itfin := itface2struct(&arg)
+	itfin := refl.itface2struct(&arg)
 	val := match arg {
 		int {
 			'${arg}'
