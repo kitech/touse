@@ -548,12 +548,13 @@ pub fn (me &Env) realval(v f64) Value {
 	return rv
 }
 
+// dont bdwgc malloc in this function, or deadlock often
 // data is real callback fnptr
 fn elmodfunfwder(e &Env, nargs isize, args &Value, data voidptr) Value {
-	if data == vnil {
-		vcp.warn(e, nargs, data)
-	}
-	vcp.warnif(nargs > 0, nargs, 'use funvalx instead')
+	if !vcp.ismainth() { assert false }
+	if data == vnil { vcp.warn(e, nargs, data) }
+	if nargs > 0 { vcp.warn(nargs, 'use funvalx instead') }
+
 	for idx in 0 .. nargs {
 		item := args[idx]
 		aty := item.typof(e)
