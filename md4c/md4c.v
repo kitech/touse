@@ -1,6 +1,6 @@
 module md4c
 
-#flag -lmd4c-html
+#flag -lmd4c-html -lmd4c
 #include <md4c-html.h>
 
 fn C.md_html(... voidptr) int

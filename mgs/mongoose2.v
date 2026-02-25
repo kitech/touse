@@ -36,12 +36,12 @@ pub mut:
     is_udp int // bitfield
     is_websocket int // bitfield
     is_listening int // bitfield
-    
+
     next &Conn
     mgr &Mgr
     loc Addr
     rem Addr
-    
+
     recv Iobuf // C.mg_iobuf
     send Iobuf // C.mg_iobuf
     fd voidptr
@@ -63,7 +63,7 @@ pub struct C.mg_http_message{
     uri Str
     query Str
     proto Str
-    
+
     body Str
     head Str
     message Str // Request + headers + body
@@ -76,7 +76,7 @@ pub struct C.mg_ws_message {
     flags u8
 }
 
-struct C.mg_str{
+struct C.mg_str {
     pub mut:
     buf charptr
     len usize
@@ -194,7 +194,7 @@ pub fn (c &Conn) set_draining() {
     c.is_draining = 1
 }
 
-pub fn (c &Conn) set_resp() { 
+pub fn (c &Conn) set_resp() {
     c.is_resp = 0
 }
 
@@ -224,11 +224,11 @@ pub fn (c &Conn) ws_wrap(len isize, op int) isize {
 }
 
 pub fn (c &Conn) ws_printf() {
-    
+
 }
 
 pub fn (c &Conn) ws_vprintf() {
-    
+
 }
 
 ///////////////////
@@ -276,8 +276,8 @@ pub enum Ev  {
 
 pub enum Protocol {
     raw
-    http 
-    websocket 
+    http
+    websocket
     arp
     origin
 }

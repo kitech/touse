@@ -10,10 +10,14 @@ import vcp.venv
 /*
     if (event->mask & IN_MOVED_TO) flags.push_back(fsw_event_flag::MovedTo);
 	if (event->mask & IN_MOVED_FROM) flags.push_back(fsw_event_flag::MovedFrom);
-	
+
 	if ((event->mask & IN_MOVED_TO) || (event->mask & IN_MOVED_FROM)) {
 		impl->events.clear();
-	} */
+	}
+*/
+
+// x32 build
+// $ ./configure --prefix=/opt/devsys32 --host=i686-linux-gnu "CFLAGS=-m32" "CXXFLAGS=-m32" "LDFLAGS=-m32"
 
 // #pkgconfig libfswatch
 #flag -lfswatch
@@ -108,7 +112,7 @@ fn c2v_event(evt &CEvent, wtdirs []string) &Event {
     }
     assert res.orig != ""
     // assert res.name != ""
-        
+
     if evt.flags_num > 1 {
         res.flags = carr2varr[Flag](evt.flags, evt.flags_num)
     }
@@ -140,7 +144,7 @@ fn on_cevent_callback(evts &CEvent, evnum int, data voidptr) {
     arr1 := carr2varr[CEvent](evts, evnum)
     arr2 := []Event{}
     for e in arr1 { arr2 << c2v_event(e, wtdirs) }
-    
+
     h := Handle(data)
     lst := gvs.callbacks[h]
     for t in lst {
@@ -152,7 +156,7 @@ fn on_cevent_callback(evts &CEvent, evnum int, data voidptr) {
 }
 
 pub fn (h Handle) add_callback(cbfn CEventCallback, data voidptr) int {
-    gvs.callbacks[h] << Tuple3.new(h, data, voidptr(cbfn))
+    gvs.callbacks[h] << newTuple3(h, data, voidptr(cbfn))
     return ok
 }
 fn (h Handle) set_callback() int {

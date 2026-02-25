@@ -11,6 +11,10 @@ import touse.ffi
 // on macos sed 's/ ROXML_PARSE //g'
 // mach-o section specifier requires a segment and section separated by a comma
 
+// x32 build
+// ./autogen.sh
+// $ ./configure --prefix=/opt/devsys32 --host=i686-linux-gnu "CFLAGS=-m32" "CXXFLAGS=-m32" "LDFLAGS=-m32"
+
 $if prod || prodrc ? {
     // this module use function_missing feat, cannot static link
     // because there is no roxml's function linked at link time
