@@ -8,9 +8,17 @@ module bdb
 
 // key, value string saved with null
 
-pub type DB_ENV = C.DB_ENV
+// write for v6.2
+
+pub type ENV = C.DB_ENV
 @[typedef]
 pub struct C.DB_ENV {
+    get_cache_max fn(&ENV, &u32, &u32) int
+    set_cache_max fn(&ENV, u32, u32) int
+
+    close   fn(&ENV, u32) int
+    open    fn(&ENV, charptr, u32, int) int
+    remove fn(&ENV, charptr, u32) int
 }
 
 pub type DB = C.DB
@@ -25,8 +33,14 @@ pub struct C.DB {
     open   fn(&DB, voidptr, charptr, charptr, int, u32, int) int
 
     set_flags fn(&DB, u32) int
+    sync      fn(&DB, u32) int
     truncate  fn(&DB, voidptr, &u32, u32) int
     verify    fn(&DB, charptr, charptr, &C.FILE, u32) int
+
+    get_cachesize fn(&DB, &u32, &u32, &int) int
+    set_cachesize fn(&DB, u32, u32, int) int
+
+    get_env  fn(&DB) &ENV
     
     pub:
 }
@@ -64,7 +78,7 @@ fn C.db_create(...voidptr) int
 pub fn DB.create0(flags u32) &DB {
     return DB.create(nil, flags)
 }
-pub fn DB.create(env &DB_ENV, flags u32) &DB {
+pub fn DB.create(env &ENV, flags u32) &DB {
     db := &DB(nil)
     rv := C.db_create(&db, env, flags)
     assert rv == 0, strerror(rv)
@@ -121,7 +135,7 @@ pub fn (db &DB) has(key string) !bool {
     return true
 }
 
-pub fn (db &DB) getx(key string) !string {
+pub fn (db &DB) getx(key string) !(string, bool) {
     buf := [9999]i8{}
     
     k := DBT{data: key.str, size: u32(key.len+1)}
@@ -129,11 +143,13 @@ pub fn (db &DB) getx(key string) !string {
     v := DBT{flags: DBT_MALLOC}
 
     rv := db.get(db, nil, &k, &v, 0)
+    if NOTFOUND == rv { return '', false }
     assert rv == 0, strerror(rv)
     
-    return v.data.tosfree(int(v.size-1))
+    return v.data.tosfree(int(v.size-1)), true
 }
 
+// anyway return recno without extra call?
 pub fn (db &DB) putx(key string, val string) ! {
     k := DBT{data: key.str, size: u32(key.len+1)}
     v := DBT{data: val.str, size: u32(val.len+1)}
@@ -181,7 +197,9 @@ pub fn (db &DB) count_byrecno() !int {
     c := db.cursorx() !
     defer { c.closex() }
 
-    c.set_last(false) !
+    ok := c.set_last(false) !
+    if !ok { return 0 }
+    
     res := c.get_recno() !
     return int(res)
 }
@@ -205,7 +223,7 @@ pub fn (c &DBC) getx() ! {
 }
 
 // no malloc, no data copy
-pub fn (c &DBC) set_last(isfirst bool) ! {
+pub fn (c &DBC) set_last(isfirst bool) ! bool {
     k := DBT{flags: DBT_READONLY}
     v := DBT{flags: DBT_USERMEM}
     v.flags |= DBT_PARTIAL
@@ -213,10 +231,12 @@ pub fn (c &DBC) set_last(isfirst bool) ! {
 
     flags := isfirst.ifor(FIRST, LAST)
     rv := c.get(c, &k, &v, flags)
-    if NOTFOUND == rv { return }
+    if NOTFOUND == rv { dump('not found $isfirst') }
+    if NOTFOUND == rv { return false }
     assert rv == 0, strerror(rv)
     assert k.size == 0
     assert v.size == 0
+    return true
 }
 
 // no malloc, no data copy
@@ -307,6 +327,81 @@ pub fn (c &DBC) get_kv() !(string,string) {
            v.data.tosfree(int(v.size-1))
 }
 
+pub fn (db &DB) get_cachesizex() (usize, int) {
+    gbytes := usize(0)
+    bytes := usize(0)
+    ncache := int(0)
+
+    rv := db.get_cachesize(db, &u32(&gbytes), &u32(&bytes), &ncache)
+    assert rv == 0, strerror(rv)
+    return gbytes*bytes_gb + bytes, ncache
+}
+
+pub const bytes_gb = 1024*1024*1024
+
+// ncache default 1
+// totbytes default 256KB
+pub fn (db &DB) set_cachesizex(totbytes usize, ncache int) {
+    gbytes := totbytes/ bytes_gb
+    bytes := totbytes % bytes_gb
+
+    rv := db.set_cachesize(db, u32(gbytes), u32(bytes), ncache)
+    assert rv == 0, strerror(rv)
+}
+
+pub fn (db &DB) syncx(flags u32) ! {
+    rv := db.sync(db, flags)
+    assert rv == 0, strerror(rv)    
+}
+
+pub fn (db &DB) env() &ENV {
+    rv := db.get_env(db)
+    assert rv != nil
+    return rv
+}
+
+////////////
+
+fn C.db_env_create(...voidptr) int
+pub fn ENV.create(flags u32) &ENV {
+    e := &ENV(nil)
+    rv := C.db_env_create(&e, flags)
+    assert rv == 0, strerror(rv)
+    return e
+}
+pub fn (e &ENV) closex(flags u32) {
+    rv := e.close(e, flags)
+    assert rv == 0, strerror(rv)
+}
+pub fn (e &ENV) openx(db_home string, flags u32, mode int) ! {
+    flags |= THREAD
+    flags |= CREATE
+    flags |= INIT_TXN
+    flags |= RECOVER
+    
+    rv := e.open(e, db_home.str, flags, mode)
+    assert rv == 0, strerror(rv)
+}
+
+pub fn (e &ENV) set_cache_maxx(totbytes usize) {
+    assert totbytes > 1024
+    
+    gbytes := totbytes / bytes_gb
+    bytes := totbytes % bytes_gb
+
+    rv := e.set_cache_max(e, u32(gbytes), u32(bytes))
+    assert rv == 0, strerror(rv)
+}
+
+fn C.db_version(...voidptr) charptr
+pub fn version_str() string {
+    return C.db_version(nil, nil, nil).tosref()
+}
+pub fn version_num() (int, int, int) {
+    maj, min, pat := 0, 0, 0
+    C.db_version(&maj, &min, &pat)
+    return maj, min, pat
+}
 
 ////////////////
 
@@ -362,7 +457,7 @@ pub const GET_BOTH_LTE	   = u32(31)      // /* Dbc.get (internal) */
 // to change when the max opcode hits 255. */
 pub const OPFLAGS_MASK	  = u32(0x000000ff)   //	/* Mask for operations flags. */
 
-
+/////
 pub const AM_CHKSUM		        = u32(0x00000001)  //  /* Checksumming */
 pub const AM_COMPENSATE	        = u32(0x00000002)  //  /* Created by compensating txn */
 pub const AM_COMPRESS		    = u32(0x00000004)  //  /* Compressed BTree */
@@ -476,4 +571,5 @@ pub const THREAD            = u32(C.DB_THREAD)
 pub const TRUNCATE          = u32(C.DB_TRUNCATE)
 pub const TXN_NOT_DURABLE   = u32(C.DB_TXN_NOT_DURABLE)
 pub const VERIFY            = u32(C.DB_VERIFY)
-
+pub const INIT_TXN          = u32(C.DB_INIT_TXN)
+pub const RECOVER           = u32(C.DB_RECOVER)

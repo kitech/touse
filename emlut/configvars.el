@@ -20,6 +20,7 @@
 (global-tab-line-mode)
 (setq  tab-line-exclude-modes nil)
 (scroll-bar-mode 0) ; todo auto show/hide scroll bar
+(tool-bar-mode 0)
 
 ;; Automatically save and restore sessions
 ; remove desktop-saved-frameset, nouse and slow startup
@@ -68,7 +69,7 @@
     t 'symbol (font-spec :family "Segoe UI Emoji") nil 'prepend))
 
 ; (setq initial-frame-alist '((width . 120) (height . 32)))
-(setq initial-frame-alist '((top . 0) (left . 90) (width . 120) (height . 32)))
+(setq initial-frame-alist '((top . 0) (left . 90) (width . 120) (height . 33)))
 ; (add-to-list 'initial-frame-alist '(fullscreen . maximized))
 
 
@@ -208,6 +209,7 @@
     (if (package-installed-p 'treemacs)
         (progn
 	  (treemacs-add-and-display-current-project)
+	  (display-line-numbers-mode -1)
 	  (next-window-any-frame))
       (add-to-list 'my-lost-pkgs 'treemacs)
     )
