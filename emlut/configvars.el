@@ -22,6 +22,7 @@
 (scroll-bar-mode 0) ; todo auto show/hide scroll bar
 (tool-bar-mode 0)
 
+
 ;; Automatically save and restore sessions
 ; remove desktop-saved-frameset, nouse and slow startup
 (setq desktop-restore-frames nil)
@@ -61,14 +62,25 @@
  '(font-lock-string-face ((t (:foreground "#CC9393"))))
 )
 
-;; menu bar and tool bar theme
+;; menu-bar and tool-bar and tab-line theme
 (set-face-attribute 'menu nil :background "#1C1C1C" :foreground "#DCDCCC" :bold t)
 (set-face-attribute 'tool-bar nil :background "#1C1C1C" :foreground "#DCDCCC" :bold t)
+(set-face-attribute 'tab-line nil :background "gray20" :foreground "gray80" :bold t)
+(set-face-attribute 'tab-line-highlight nil :background "gray10" :foreground "#DCDCCC"  :bold t)
+(set-face-attribute 'tab-line-tab nil :background "#1C1C1C" :foreground "#DCDCCC" :bold t)
+(set-face-attribute 'tab-line-tab-inactive nil
+		    :background "#1C1C1C" :foreground "#DCDCCC" :bold t
+		    :box '(:line-width (1 . 1) :color "#gray10" :style pressed-button))
+(set-face-attribute 'tab-line-tab-current nil
+		    :background "#1C1C1C" :foreground "#FFFFFF" :bold t
+		    :box '(:line-width (1 . 1) :color "#gray10" :style pressed-button))
+;; (set-face-attribute 'tab-line nil :background "gray40" :foreground "gray60")
+
+
 (when (member "Segoe UI Emoji" (font-family-list))
   (set-fontset-font
     t 'symbol (font-spec :family "Segoe UI Emoji") nil 'prepend))
 
-; (setq initial-frame-alist '((width . 120) (height . 32)))
 (setq initial-frame-alist '((top . 0) (left . 90) (width . 120) (height . 33)))
 ; (add-to-list 'initial-frame-alist '(fullscreen . maximized))
 
@@ -182,11 +194,7 @@
     ;; ctrl + Mouse-1 = goto define
     )
 
-;; emacs-locale menu/message i18n
-;; https://sourceforge.net/projects/emacslocale/
-;; (require 'menu-bar)
-;; (load-file "/etc/emacs/site-start.d/86_emacs30.2_locale-zh-cn.el")
-
+;; hook funcs
 (defun myon-window-setup1 ()
     (interactive)
     (message "hehehhehehe1")
@@ -212,7 +220,16 @@
 	  (display-line-numbers-mode -1)
 	  (next-window-any-frame))
       (add-to-list 'my-lost-pkgs 'treemacs)
-    )
+      (message "need install package 'treemacs")      
+      )
+    (if (package-installed-p 'lsp-treemacs)
+        (progn
+	  (lsp-treemacs-symbols)
+	  (display-line-numbers-mode -1)
+	  (next-window-any-frame))
+      (add-to-list 'my-lost-pkgs 'lsp-treemacs)
+      (message "need install package 'lsp-treemacs")
+      )
     )
 
 (defun myon-window-setup4 ()
@@ -223,3 +240,66 @@
 (add-hook 'emacs-startup-hook 'myon-window-setup2)
 (add-hook 'window-setup-hook 'myon-window-setup3)
 (add-hook 'minibuffer-with-setup-hook 'myon-window-setup4)
+
+;;; 据说不维护了
+(if (package-installed-p 'git-gutter)
+    (global-git-gutter-mode +1)
+  (add-to-list 'my-lost-pkgs 'git-gutter)
+  (message "need install package 'git-gutter")
+  )
+
+(if (package-installed-p 'diff-hl)
+    (progn
+      (global-diff-hl-show-hunk-mouse-mode +1)
+      (global-diff-hl-mode +1))
+  (add-to-list 'my-lost-pkgs 'diff-hl)
+  (message "need install package 'diff-hl")
+  )
+
+(if (package-installed-p 'minimap)
+    (use-package minimap
+      :init (setq minimap-width-fraction 0.10
+		  minimap-minimum-width 10
+		  minimap-window-location 'right)
+      :hook (after-init . minimap-mode))
+  (add-to-list 'my-lost-pkgs 'minimap)
+  (message "need install package 'minimap")
+  )
+
+(if (package-installed-p 'popup-switcher)
+    (progn
+      (setq psw-popup-menu-max-length 15)
+      )
+  (add-to-list 'my-lost-pkgs 'popup-switcher)
+  (message "need install package 'popup-switcher")
+  )
+
+(if (package-installed-p 'yasnippet)
+    (use-package yasnippet
+      :ensure t
+      :config
+      (yas-global-mode 1))
+  (add-to-list 'my-lost-pkgs 'yasnippet)
+  (message "need install package 'yasnippet")
+  )
+
+;; emacs-locale menu/message i18n
+;; https://sourceforge.net/projects/emacslocale/
+;; GNU Emacs 30.2 (build 6, x86_64-pc-linux-gnu, X toolkit)
+(defun my-emver ()  (nth 2 (string-split (emacs-version))))
+(defvar my-emloc-zhdir "")
+(setq my-emloc-zhdir
+      (format "/usr/share/emacs/%s/site-lisp/zh_CN/locale-zh" (my-emver)))
+(defun my-load-loczh ()      
+  (add-to-list 'load-path my-emloc-zhdir)
+  (add-to-list 'load-path (format "/usr/share/emacs/%s/site-lisp" (my-emver)))
+  ;; (require 'menu-bar)
+  (load-file
+   (format "/etc/emacs/site-start.d/86_emacs%s_locale-zh-cn.el" (my-emver)))
+  )
+
+;; (message (format "%s" (my-emver)))
+(if (file-exists-p my-emloc-zhdir)
+    (add-hook 'window-setup-hook 'my-load-loczh)
+  (message (format "dir not exist %s" my-emloc-zhdir)))
+
