@@ -19,6 +19,8 @@ pub struct C.DB_ENV {
     close   fn(&ENV, u32) int
     open    fn(&ENV, charptr, u32, int) int
     remove fn(&ENV, charptr, u32) int
+
+    set_alloc fn(&ENV, voidptr, voidptr, voidptr) int
 }
 
 pub type DB = C.DB
@@ -41,6 +43,7 @@ pub struct C.DB {
     set_cachesize fn(&DB, u32, u32, int) int
 
     get_env  fn(&DB) &ENV
+    set_alloc fn(&DB, voidptr, voidptr, voidptr) int
     
     pub:
 }
@@ -79,11 +82,36 @@ pub fn DB.create0(flags u32) &DB {
     return DB.create(nil, flags)
 }
 pub fn DB.create(env &ENV, flags u32) &DB {
+    if env == nil {
+        // env = ENV.getornew()
+    }
+    
     db := &DB(nil)
     rv := C.db_create(&db, env, flags)
     assert rv == 0, strerror(rv)
     assert db != nil
+
+    if use_v_alloc {
+        db.set_alloc(db, malloc, v_realloc, v_mem_free)
+    }
     return db
+}
+const use_v_alloc = false
+fn v_mem_free(p voidptr) {
+    $if gcboehm ? {} $else { free() }
+}
+
+fn C.db_env_create(...voidptr) int
+fn ENV.getornew() &ENV {
+    static e := &ENV(nil)
+    if e == nil {
+        rv := C.db_env_create(&e, 0)
+        assert rv==0
+        e.set_alloc(e, malloc, v_realloc, free)
+        flags := CREATE
+        e.open(e, nil, flags, 0)
+    }
+    return e
 }
 
 pub fn (db &DB) closex(wt u32) {
@@ -145,16 +173,22 @@ pub fn (db &DB) getx(key string) !(string, bool) {
     rv := db.get(db, nil, &k, &v, 0)
     if NOTFOUND == rv { return '', false }
     assert rv == 0, strerror(rv)
-    
-    return v.data.tosfree(int(v.size-1)), true
+
+    if use_v_alloc {
+        return v.data.tosdup(int(v.size-1)), true
+    } else {
+        return v.data.tosfree(int(v.size-1)), true
+    }
 }
 
 // anyway return recno without extra call?
-pub fn (db &DB) putx(key string, val string) ! {
+pub fn (db &DB) putx(key string, val string, flags u32) ! {
     k := DBT{data: key.str, size: u32(key.len+1)}
     v := DBT{data: val.str, size: u32(val.len+1)}
 
-    rv := db.put(db, nil, &k, &v, 0)
+    // flags := u32(NODUPDATA)
+    flags |= NOOVERWRITE
+    rv := db.put(db, nil, &k, &v, flags)
     assert rv == 0, strerror(rv)    
 }
 
@@ -310,10 +344,15 @@ pub fn (db &DB) get_kv(recno u32) !(string,string) {
 
     assert recno > 0
     rv := c.get(c, &k, &v, SET_RECNO)
-    assert rv == 0, strerror(rv)
+    assert rv == 0, strerror(rv) + ' ' + recno.str()
 
-    return k.data.tosfree(int(k.size-1)),
-           v.data.tosfree(int(v.size-1))
+    if use_v_alloc {
+        return k.data.tosdup(int(k.size-1)),
+        v.data.tosdup(int(v.size-1))
+    } else {
+        return k.data.tosfree(int(k.size-1)),
+        v.data.tosfree(int(v.size-1))
+    }
 }
 
 pub fn (c &DBC) get_kv() !(string,string) {
@@ -323,8 +362,14 @@ pub fn (c &DBC) get_kv() !(string,string) {
     rv := c.get(c, &k, &v, CURRENT)
     assert rv == 0, strerror(rv)
 
-    return k.data.tosfree(int(k.size-1)),
-           v.data.tosfree(int(v.size-1))
+
+    if use_v_alloc {
+        return k.data.tosdup(int(k.size-1)),
+        v.data.tosdup(int(v.size-1))
+    } else {
+        return k.data.tosfree(int(k.size-1)),
+        v.data.tosfree(int(v.size-1))
+    }
 }
 
 pub fn (db &DB) get_cachesizex() (usize, int) {
@@ -573,3 +618,4 @@ pub const TXN_NOT_DURABLE   = u32(C.DB_TXN_NOT_DURABLE)
 pub const VERIFY            = u32(C.DB_VERIFY)
 pub const INIT_TXN          = u32(C.DB_INIT_TXN)
 pub const RECOVER           = u32(C.DB_RECOVER)
+

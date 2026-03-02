@@ -62,9 +62,11 @@ pub fn (r &Mgr) listen(url string, opts ListenOption) {
     if opts.wsfunc != vnil || opts.httpfunc != vnil{
         info.proto = if opts.wsfunc!=vnil { .websocket } else { .http }
         c := r.http_listen(url, event_proc, voidptr(info))
+        assert voidptr(c) != nil, url
         mgv.funs[u64(c.id)] = info
     } else if opts.rawfunc != vnil {
         c := C.mg_listen(r, url.str, event_proc, voidptr(info))
+        assert voidptr(c) != nil, url
         mgv.funs[u64(c.id)] = info
     } else {
         assert false, "Handler cannot all nil"

@@ -74,6 +74,30 @@
 ;; (setq tab-line-tabs-function #'buffer-list)
 (setq tab-line-tabs-function 'fixed-return-file-buffers)
 
+(defun my-get-window-by-buffer-name (name)
+  (get-buffer-window (get-buffer name)))
+(defun my-find-window-by-buffer-name (name)
+  (let (res)
+    (dolist (w (window-list))
+      (let ((bufname (buffer-name (window-buffer w))))
+	(if (string-match name bufname)
+	    (setq res w))))
+    res)
+  )
+
+(defun my-find-window-by-name (name)
+  (message name)
+  (let (res)
+    (dolist (w (window-list))
+      (let ((bufname (format "%s" w)))
+	(if (string-match name bufname)
+	    (setq res w))))
+    res)
+  )
+
+;; (my-find-window-by-buffer-name "Treemacs-Buffer-")
+
+
 ;; two step init/config logic
 ;
 ;; check package installed

@@ -64,16 +64,17 @@
 
 ;; menu-bar and tool-bar and tab-line theme
 (set-face-attribute 'menu nil :background "#1C1C1C" :foreground "#DCDCCC" :bold t)
+(set-face-attribute 'mode-line nil :background "gray20" :foreground "#DCDCDC")
 (set-face-attribute 'tool-bar nil :background "#1C1C1C" :foreground "#DCDCCC" :bold t)
 (set-face-attribute 'tab-line nil :background "gray20" :foreground "gray80" :bold t)
 (set-face-attribute 'tab-line-highlight nil :background "gray10" :foreground "#DCDCCC"  :bold t)
 (set-face-attribute 'tab-line-tab nil :background "#1C1C1C" :foreground "#DCDCCC" :bold t)
 (set-face-attribute 'tab-line-tab-inactive nil
-		    :background "#1C1C1C" :foreground "#DCDCCC" :bold t
-		    :box '(:line-width (1 . 1) :color "#gray10" :style pressed-button))
+		    :background "#1C1C1C" :foreground "#CDCDCD" :bold t
+		    :box '(:line-width (1 . 1) :color "gray10" :style pressed-button))
 (set-face-attribute 'tab-line-tab-current nil
-		    :background "#1C1C1C" :foreground "#FFFFFF" :bold t
-		    :box '(:line-width (1 . 1) :color "#gray10" :style pressed-button))
+		    :background "#000099" :foreground "#DCDCCC" :bold t
+		    :box '(:line-width (1 . 1) :color "gray10" :style pressed-button))
 ;; (set-face-attribute 'tab-line nil :background "gray40" :foreground "gray60")
 
 
@@ -100,6 +101,8 @@
 (define-key my-menu-bar-menu-devin [my-cmd1] '("GC Collect" . my-custom-command))
 (define-key my-menu-bar-menu-devin [my-cmd2] '("Inspect Fn" . my-custom-command))
 (define-key my-menu-bar-menu-devin [my-cmd3] '("My Command 3" . my-custom-command))
+(define-key my-menu-bar-menu-devin [my-cmd4] '("apropos search any" . my-custom-command))
+(define-key my-menu-bar-menu-devin [my-cmd5] '("describe- func/var/face" . my-custom-command))
 
 (defvar my-menu-bar-menu1 (make-sparse-keymap "Mine1"))
 (define-key-after global-map [menu-bar my-menu1] (cons "Mine1" my-menu-bar-menu1) 'Tools)
@@ -191,6 +194,8 @@
     (size-indication-mode t)
     (show-paren-mode t)
     (global-display-line-numbers-mode 1) ; emacs 26+
+    (customize-set-variable 'window-min-height
+			    window-safe-min-height)
     ;; ctrl + Mouse-1 = goto define
     )
 
@@ -218,18 +223,30 @@
         (progn
 	  (treemacs-add-and-display-current-project)
 	  (display-line-numbers-mode -1)
+	  (with-current-buffer (window-buffer (selected-window))
+	    (tab-line-mode -1)
+	    (setq mode-line-format nil))
 	  (next-window-any-frame))
       (add-to-list 'my-lost-pkgs 'treemacs)
       (message "need install package 'treemacs")      
       )
+
     (if (package-installed-p 'lsp-treemacs)
         (progn
 	  (lsp-treemacs-symbols)
 	  (display-line-numbers-mode -1)
+	  (with-current-buffer (window-buffer (selected-window))
+	    (tab-line-mode -1)
+	    (setq mode-line-format nil))
+	  (set-window-parameter (selected-window) 'no-delete-other-windows t)
+	  (minimize-window (selected-window))
 	  (next-window-any-frame))
       (add-to-list 'my-lost-pkgs 'lsp-treemacs)
       (message "need install package 'lsp-treemacs")
       )
+
+    (my-side-ctrlbar-init)
+    (treemacs-toggle-fixed-width) ;; let left resizable    
     )
 
 (defun myon-window-setup4 ()
@@ -283,6 +300,14 @@
   (message "need install package 'yasnippet")
   )
 
+
+;; (custom-set-variables
+;;  '(mini-frame-show-parameters
+;;    '((top . 0)
+;;      (width . 0.5)
+;;      (left . 0.5)
+;;      (height . 15))))
+
 ;; emacs-locale menu/message i18n
 ;; https://sourceforge.net/projects/emacslocale/
 ;; GNU Emacs 30.2 (build 6, x86_64-pc-linux-gnu, X toolkit)
@@ -302,4 +327,6 @@
 (if (file-exists-p my-emloc-zhdir)
     (add-hook 'window-setup-hook 'my-load-loczh)
   (message (format "dir not exist %s" my-emloc-zhdir)))
+
+
 
