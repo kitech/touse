@@ -4,7 +4,10 @@
 
 ;; 预定义的中文安装源（三个）
 (defvar my-package-sources
-  '(("清华源" . (("gnu"   . "https://mirrors.tuna.tsinghua.edu.cn/elpa/gnu/")
+  '(("GNU ELPA" . (("gnu" . "https://elpa.gnu.org/packages/")))
+    ("MELPA" . (("melpa" . "https://melpa.org/packages/")))
+    ("Org ELPA" . (("org" . "https://orgmode.org/elpa/")))
+    ("清华源" . (("gnu"   . "https://mirrors.tuna.tsinghua.edu.cn/elpa/gnu/")
                  ("melpa" . "https://mirrors.tuna.tsinghua.edu.cn/elpa/melpa/")
                  ("org"   . "https://mirrors.tuna.tsinghua.edu.cn/elpa/org/")))
     ("中科大源" . (("gnu"   . "http://mirrors.ustc.edu.cn/elpa/gnu/")
@@ -13,7 +16,7 @@
     ("阿里源" . (("gnu"   . "https://mirrors.aliyun.com/elpa/gnu/")
                  ("melpa" . "https://mirrors.aliyun.com/elpa/melpa/")
                  ("org"   . "https://mirrors.aliyun.com/elpa/org/"))))
-  "可选的中文安装源列表，每个元素为 (名称 . (档案名 . URL) 列表)。")
+  "可选安装源列表，每个元素为 (名称 . (档案名 . URL) 列表)。")
 
 (defvar my-package-buffer "*my-package-manager*"
   "包管理窗口使用的 buffer 名称。")
@@ -24,6 +27,9 @@
 (defvar my-package-current-filter nil
   "当前的包名过滤字符串（正则表达式）。")
 
+(defvar my-package-status-filter 'all
+  "当前的包状态过滤：'all, 'installed, 'not-installed, 'upgradable。")
+
 (defvar my-package-current-source-name "清华源"
   "当前正在使用的源名称，用于显示。")
 
@@ -32,6 +38,34 @@
 
 (defvar my-package-installed-count 0
   "已安装的包数量（基于有效包）。")
+
+;; ---------------------------------------------------------------------
+;; 包信息缓存（加速搜索）
+;; ---------------------------------------------------------------------
+(defvar my-package-cached-packages nil
+  "缓存包信息列表，每个元素为 (name version pkg-sym installed upgradable)。")
+
+(defun my-package-build-cache ()
+  "从 package-archive-contents 构建缓存。"
+  (setq my-package-cached-packages nil)
+  (let ((packages (sort (mapcar #'car package-archive-contents) #'string<))
+        (total 0))
+    (dolist (pkg-sym packages)
+      (let* ((name (symbol-name pkg-sym))
+             (desc (cadr (assq pkg-sym package-archive-contents))))
+        (when (and desc (package-desc-p desc))
+          (cl-incf total)
+          (let* ((version (package-version-join (package-desc-version desc)))
+                 (inst (package-installed-p pkg-sym))
+                 (upgradable (and inst
+                                  (let* ((installed-desc (cadr (assq pkg-sym package-alist)))
+                                         (inst-ver (and installed-desc
+                                                        (package-desc-p installed-desc)
+                                                        (package-desc-version installed-desc))))
+                                    (and inst-ver (version-list-< inst-ver (package-desc-version desc)))))))
+            (push (list name version pkg-sym inst upgradable) my-package-cached-packages)))))
+    (setq my-package-total-count total
+          my-package-cached-packages (nreverse my-package-cached-packages))))
 
 ;; ---------------------------------------------------------------------
 ;; 辅助函数：创建带点击属性的按钮字符串（使用 keymap）
@@ -71,6 +105,17 @@
                   "  "
                   ;; 搜索部分
                   search-part
+                  "  "
+                  ;; 状态过滤按钮（弹出菜单）
+                  (my-package-make-button
+                   (format "📊 %s"
+                           (pcase my-package-status-filter
+                             ('all "所有包")
+                             ('installed "已安装")
+                             ('not-installed "未安装")
+                             ('upgradable "有更新")))
+                   'my-package-switch-status-popup
+                   "点击切换显示状态")
                   "  "
                   ;; 切换源按钮（弹出菜单）
                   (my-package-make-button "🌐 切换源" 'my-package-switch-source-popup
@@ -156,8 +201,9 @@
     (select-frame my-package-frame)
     (setq default-minibuffer-frame my-package-frame)
     (switch-to-buffer buffer)
-    (setq mode-line-format nil)
+    ;; 设置 buffer 为只读，防止意外编辑
     (setq buffer-read-only t)
+    (setq mode-line-format nil)
     (my-package-set-header-line)))
 
 ;; ---------------------------------------------------------------------
@@ -174,49 +220,49 @@
       (my-package-set-header-line))))
 
 (defun my-package-insert-packages ()
-  "插入所有符合条件的包，并统计总数和已安装数。"
+  "插入所有符合条件的包，并统计总数和已安装数。使用缓存加速。"
+  ;; 确保包列表已刷新，必要时构建缓存
   (unless package-archive-contents
     (message "正在刷新包列表，请稍候...")
     (package-refresh-contents))
-  (let ((packages (sort (mapcar #'car package-archive-contents) #'string<))
-        (count 0)
-        (total 0)
+  (unless my-package-cached-packages
+    (my-package-build-cache))
+  (let ((count 0)
         (installed 0))
-    (dolist (pkg-sym packages)
-      (let* ((name (symbol-name pkg-sym))
-             (desc (cadr (assq pkg-sym package-archive-contents))))
-        (when (and desc (package-desc-p desc))
-          (cl-incf total)
-          (let* ((version (package-version-join (package-desc-version desc)))
-                 (inst (package-installed-p pkg-sym))
-                 (upgradable (and inst
-                                  (let* ((installed-desc (cadr (assq pkg-sym package-alist)))
-                                         (inst-ver (and installed-desc
-                                                        (package-desc-p installed-desc)
-                                                        (package-desc-version installed-desc))))
-                                    (and inst-ver (version-list-< inst-ver (package-desc-version desc)))))))
-            (when (or (null my-package-current-filter)
-                      (string-match-p my-package-current-filter name))
-              (cl-incf count)
-              (when inst (cl-incf installed))
-              (insert (format "%-25s %-12s" name version))
-              (cond (inst
-                     (insert-text-button "删除"
-                                         'action `(lambda (_) (my-package-delete ',pkg-sym))
-                                         'help-echo "点击卸载此包")
-                     (insert " ")
-                     (if upgradable
-                         (insert-text-button "更新"
-                                             'action `(lambda (_) (my-package-update ',pkg-sym))
-                                             'help-echo "点击更新此包")
-                       (insert-text-button "    " 'face 'shadow)))
-                    (t
-                     (insert-text-button "安装"
-                                         'action `(lambda (_) (my-package-install ',pkg-sym))
-                                         'help-echo "点击安装此包")))
-              (insert "\n"))))))
-    (setq my-package-total-count total
-          my-package-installed-count installed)
+    (dolist (pkg-info my-package-cached-packages)
+      (let ((name (nth 0 pkg-info))
+            (version (nth 1 pkg-info))
+            (pkg-sym (nth 2 pkg-info))
+            (inst (nth 3 pkg-info))
+            (upgradable (nth 4 pkg-info)))
+        ;; 同时应用搜索过滤和状态过滤
+        (when (and (or (null my-package-current-filter)
+                       (string-match-p my-package-current-filter name))
+                   (pcase my-package-status-filter
+                     ('all t)
+                     ('installed inst)
+                     ('not-installed (not inst))
+                     ('upgradable upgradable)))
+          (cl-incf count)
+          (when inst (cl-incf installed))
+          (insert (format "%-25s %-12s" name version))
+          (cond (inst
+                 (insert-text-button "删除"
+                                     'action `(lambda (_) (my-package-delete ',pkg-sym))
+                                     'help-echo "点击卸载此包")
+                 (insert " ")
+                 (if upgradable
+                     (insert-text-button "更新"
+                                         'action `(lambda (_) (my-package-update ',pkg-sym))
+                                         'help-echo "点击更新此包")
+                   (insert-text-button "    " 'face 'shadow)))
+                (t
+                 (insert-text-button "安装"
+                                     'action `(lambda (_) (my-package-install ',pkg-sym))
+                                     'help-echo "点击安装此包")))
+          (insert "\n"))))
+    ;; 更新显示的已安装计数（仅当前过滤条件下）
+    (setq my-package-installed-count installed)
     (when (= count 0)
       (insert "没有匹配的包。\n"))))
 
@@ -230,6 +276,8 @@
         (package-install pkg)
         (message "安装 %s 成功。" pkg))
     (error (message "安装 %s 失败：%s" pkg (error-message-string err))))
+  ;; 使缓存失效，下次刷新时重建
+  (setq my-package-cached-packages nil)
   (my-package-refresh-list))
 
 (defun my-package-delete (pkg)
@@ -242,6 +290,7 @@
                 (package-delete desc)
                 (message "删除 %s 成功。" pkg))
             (error (message "删除 %s 失败：%s" pkg (error-message-string err))))
+          (setq my-package-cached-packages nil)
           (my-package-refresh-list))
       (message "包 %s 未安装或描述无效。" pkg))))
 
@@ -252,10 +301,11 @@
         (package-install pkg)
         (message "更新 %s 成功。" pkg))
     (error (message "更新 %s 失败：%s" pkg (error-message-string err))))
+  (setq my-package-cached-packages nil)
   (my-package-refresh-list))
 
 ;; ---------------------------------------------------------------------
-;; 搜索与源切换
+;; 搜索与源切换、状态切换
 ;; ---------------------------------------------------------------------
 (defun my-package-search ()
   "通过子框架的 minibuffer 输入搜索词，过滤包列表。"
@@ -288,14 +338,45 @@
             my-package-current-source-name source-name)
       (message "已切换到 %s，正在刷新包列表..." source-name)
       (package-refresh-contents)
+      ;; 清空缓存，因为包列表已变
+      (setq my-package-cached-packages nil)
       (my-package-refresh-list)
       (message "源切换完成。当前源：%s" source-name))))
+
+(defun my-package-switch-status-popup ()
+  "使用弹出菜单切换包状态过滤。"
+  (interactive)
+  (let* ((status-alist '((all . "所有包")
+                         (installed . "已安装")
+                         (not-installed . "未安装")
+                         (upgradable . "有更新")))
+         (items (mapcar (lambda (cell)
+                          (cons (cdr cell)
+                                (lambda () (interactive)
+                                  (my-package-set-status (car cell)))))
+                        status-alist))
+         (menu (list "选择显示状态" (cons "状态" items))))
+    (let ((choice (x-popup-menu t menu)))
+      (when choice
+        (funcall choice)))))
+
+(defun my-package-set-status (status)
+  "设置状态过滤器为 STATUS，并刷新。"
+  (setq my-package-status-filter status)
+  (my-package-refresh-list)
+  (message "显示状态: %s" (pcase status
+                            ('all "所有包")
+                            ('installed "已安装")
+                            ('not-installed "未安装")
+                            ('upgradable "有更新"))))
 
 (defun my-package-refresh-packages ()
   "手动刷新包列表（从当前源重新获取）。"
   (interactive)
   (message "正在刷新包列表，请稍候...")
   (package-refresh-contents)
+  ;; 清空缓存，强制重建
+  (setq my-package-cached-packages nil)
   (my-package-refresh-list)
   (message "包列表刷新完成。"))
 
@@ -313,3 +394,4 @@
 ;; ---------------------------------------------------------------------
 ;; 提供功能
 ;; ---------------------------------------------------------------------
+(provide 'my-package-manager)
