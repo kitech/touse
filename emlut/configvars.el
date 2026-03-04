@@ -77,6 +77,15 @@
 		    :box '(:line-width (1 . 1) :color "gray10" :style pressed-button))
 ;; (set-face-attribute 'tab-line nil :background "gray40" :foreground "gray60")
 
+(use-package popup
+  :ensure t
+  :config
+  (set-face-attribute 'popup-face nil :background "#2d2d2d" :foreground "white")
+  (set-face-attribute 'popup-scroll-bar-background-face nil
+		      :background "gray30")
+  (set-face-attribute 'popup-scroll-bar-foreground-face nil
+		      :background "gray70")
+)
 
 (when (member "Segoe UI Emoji" (font-family-list))
   (set-fontset-font
@@ -123,7 +132,9 @@
 (define-key my-menu-bar-menu-devin [my-cmd3] '("My Command 3" . my-custom-command))
 (define-key my-menu-bar-menu-devin [my-cmd4] '("apropos search any" . my-custom-command))
 (define-key my-menu-bar-menu-devin [my-cmd5] '("describe- func/var/face" . my-custom-command))
-(define-key my-menu-bar-menu-devin [my-cmd6] '("包管理 UI" . my-package-popup))
+;; for custom set-face, set-option with tabbed multiple category support
+(define-key my-menu-bar-menu-devin [my-cmd6] '("配置管理 UI" . my-custom-command))
+(define-key my-menu-bar-menu-devin [my-cmd7] '("包管理 UI" . my-package-popup))
 
 (defvar my-menu-bar-menu1 (make-sparse-keymap "Mine1"))
 (define-key-after global-map [menu-bar my-menu1] (cons "Mine1" my-menu-bar-menu1) 'Tools)

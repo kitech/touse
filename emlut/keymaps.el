@@ -23,7 +23,13 @@
       )
   (global-set-key (kbd "C-<tab>") 'switch-to-next-buffer)
   (global-set-key (kbd "C-<iso-lefttab>") 'switch-to-prev-buffer)
-)
+  )
+;; override previous set key, more features, esc close, tab next
+(if (symbolp 'my-switch-buffer-popup)
+    (progn
+      (global-set-key (kbd "C-<tab>") 'my-switch-buffer-popup)
+      (global-set-key (kbd "C-<iso-lefttab>") 'my-switch-buffer-popup)
+      ))
 
 (global-set-key (kbd "C-o") 'find-file)
 (global-set-key (kbd "C-d") 'duplicate-line)
