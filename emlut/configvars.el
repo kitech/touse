@@ -85,6 +85,26 @@
 (setq initial-frame-alist '((top . 0) (left . 90) (width . 120) (height . 33)))
 ; (add-to-list 'initial-frame-alist '(fullscreen . maximized))
 
+;;;;;;;;;
+
+ (require 'package)
+;; ;; Add MELPA to the list of package archives
+;; ; (add-to-list 'package-archives '("melpa" . "https://melpa.org/packages/") t)
+(setq package-archives '(("gnu-cn" . "https://mirrors.ustc.edu.cn/elpa/gnu/")
+                         ("melpa-cn" . "https://mirrors.ustc.edu.cn/elpa/melpa/")
+                         ("nongnu-cn" . "https://mirrors.ustc.edu.cn/elpa/nongnu/")))
+
+;; Initialize the package system
+(package-initialize) ;; seem not connect to net
+
+(defvar my-lost-pkgs '("item1" "item2" "item3")
+  "A documentation string explaining what this list is for.")
+(defun my-lost-pkg-add (pkg)
+  (message (format "adding lost %s" pkg))
+  (add-to-list 'my-lost-pkgs pkg))
+
+(if (not (package-installed-p 'treemacs))
+    (add-to-list 'my-lost-pkgs 'treemacs))
 
 ;; todo put to menubar tail
 (defun my-custom-command ()
@@ -103,6 +123,7 @@
 (define-key my-menu-bar-menu-devin [my-cmd3] '("My Command 3" . my-custom-command))
 (define-key my-menu-bar-menu-devin [my-cmd4] '("apropos search any" . my-custom-command))
 (define-key my-menu-bar-menu-devin [my-cmd5] '("describe- func/var/face" . my-custom-command))
+(define-key my-menu-bar-menu-devin [my-cmd6] '("包管理 UI" . my-package-popup))
 
 (defvar my-menu-bar-menu1 (make-sparse-keymap "Mine1"))
 (define-key-after global-map [menu-bar my-menu1] (cons "Mine1" my-menu-bar-menu1) 'Tools)
@@ -122,21 +143,6 @@
 (define-key my-menu-bar-menu3 [my3-cmd2] '("My3 Command 2" . my-custom-command))
 (define-key my-menu-bar-menu3 [my3-cmd3] '("My3 Command 3" . my-custom-command))
 
- (require 'package)
-;; ;; Add MELPA to the list of package archives
-;; ; (add-to-list 'package-archives '("melpa" . "https://melpa.org/packages/") t)
-(setq package-archives '(("gnu-cn" . "https://mirrors.ustc.edu.cn/elpa/gnu/")
-                         ("melpa-cn" . "https://mirrors.ustc.edu.cn/elpa/melpa/")
-                         ("nongnu-cn" . "https://mirrors.ustc.edu.cn/elpa/nongnu/")))
-
-;; Initialize the package system
-(package-initialize) ;; seem not connect to net
-
-(defvar my-lost-pkgs '("item1" "item2" "item3")
-  "A documentation string explaining what this list is for.")
-
-(if (not (package-installed-p 'treemacs))
-    (add-to-list 'my-lost-pkgs 'treemacs))
 
 (defun myset-user-config-langs ()
     (setq history-length 100)

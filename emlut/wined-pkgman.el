@@ -67,6 +67,41 @@
     (setq my-package-total-count total
           my-package-cached-packages (nreverse my-package-cached-packages))))
 
+
+;; ---------------------------------------------------------------------
+;; 窗口拖动功能
+;; ---------------------------------------------------------------------
+(defvar my-package-drag-start nil
+  "拖动开始时记录的框架位置和鼠标位置，格式为 (frame-left frame-top mouse-x mouse-y)。")
+
+(defun my-package-start-drag (event)
+  "开始拖动窗口，记录初始位置并进入拖动循环。"
+  (interactive "e")
+  (let* ((frame my-package-frame)
+         (frame-pos (frame-position frame))
+         (mouse-pos (mouse-pixel-position))
+         (mouse-x (cadr mouse-pos))
+         (mouse-y (cddr mouse-pos)))
+    (setq my-package-drag-start (list (car frame-pos) (cdr frame-pos) mouse-x mouse-y))
+    (track-mouse
+      (while (not (mouse-movement-p (setq event (read-event))))
+        (when (mouse-movement-p event)
+          (let* ((new-mouse-pos (mouse-pixel-position))
+                 (new-mouse-x (cadr new-mouse-pos))
+                 (new-mouse-y (cddr new-mouse-pos))
+                 (dx (- new-mouse-x (nth 2 my-package-drag-start)))
+                 (dy (- new-mouse-y (nth 3 my-package-drag-start)))
+                 (new-x (+ (nth 0 my-package-drag-start) dx))
+                 (new-y (+ (nth 1 my-package-drag-start) dy)))
+            (set-frame-position frame new-x new-y)))))))
+
+
+;; 拖动手柄的 keymap
+(defvar my-package-drag-map
+  (let ((map (make-sparse-keymap)))
+    (define-key map [header-line down-mouse-1] 'my-package-start-drag)
+    map))
+
 ;; ---------------------------------------------------------------------
 ;; 辅助函数：创建带点击属性的按钮字符串（使用 keymap）
 ;; ---------------------------------------------------------------------
@@ -88,7 +123,7 @@
     (let ((search-part
            (if my-package-current-filter
                (concat (my-package-make-button "🔍 搜索" 'my-package-search
-                                               "点击修改搜索条件")
+                                               "点击修改搜索条件 C-f")
                        " "
                        (propertize (concat "[" my-package-current-filter "]")
                                    'face 'bold)
@@ -96,9 +131,11 @@
                        (my-package-make-button "✕" 'my-package-clear-search
                                                "清除搜索过滤"))
              (my-package-make-button "🔍 搜索" 'my-package-search
-                                     "点击输入搜索词"))))
+                                     "点击输入搜索词 C-f"))))
       (setq header-line-format
             (list " "
+		  ;; 拖动手柄（左侧）
+                  (propertize "≡ " 'local-map my-package-drag-map 'mouse-face 'highlight)
                   ;; 当前源名称
                   (propertize (format "[%s]" my-package-current-source-name)
                               'face 'bold)
@@ -195,7 +232,7 @@
              (name . "Package Manager")
              (visibility . t)
              (user-position . t)
-             (keep-ratio . t)
+             ;; (keep-ratio . t)
              (no-accept-focus . nil)
              (no-focus-on-map . nil))))
     (select-frame my-package-frame)
@@ -204,7 +241,13 @@
     ;; 设置 buffer 为只读，防止意外编辑
     (setq buffer-read-only t)
     (setq mode-line-format nil)
-    (my-package-set-header-line)))
+    (setq cursor-type nil)
+    (my-package-set-header-line)
+    ;; 添加键盘绑定：按 ESC 关闭窗口
+    (use-local-map
+     (let ((map (make-sparse-keymap)))
+       (define-key map (kbd "<escape>") 'my-package-close)
+       map))))
 
 ;; ---------------------------------------------------------------------
 ;; 刷新包列表（重新生成 buffer 内容并更新统计）
@@ -245,7 +288,7 @@
                      ('upgradable upgradable)))
           (cl-incf count)
           (when inst (cl-incf installed))
-          (insert (format "%-25s %-12s" name version))
+          (insert (format "%-25s %-12s %-8s" name version ""))
           (cond (inst
                  (insert-text-button "删除"
                                      'action `(lambda (_) (my-package-delete ',pkg-sym))
