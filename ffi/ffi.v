@@ -1,6 +1,7 @@
 module ffi
 
 import log
+import math
 
 // error: Cannot find "libffi" pkgconfig file
 // #pkgconfig linux libffi
@@ -265,10 +266,12 @@ pub fn callfca6[T](sym voidptr, args ...Anyer) T {
 	mut argotys := unsafe { [16]voidptr{} }
 	mut argvals := unsafe { [16]voidptr{} }
 	mut argadrs := unsafe { [16]voidptr{} }
+	mut argitfs := unsafe { [16]&Itfacein{} }
 
 	for i, arg in args {
 		mut fficty := ffity_ofany(arg)
 		argctys[i] = fficty
+        argitfs[i] = &Itfacein(&args[i])
 	}
 
 	for idx in 0..args.len {
@@ -452,11 +455,14 @@ pub fn ffity_ofany(arg Anyer) int {
 pub struct Itfacein {
 pub mut:
 	ptr voidptr // union with valptrs
-	typ int     // kind or index??? index in current interface, not global
+	itfidx int     // kind or index??? index in current interface, not global
 }
 
 // return ffi data
 pub fn get_anyer_data(arg Anyer) voidptr {
     ptr := unsafe { &Itfacein(voidptr(&arg)) }
+    if arg is string {
+        return arg.str
+    }
     return ptr.ptr
 }

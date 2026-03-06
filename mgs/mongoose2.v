@@ -4,6 +4,7 @@ import vcp
 
 // binding version: 7.20-202601, without extra build args
 // gcc -shared -g -O2 -fPIC -DMG_ENABLE_DIRECTORY_LISTING=1 mongoose.c -o libmongoose.so
+// gcc -m32 -shared -g -O2 -fPIC -DMG_ENABLE_DIRECTORY_LISTING=1 mongoose.c -o libmongoose.so
 // static version: vcpkg install mongoose
 #flag -lmongoose
 #include <mongoose.h>
@@ -97,7 +98,7 @@ pub fn Mgr.new() &Mgr {
 }
 
 fn C.mg_mgr_free(...voidptr)
-pub fn (r &Mgr) free() { C.mg_mgr_free(&r) }
+pub fn (r &Mgr) freeit() { C.mg_mgr_free(&r) }
 
 fn C.mg_http_listen(...voidptr) &Conn
 fn C.mg_listen(...voidptr) &Conn
@@ -106,7 +107,9 @@ pub type RawFunc = fn(c &Conn, ev Ev, evdata voidptr)
 
 // addr http://ip:port/
 pub fn (r &Mgr) http_listen(url string, evproc RawFunc, cbval voidptr) &Conn {
-    c := C.mg_http_listen(r, url.str, voidptr(evproc), cbval)
+    x := C.strdup(url.str) // x32
+    c := C.mg_http_listen(r, x, voidptr(evproc), cbval)
+    C.free(x)
     return c
 }
 

@@ -8,7 +8,10 @@ module bdb
 
 // key, value string saved with null
 
+// x32 on x64 build:
+// ./dist/configure --prefix=/opt/devsys32 CFLAGS="-m32" LDFLAGS="-m32" CC=clang
 // write for v6.2
+// main major versions, 4.8, 5.3.28, 6.2
 
 pub type ENV = C.DB_ENV
 @[typedef]
@@ -98,7 +101,7 @@ pub fn DB.create(env &ENV, flags u32) &DB {
 }
 const use_v_alloc = false
 fn v_mem_free(p voidptr) {
-    $if gcboehm ? {} $else { free() }
+    $if gcboehm ? {} $else { C.GC_free(p) }
 }
 
 fn C.db_env_create(...voidptr) int

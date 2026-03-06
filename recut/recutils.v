@@ -6,7 +6,7 @@ import vcp.rtld
 import vcp.ircpp
 import touse.ffi
 
-
+// x32 build: ./configure --prefix=/opt/devsys32 CFLAGS="-m32" LDFLAGS="-m32"
 // #include <rec.h>
 
 pub const version_major = 1

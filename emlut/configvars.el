@@ -242,6 +242,7 @@
 	  (display-line-numbers-mode -1)
 	  (with-current-buffer (window-buffer (selected-window))
 	    (tab-line-mode -1)
+	    (setq treemacs-is-never-other-window t)
 	    (setq mode-line-format nil))
 	  (next-window-any-frame))
       (add-to-list 'my-lost-pkgs 'treemacs)
@@ -250,6 +251,7 @@
 
     (if (package-installed-p 'lsp-treemacs)
         (progn
+          (setq lsp-treemacs-header-format nil)
 	  (lsp-treemacs-symbols)
 	  (display-line-numbers-mode -1)
 	  (with-current-buffer (window-buffer (selected-window))

@@ -97,6 +97,24 @@
 
 ;; (my-find-window-by-buffer-name "Treemacs-Buffer-")
 
+; support open file:line[:colum] for emacsclient
+; Source - https://stackoverflow.com/a/23857738
+; Posted by user3674075
+; Retrieved 2026-03-06, License - CC BY-SA 3.0
+(defadvice server-visit-files (before parse-numbers-in-lines (files proc &optional nowait) activate)
+  "looks for filenames like file:line or file:line:position and reparses name in such manner that position in file"
+  (ad-set-arg 0
+              (mapcar (lambda (fn)
+                        (let ((name (car fn)))
+                          (if (string-match "^\\(.*?\\):\\([0-9]+\\)\\(?::\\([0-9]+\\)\\)?$" name)
+                              (cons
+                               (match-string 1 name)
+                               (cons (string-to-number (match-string 2 name))
+                                     (string-to-number (or (match-string 3 name) "")))
+                               )
+                            fn))) files))
+  )
+
 
 ;; two step init/config logic
 ;
