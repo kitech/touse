@@ -213,26 +213,25 @@
     (global-display-line-numbers-mode 1) ; emacs 26+
     (customize-set-variable 'window-min-height
 			    window-safe-min-height)
+    (setq require-final-newline nil)
+    (add-hook 'before-save-hook 'delete-trailing-whitespace)
+
     ;; ctrl + Mouse-1 = goto define
     )
 
 ;; hook funcs
 (defun myon-window-setup1 ()
     (interactive)
-    (message "hehehhehehe1")
-
 )
 
 (defun myon-window-setup2 ()
     (interactive)
-    (message "hehehhehehe2"))
+    )
 
 (defun myon-window-setup3 ()
     (interactive)
-    (message "hehehhehehe3")
     (myset-user-config-langs)
-    (message "heheh leave")
-    
+
     ;; so put at function end
     ;; treemacs--expand-root-node: No file notification package available
     (require 'filenotify)
@@ -246,7 +245,7 @@
 	    (setq mode-line-format nil))
 	  (next-window-any-frame))
       (add-to-list 'my-lost-pkgs 'treemacs)
-      (message "need install package 'treemacs")      
+      (message "need install package 'treemacs")
       )
 
     (if (package-installed-p 'lsp-treemacs)
@@ -265,17 +264,24 @@
       )
 
     (my-side-ctrlbar-init)
-    (treemacs-toggle-fixed-width) ;; let left resizable    
+    (treemacs-toggle-fixed-width) ;; let left resizable
     )
 
 (defun myon-window-setup4 ()
     (interactive)
-    (message "hehehhehehe4"))
+    )
 
 (add-hook 'after-init-hook 'myon-window-setup1)
 (add-hook 'emacs-startup-hook 'myon-window-setup2)
 (add-hook 'window-setup-hook 'myon-window-setup3)
 (add-hook 'minibuffer-with-setup-hook 'myon-window-setup4)
+
+(if (package-installed-p 'company)
+    (progn
+      (add-hook 'prog-mode-hook #'company-mode)
+      (add-hook 'text-mode-hook #'company-mode)
+      (add-hook 'latex-mode-hook #'company-mode)
+      ))
 
 ;;; 据说不维护了
 (if (package-installed-p 'git-gutter)
@@ -334,7 +340,7 @@
 (defvar my-emloc-zhdir "")
 (setq my-emloc-zhdir
       (format "/usr/share/emacs/%s/site-lisp/zh_CN/locale-zh" (my-emver)))
-(defun my-load-loczh ()      
+(defun my-load-loczh ()
   (add-to-list 'load-path my-emloc-zhdir)
   (add-to-list 'load-path (format "/usr/share/emacs/%s/site-lisp" (my-emver)))
   ;; (require 'menu-bar)
@@ -346,6 +352,3 @@
 (if (file-exists-p my-emloc-zhdir)
     (add-hook 'window-setup-hook 'my-load-loczh)
   (message (format "dir not exist %s" my-emloc-zhdir)))
-
-
-
