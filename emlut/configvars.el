@@ -48,7 +48,21 @@
 
 (setq custom-file (expand-file-name "custom.el" user-emacs-directory))
 
-(set-frame-font "Source Code Pro 12" nil t)
+(defun my/set-frame-font (ftname ftsize)
+  (if (member ftname (font-family-list))
+      (progn
+	(set-frame-font (format "%s %d" ftname ftsize) nil t)
+	(set-face-attribute 'default nil :family
+			    (format "%s %d" ftname ftsize)))
+    (message (format "font not found %s"))
+    )
+  )
+(my/set-frame-font "Source Code Pro" 12)
+;; (setq debug-on-error t)
+(setq debug-on-message "foreground")
+(setq debug-on-message nil)
+;; Invalid face attribute: foreground nil
+
 ;; Older versions of Emacs 23.1
 ;; (set-default-font "Source Code Pro 13" nil t)
 (custom-set-faces
@@ -61,6 +75,7 @@
  ;; set colors for string literals
  '(font-lock-string-face ((t (:foreground "#CC9393"))))
 )
+
 
 ;; menu-bar and tool-bar and tab-line theme
 (set-face-attribute 'menu nil :background "#1C1C1C" :foreground "#DCDCCC" :bold t)
@@ -76,6 +91,8 @@
 		    :background "#000099" :foreground "#DCDCCC" :bold t
 		    :box '(:line-width (1 . 1) :color "gray10" :style pressed-button))
 ;; (set-face-attribute 'tab-line nil :background "gray40" :foreground "gray60")
+
+
 
 (use-package popup
   :ensure t
@@ -283,6 +300,13 @@
       (add-hook 'latex-mode-hook #'company-mode)
       ))
 
+(if (package-installed-p 'cua)
+    (progn
+      (add-hook 'prog-mode-hook #'cua-mode)
+      (add-hook 'text-mode-hook #'cua-mode)
+      (add-hook 'latex-mode-hook #'cua-mode)
+      ))
+
 ;;; 据说不维护了
 (if (package-installed-p 'git-gutter)
     (global-git-gutter-mode +1)
@@ -336,6 +360,7 @@
 ;; emacs-locale menu/message i18n
 ;; https://sourceforge.net/projects/emacslocale/
 ;; GNU Emacs 30.2 (build 6, x86_64-pc-linux-gnu, X toolkit)
+;; return 30.2 part
 (defun my-emver ()  (nth 2 (string-split (emacs-version))))
 (defvar my-emloc-zhdir "")
 (setq my-emloc-zhdir
@@ -344,9 +369,12 @@
   (add-to-list 'load-path my-emloc-zhdir)
   (add-to-list 'load-path (format "/usr/share/emacs/%s/site-lisp" (my-emver)))
   ;; (require 'menu-bar)
-  (load-file
+  (run-with-idle-timer 2 nil 'load-file
    (format "/etc/emacs/site-start.d/86_emacs%s_locale-zh-cn.el" (my-emver)))
   )
+;; this load need 2-3s so slow so
+;; use run-with-idle-timer to ensure core setup finish
+;; and basic editor visible then load it
 
 ;; (message (format "%s" (my-emver)))
 (if (file-exists-p my-emloc-zhdir)

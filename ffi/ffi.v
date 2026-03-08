@@ -6,14 +6,21 @@ import log
 // #pkgconfig linux libffi
 #flag -DFFI_GO_CLOSURES=1
 #flag -lffi
-// #flag darwin  -lffi-trampolines //
 
-#flag darwin -I/Library/Developer/CommandLineTools/SDKs/MacOSX11.sdk/usr/include/ffi
-// for github CI
-#flag darwin -L $env('HOME')/vcpkg/installed/arm64-osx/lib
-#flag darwin -I $env('HOME')/vcpkg/installed/arm64-osx/include
-#flag -L $env('HOME')/.nix-profile/lib -Wl,-rpath,$env('HOME')/.nix-profile/lib
-#flag -I $env('HOME')/.nix-profile/include
+$if macos {
+    // #flag darwin  -lffi-trampolines //
+    #flag -I/Library/Developer/CommandLineTools/SDKs/MacOSX11.sdk/usr/include/ffi
+    #flag -L $env('HOME')/.nix-profile/lib -Wl,-rpath,$env('HOME')/.nix-profile/lib
+    #flag -I $env('HOME')/.nix-profile/include
+
+    // for github CI
+    #flag -L $env('HOME')/vcpkg/installed/arm64-osx/lib
+    #flag -I $env('HOME')/vcpkg/installed/arm64-osx/include
+
+} $else $if android {
+    #flag -I /opt/devsys-arm64/include
+    #flag -L /opt/devsys-arm64/lib64
+}
 
 // #include "@DIR/ffiv.h"
 #include <ffi.h>
@@ -114,6 +121,8 @@ pub fn get_type_obj2(ty int) &Type {
 		ctype_int { tyobj = type_sint32 }
 		ctype_sint16 { tyobj = type_sint16 }
 		ctype_uint16 { tyobj = type_uint16 }
+		ctype_sint32 { tyobj = type_sint32 }
+		ctype_uint32 { tyobj = type_uint32 }
 		ctype_sint64 { tyobj = type_sint64 }
 		ctype_uint64 { tyobj = type_uint64 }
 		ctype_float { tyobj = type_float }

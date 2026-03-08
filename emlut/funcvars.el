@@ -116,6 +116,35 @@
   )
 
 
+
+;; (set-all-faces "red")
+(defun set-all-faces (fg &optional bg weight)
+  (let ((backg (or bg     "black"))
+        (wght  (or weight 'normal))
+        (faces) )
+    (mapatoms (lambda (s)
+                (when (facep s)
+                  (push (symbol-name s) faces) )))
+    (dolist (f faces)
+      (set-face-attribute (intern f) nil
+                          :foreground fg)
+                          :background backg
+                          :weight     wght
+                          :italic     nil) ))
+
+(defun list-all-faces (&optional bg weight)
+  (let ((backg (or bg     "black"))
+        (wght  (or weight 'normal))
+        (faces) )
+    (mapatoms (lambda (s)
+                (when (facep s)
+                  (push (symbol-name s) faces) )))
+    (dolist (f faces)
+      (message (format "%s %s" f (face-attribute (intern f) :foreground)))
+      )))
+;; (list-all-faces)
+;; (face-attribute 'mode-line :foreground)
+
 ;; two step init/config logic
 ;
 ;; check package installed
@@ -126,4 +155,3 @@
 ;
 ; when init complete, check install list and install
 ; then, init/config newly installed package
-

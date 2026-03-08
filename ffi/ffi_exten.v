@@ -94,6 +94,7 @@ pub fn callfca6[T](sym voidptr, args ...Anyer) T {
 	        assert argotys[idx]==type_pointer
 			argadrs[idx] = get_anyer_data(args[idx])
 			argvals[idx] = &argadrs[idx]
+            assert false // seem not reachable cond branch
 		}else{
 		    argvals[idx] = get_anyer_data(args[idx])
 		}
