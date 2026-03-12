@@ -169,7 +169,6 @@ pub fn (s Socket) accept() !Socket {
     addr := Address{}
     res := C.tcs_accept(s, &sock, &addr)
     assert res == 0, errmsg()
-    dump(sock)
     return sock
 }
 

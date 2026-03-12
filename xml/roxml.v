@@ -50,7 +50,7 @@ pub enum NodeType {
     attr = C.ROXML_ATTR_NODE
     cmt = C.ROXML_CMT_NODE
     txt = C.ROXML_TXT_NODE
-    ns = C.ROXML_NS_NODE 
+    ns = C.ROXML_NS_NODE
 }
 
 pub union Retval {
@@ -58,11 +58,17 @@ pub union Retval {
     node &Node = vnil
 }
 
+// Anyer cannot store `&Node`, only get `Node`
 fn function_missing(fnname string, args ...Anyer) Retval {
     if !fnname.starts_with('roxml_') {
         vcp.warn('invalid fnname, must prefix roxml_', fnname)
     }
     // vcp.info(fnname, args.str())
+    for idx, arg in args {
+        if arg is &Node {
+            args[idx] = Anyer(args[idx].data())
+        }
+    }
     return ffi.callany[Retval](fnname, ...args)
 }
 
@@ -85,7 +91,7 @@ pub fn (node &Node) commit_buffer() string {
     buf := charptr(vnil)
     len := roxml_commit_buffer(node, voidptr(&buf), 1).int
     // vcp.info(len, buf.tosref())
-    
+
     return buf.tosfree()
 }
 
@@ -104,7 +110,7 @@ pub fn (node &Node) add(typ NodeType, name string, value string) &Node {
 }
 pub fn Node.new_root(name string) &Node {
     rv := roxml_add_node(vnil, 0, int(NodeType.elm), charptr(name.str), charptr(vnil)).node
-    return rv    
+    return rv
 }
 
 pub fn (node &Node) del() {

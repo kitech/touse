@@ -32,9 +32,18 @@
 (add-hook 'window-configuration-change-hook 'update-scroll-bars)
 (add-hook 'buffer-list-update-hook 'update-scroll-bars)
 
+(defun my-socket-valid-p (socket-path)
+  "Check if SOCKET-PATH exists and is a unix socket."
+  (and (file-exists-p socket-path)
+       (string= (file-attribute-type (file-attributes socket-path)) "socket")))
+
 (defun my-server-start ()
+  (interactive)
   (require 'server)
   (message server-socket-dir)
+  (if (not (my-socket-valid-p (concat server-socket-dir "/server")))
+      (rename-file (concat server-socket-dir "/server")
+		   (concat server-socket-dir "/server.bak") t))
   (if (file-exists-p (concat server-socket-dir "/server"))
       (progn
 	(message "File %s already exists" server-socket-dir)

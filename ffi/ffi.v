@@ -18,7 +18,7 @@ $if macos {
     #flag -I $env('HOME')/vcpkg/installed/arm64-osx/include
 
 } $else $if android {
-    #flag -I /opt/devsys-arm64/include
+    #flag -I /opt/devsys-arm64/include/../include
     #flag -L /opt/devsys-arm64/lib64
 }
 
