@@ -108,7 +108,7 @@
   (set-fontset-font
     t 'symbol (font-spec :family "Segoe UI Emoji") nil 'prepend))
 
-(setq initial-frame-alist '((top . 0) (left . 90) (width . 120) (height . 33)))
+(setq initial-frame-alist '((top . 0) (left . 80) (width . 126) (height . 33)))
 ; (add-to-list 'initial-frame-alist '(fullscreen . maximized))
 
 ;;;;;;;;;
@@ -325,7 +325,7 @@
 (if (package-installed-p 'minimap)
     (use-package minimap
       :init (setq minimap-width-fraction 0.10
-		  minimap-minimum-width 10
+		  minimap-minimum-width 8
 		  minimap-window-location 'right)
       :hook (after-init . minimap-mode))
   (add-to-list 'my-lost-pkgs 'minimap)

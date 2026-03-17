@@ -28,6 +28,8 @@
 
 #include "mdns.h"
 
+#define NI_MAXHOST 256
+#define NI_MAXSERV 256
 
 // Data for our service including the mDNS records
 typedef struct {

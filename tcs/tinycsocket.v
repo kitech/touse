@@ -2,6 +2,8 @@ module tcs
 
 import strconv
 
+// note: tinycsocket.h ~1/4 unimpl empty funcs
+// hotfix note: .h:5928:+ if (str[i] == 0) break;
 #flag -DTINYCSOCKET_IMPLEMENTATION
 #include "@DIR/tinycsocket.h"
 #include <assert.h>
@@ -176,7 +178,7 @@ pub fn (s Socket) accept() !Socket {
 pub struct ReadArg {
     pub:
     n   int
-    sep string
+    sep string // current only use first char
     timeoutms int
 }
 

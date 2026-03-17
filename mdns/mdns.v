@@ -272,7 +272,7 @@ fn C.htons(voidptr) u16
 // udp4://*:5353 for multicast service
 fn socket_open_service() int {
     addr := C.sockaddr_in{}
-    addr.sin_family = u16(C.AF_INET)
+    addr.sin_family = u8(C.AF_INET)
     addr.sin_port = C.htons(5353)
 
     sock := C.mdns_socket_open_ipv4(&addr) // nonblocing

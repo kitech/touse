@@ -24,6 +24,10 @@ pub struct MemoryInfo {
     errmsg [256]i8 // char error_msg[256];                 // 错误信息
 }
 
+pub fn (i MemoryInfo) str1() string {
+    return 'MemoryInfo{res: ${i.res} virt: ${i.virt} shrd: ${i.shrd}}'
+}
+
 // @[importc: "psutil_get_process_memory"]
 // pub fn process_memory(pid int) MemoryInfo
 
