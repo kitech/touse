@@ -94,3 +94,19 @@ echo ""
 echo "=========================================="
 echo "  测试完成"
 echo "=========================================="
+
+# 编译 C++ 测试（可选）
+if [ "$1" = "--cpp" ] || [ "$2" = "--cpp" ]; then
+    echo ""
+    echo "=========================================="
+    echo "  编译 C++ 测试"
+    echo "=========================================="
+    g++ -Wall -Wextra -I./src -O1 -std=c++17 -o misskey_cpp_test src/test_cpp.cpp libmisskey.a -lcurl
+    if [ $? -eq 0 ]; then
+        echo "C++ 编译成功!"
+        echo ""
+        echo "运行: LD_LIBRARY_PATH=. ./misskey_cpp_test $HOST $TOKEN"
+    else
+        echo "C++ 编译失败"
+    fi
+fi

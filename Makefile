@@ -1,7 +1,7 @@
 CC = gcc
 CXX = g++
 CFLAGS = -Wall -Wextra -I./src -O2
-CXXFLAGS = -Wall -Wextra -I./src -O2 -std=c++17
+CXXFLAGS = -Wall -Wextra -I./src -O1 -std=c++17
 LDFLAGS = -lcurl
 TARGET = misskey_example
 CPP_TARGET = misskey_cpp_test

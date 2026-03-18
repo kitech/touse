@@ -147,7 +147,7 @@ misskey/
 
 ### 编译
 ```bash
-make cpp
+make cpp    # 使用 -O1 优化编译
 ```
 
 ### 测试命令
