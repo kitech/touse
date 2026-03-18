@@ -16,11 +16,14 @@ misskey-client/
 ├── Makefile
 ├── README.md
 ├── README_en.md        # This file
+├── mock_server.py      # Mock server for testing
+├── test_api.sh        # API test script
+├── misskey_example    # Compiled example
 └── src/
     ├── misskey_client.h    # API header
     ├── misskey_client.c    # Core implementation
     ├── examples.c          # Usage examples
-    └── cJSON/             # JSON parser library
+    └── cJSON/           # JSON parser library
         ├── cJSON.h
         └── cJSON.c
 ```
@@ -30,6 +33,32 @@ misskey-client/
 ```bash
 make
 ```
+
+## Mock Server
+
+A local mock server is provided for testing without a real Misskey instance.
+
+### Start Mock Server
+
+```bash
+/opt/pyenv/bin/python mock_server.py
+```
+
+The mock server listens on `http://localhost:3000` with default token `test_token_12345`.
+
+### API Test Script
+
+```bash
+# Test all APIs
+./test_api.sh localhost:3000 test_token_12345
+
+# Test against real server
+./test_api.sh misskey.io YOUR_TOKEN
+```
+
+The script auto-detects:
+- localhost/127.0.0.1 uses HTTP
+- Others use HTTPS
 
 ## Run
 
@@ -216,7 +245,13 @@ const char* msg = misskey_error_str(err);
 ## Dependencies
 
 - libcurl
-- cJSON (included)
+- Python 3 + Flask (for mock server only)
+
+### Python Dependencies
+
+```bash
+/opt/pyenv/bin/pip install flask
+```
 
 ## Getting Token
 

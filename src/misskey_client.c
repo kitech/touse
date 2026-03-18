@@ -158,7 +158,14 @@ MisskeyError misskey_request(MisskeyClient* client, const char* endpoint,
     }
     
     char url[512];
-    snprintf(url, sizeof(url), "https://%s/api/%s", client->host, endpoint);
+    int use_https = 1;
+    if (strncmp(client->host, "localhost", 9) == 0 || 
+        strncmp(client->host, "127.0.0.1", 9) == 0 ||
+        strstr(client->host, "localhost:") != NULL) {
+        use_https = 0;
+    }
+    snprintf(url, sizeof(url), "%s://%s/api/%s", 
+             use_https ? "https" : "http", client->host, endpoint);
     
     struct curl_slist* headers = NULL;
     headers = curl_slist_append(headers, "Content-Type: application/json");
@@ -184,7 +191,11 @@ MisskeyError misskey_request(MisskeyClient* client, const char* endpoint,
     curl_easy_setopt(client->curl, CURLOPT_WRITEFUNCTION, write_callback);
     curl_easy_setopt(client->curl, CURLOPT_WRITEDATA, &wd);
     curl_easy_setopt(client->curl, CURLOPT_TIMEOUT, client->timeout);
-    curl_easy_setopt(client->curl, CURLOPT_SSL_VERIFYPEER, 1L);
+    if (use_https) {
+        curl_easy_setopt(client->curl, CURLOPT_SSL_VERIFYPEER, 1L);
+    } else {
+        curl_easy_setopt(client->curl, CURLOPT_SSL_VERIFYPEER, 0L);
+    }
     
     CURLcode res = curl_easy_perform(client->curl);
     

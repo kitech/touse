@@ -15,11 +15,15 @@
 misskey-client/
 ├── Makefile
 ├── README.md
+├── README_en.md
+├── mock_server.py      # Mock服务器
+├── test_api.sh         # API测试脚本
+├── misskey_example     # 编译后的示例
 └── src/
     ├── misskey_client.h      # API头文件
     ├── misskey_client.c       # 核心实现
     ├── examples.c             # 使用示例
-    └── cJSON/                # JSON解析库
+    └── cJSON/               # JSON解析库
         ├── cJSON.h
         └── cJSON.c
 ```
@@ -29,6 +33,32 @@ misskey-client/
 ```bash
 make
 ```
+
+## Mock服务器
+
+提供了本地Mock服务器用于测试，无需真实Misskey实例。
+
+### 启动Mock服务器
+
+```bash
+/opt/pyenv/bin/python mock_server.py
+```
+
+Mock服务器会监听 `http://localhost:3000`，默认Token为 `test_token_12345`。
+
+### API测试脚本
+
+```bash
+# 测试所有API
+./test_api.sh localhost:3000 test_token_12345
+
+# 测试真实服务器
+./test_api.sh misskey.io YOUR_TOKEN
+```
+
+测试脚本会自动检测：
+- localhost/127.0.0.1 使用 HTTP
+- 其他使用 HTTPS
 
 ## 运行
 
@@ -215,7 +245,13 @@ const char* msg = misskey_error_str(err);
 ## 依赖
 
 - libcurl
-- cJSON (已包含)
+- Python 3 + Flask (仅用于Mock服务器)
+
+### Python依赖安装
+
+```bash
+/opt/pyenv/bin/pip install flask
+```
 
 ## 获取Token
 

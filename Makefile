@@ -23,15 +23,29 @@ run: $(TARGET)
 run-tracked: $(TARGET)
 	./$(TARGET) $(HOST) $(TOKEN) --track-alloc
 
+mock-server:
+	/opt/pyenv/bin/python mock_server.py
+
+mock-test: $(TARGET)
+	@echo "Starting mock server..."
+	@/opt/pyenv/bin/python mock_server.py &
+	@sleep 2
+	@echo "Running tests..."
+	@./$(TARGET) localhost:3000 $(TOKEN)
+	@pkill -f mock_server.py
+
 help:
-	@echo "Misskey C Client Example"
+	@echo "Misskey C Client"
 	@echo ""
 	@echo "Usage:"
-	@echo "  make all            - Build the example"
-	@echo "  make clean          - Remove build artifacts"
+	@echo "  make all             - Build the example"
+	@echo "  make clean           - Remove build artifacts"
 	@echo "  make run HOST=<host> TOKEN=<token> - Run with default allocator"
 	@echo "  make run-tracked HOST=<host> TOKEN=<token> - Run with memory tracking"
+	@echo "  make mock-server     - Start mock server (requires flask)"
+	@echo "  make mock-test TOKEN=<token> - Run tests against mock server"
 	@echo ""
 	@echo "Examples:"
 	@echo "  make run HOST=misskey.io TOKEN=your_token"
 	@echo "  make run-tracked HOST=misskey.io TOKEN=your_token"
+	@echo "  make mock-test TOKEN=test_token_12345"
