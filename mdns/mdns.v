@@ -144,7 +144,8 @@ pub fn listen(opt ListenOpt) int {
                 btime = time.now()
                 rvi := C.mdns_announce_multicast(sock, buf.data, buf.len, rec, nil, 0, nil, 0)
                 // dump('mdns br $rvi')
-                if C.errno == C.ENETUNREACH {
+                // 101, 50
+                if C.errno == C.ENETUNREACH || C.errno == C.ENETDOWN {
                     log.warn(errmsg())
                 } else {
                     assert rvi == 0, errmsg()
