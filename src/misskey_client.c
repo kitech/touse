@@ -5,6 +5,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#define MISSKEY_CURL_VERSION_7_55_0 (LIBCURL_VERSION_NUM >= 0x073700)
+
 static MisskeyAllocator g_global_allocator = {
     .malloc_fn = malloc,
     .realloc_fn = realloc,
@@ -614,4 +616,160 @@ MisskeyError misskey_translate(MisskeyClient* client, const char* text,
     free(json_str);
     cJSON_Delete(root);
     return err;
+}
+
+static size_t write_to_file_cb(void* contents, size_t size, size_t nmemb, void* userp) {
+    size_t realsize = size * nmemb;
+    FILE* fp = (FILE*)userp;
+    if (fp) {
+        return fwrite(contents, size, nmemb, fp);
+    }
+    return realsize;
+}
+
+static size_t write_to_buffer_cb(void* contents, size_t size, size_t nmemb, void* userp) {
+    size_t realsize = size * nmemb;
+    MisskeyBuffer* buf = (MisskeyBuffer*)userp;
+    if (!buf) return 0;
+    
+    if (buf->data == NULL) {
+        buf->capacity = realsize > 4096 ? realsize : 4096;
+        buf->data = malloc(buf->capacity);
+        if (!buf->data) return 0;
+        buf->size = 0;
+    }
+    
+    while (buf->size + realsize > buf->capacity) {
+        buf->capacity *= 2;
+        void* new_data = realloc(buf->data, buf->capacity);
+        if (!new_data) return 0;
+        buf->data = new_data;
+    }
+    
+    memcpy((char*)buf->data + buf->size, contents, realsize);
+    buf->size += realsize;
+    return realsize;
+}
+
+static size_t write_to_callback_cb(void* contents, size_t size, size_t nmemb, void* userp) {
+    size_t realsize = size * nmemb;
+    MisskeyDownloadOptions* opts = (MisskeyDownloadOptions*)userp;
+    if (opts && opts->write_cb) {
+        return opts->write_cb(contents, size, nmemb, opts->write_userdata);
+    }
+    return realsize;
+}
+
+MisskeyError misskey_drive_files_download(MisskeyClient* client, const char* file_id,
+                                          const MisskeyDownloadOptions* options,
+                                          long* http_code_out, long* content_length_out) {
+    if (!options || !options->url) {
+        if (!file_id) return MISSKEY_ERROR_INVALID_PARAM;
+        
+        char* file_info = NULL;
+        MisskeyError err = misskey_drive_files_show(client, file_id, NULL, &file_info);
+        if (err != MISSKEY_OK) return err;
+        
+        cJSON* json = cJSON_Parse(file_info);
+        misskey_free_string(client, file_info);
+        
+        if (!json) return MISSKEY_ERROR_JSON;
+        
+        cJSON* url_item = cJSON_GetObjectItem(json, "url");
+        if (!cJSON_IsString(url_item) || !url_item->valuestring) {
+            cJSON_Delete(json);
+            return MISSKEY_ERROR_INVALID_PARAM;
+        }
+        
+        MisskeyDownloadOptions opts_copy = *options;
+        opts_copy.url = url_item->valuestring;
+        MisskeyError result = misskey_drive_files_download(client, NULL, &opts_copy, http_code_out, content_length_out);
+        cJSON_Delete(json);
+        return result;
+    }
+    
+    curl_ensure_init();
+    CURL* curl = curl_easy_init();
+    if (!curl) return MISSKEY_ERROR_NETWORK;
+    
+    FILE* fp = NULL;
+    if (options->output_path) {
+        const char* mode = options->resume_from > 0 ? "ab" : "wb";
+        fp = fopen(options->output_path, mode);
+        if (!fp) {
+            curl_easy_cleanup(curl);
+            return MISSKEY_ERROR_INVALID_PARAM;
+        }
+    }
+    
+    MisskeyBuffer buffer = {0};
+    MisskeyBuffer* buf_ptr = NULL;
+    if (!fp && !options->write_cb) {
+        buf_ptr = &buffer;
+    }
+    
+    curl_easy_setopt(curl, CURLOPT_URL, options->url);
+    curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, options->follow_redirects ? 1L : 0L);
+    curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 1L);
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT, client->timeout > 0 ? client->timeout : 300L);
+    
+    if (options->resume_from > 0) {
+        curl_easy_setopt(curl, CURLOPT_RESUME_FROM_LARGE, (curl_off_t)options->resume_from);
+    }
+    
+    if (fp) {
+        curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_to_file_cb);
+        curl_easy_setopt(curl, CURLOPT_WRITEDATA, fp);
+    } else if (buf_ptr) {
+        curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_to_buffer_cb);
+        curl_easy_setopt(curl, CURLOPT_WRITEDATA, buf_ptr);
+    } else if (options->write_cb) {
+        curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_to_callback_cb);
+        curl_easy_setopt(curl, CURLOPT_WRITEDATA, (void*)options);
+    }
+    
+    CURLcode res = curl_easy_perform(curl);
+    
+    long http_code = 0;
+    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code);
+    
+    if (http_code_out) *http_code_out = http_code;
+    
+    curl_off_t content_length = 0;
+#if MISSKEY_CURL_VERSION_7_55_0
+    curl_easy_getinfo(curl, CURLINFO_CONTENT_LENGTH_DOWNLOAD_T, &content_length);
+#else
+    double content_length_old = 0;
+    curl_easy_getinfo(curl, CURLINFO_CONTENT_LENGTH_DOWNLOAD, &content_length_old);
+    content_length = (curl_off_t)content_length_old;
+#endif
+    if (content_length_out) *content_length_out = (long)content_length;
+    
+    if (fp) fclose(fp);
+    
+    if (buffer.data) {
+        if (options && (void*)options != (void*)&buffer) {
+            void* user_data = ((MisskeyDownloadOptions*)options)->write_userdata;
+            MisskeyDownloadOptions* opts = (MisskeyDownloadOptions*)options;
+            if (opts->write_cb) {
+                opts->write_cb(buffer.data, 1, buffer.size, user_data);
+            }
+        }
+        free(buffer.data);
+    }
+    
+    curl_easy_cleanup(curl);
+    
+    if (res != CURLE_OK) {
+        if (res == CURLE_HTTP_RETURNED_ERROR) {
+            return MISSKEY_ERROR_HTTP;
+        }
+        return MISSKEY_ERROR_NETWORK;
+    }
+    
+    if (http_code >= 400) {
+        return MISSKEY_ERROR_HTTP;
+    }
+    
+    return MISSKEY_OK;
 }

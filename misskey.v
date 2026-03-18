@@ -24,6 +24,11 @@ fn C.misskey_drive_files_update(client &C.MisskeyClient, file_id &char, folder_i
 fn C.misskey_drive_files_find(client &C.MisskeyClient, hash &char, response &&char) int
 fn C.misskey_drive_files_show(client &C.MisskeyClient, file_id &char, url &char, response &&char) int
 fn C.misskey_drive_files_upload_from_url(client &C.MisskeyClient, url &char, folder_id &char, is_sensitive int, comment &char, response &&char) int
+
+type WriteCallback = fn (voidptr, int, int, voidptr) int
+
+fn C.misskey_drive_files_download(client &C.MisskeyClient, file_id &char, options voidptr, http_code &int, content_length &int) int
+
 fn C.misskey_drive_folders(client &C.MisskeyClient, limit int, folder_id &char, response &&char) int
 fn C.misskey_drive_folders_create(client &C.MisskeyClient, name &char, parent_id &char, response &&char) int
 fn C.misskey_drive_folders_delete(client &C.MisskeyClient, folder_id &char, response &&char) int
@@ -228,6 +233,42 @@ pub fn (mut c Client) drive_files_upload_from_url(url string, folder_id string, 
 	result := unsafe { cstring_to_vstring(response) }
 	C.misskey_free_string(c.c_client, response)
 	return result
+}
+
+pub struct DownloadOptions {
+	url             string
+	file_id         string
+	output_path     string
+	resume_from     int
+	follow_redirects bool
+}
+
+struct CDownloadOpts {
+	url             &char
+	output_path     &char
+	write_cb        voidptr
+	write_userdata  voidptr
+	resume_from     int
+	follow_redirects int
+}
+
+pub fn (mut c Client) drive_files_download(dl_opts DownloadOptions) !int {
+	opts_c := &CDownloadOpts{
+		url: if dl_opts.url.len > 0 { &char(dl_opts.url.str) } else { voidptr(0) }
+		output_path: if dl_opts.output_path.len > 0 { &char(dl_opts.output_path.str) } else { voidptr(0) }
+		write_cb: unsafe { nil }
+		write_userdata: unsafe { nil }
+		resume_from: dl_opts.resume_from
+		follow_redirects: if dl_opts.follow_redirects { 1 } else { 0 }
+	}
+	file_id_cstr := if dl_opts.file_id.len > 0 { &char(dl_opts.file_id.str) } else { voidptr(0) }
+	mut http_code := 0
+	mut content_length := 0
+	ret := C.misskey_drive_files_download(c.c_client, file_id_cstr, opts_c, &http_code, &content_length)
+	if ret != 0 {
+		return error('drive_files_download failed: ${MisskeyError(ret)}')
+	}
+	return http_code
 }
 
 pub fn (mut c Client) drive_folders(limit int, folder_id string) !string {

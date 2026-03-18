@@ -123,6 +123,7 @@ proxychains ./misskey_example misskey.io YOUR_TOKEN
 | `misskey_drive_files_find()` | `/api/drive/files/find` | 按哈希查找文件 |
 | `misskey_drive_files_show()` | `/api/drive/files/show` | 获取文件属性 |
 | `misskey_drive_files_upload_from_url()` | `/api/drive/files/upload-from-url` | 从URL上传文件 |
+| `misskey_drive_files_download()` | - | 下载文件（支持断点续传） |
 | `misskey_drive_folders()` | `/api/drive/folders` | 获取文件夹列表 |
 | `misskey_drive_folders_create()` | `/api/drive/folders/create` | 创建文件夹 |
 | `misskey_drive_folders_delete()` | `/api/drive/folders/delete` | 删除文件夹 |

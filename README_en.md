@@ -123,6 +123,7 @@ proxychains ./misskey_example misskey.io YOUR_TOKEN
 | `misskey_drive_files_find()` | `/api/drive/files/find` | Find file by hash |
 | `misskey_drive_files_show()` | `/api/drive/files/show` | Get file properties |
 | `misskey_drive_files_upload_from_url()` | `/api/drive/files/upload-from-url` | Upload file from URL |
+| `misskey_drive_files_download()` | - | Download file (resumable) |
 | `misskey_drive_folders()` | `/api/drive/folders` | List folders |
 | `misskey_drive_folders_create()` | `/api/drive/folders/create` | Create folder |
 | `misskey_drive_folders_delete()` | `/api/drive/folders/delete` | Delete folder |

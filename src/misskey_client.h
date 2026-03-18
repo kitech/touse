@@ -64,8 +64,28 @@ MisskeyError misskey_drive_files_find(MisskeyClient* client, const char* hash,
 MisskeyError misskey_drive_files_show(MisskeyClient* client, const char* file_id,
                                        const char* url, char** response_out);
 MisskeyError misskey_drive_files_upload_from_url(MisskeyClient* client, const char* url,
-                                                  const char* folder_id, int is_sensitive,
-                                                  const char* comment, char** response_out);
+                                                   const char* folder_id, int is_sensitive,
+                                                   const char* comment, char** response_out);
+
+typedef size_t (*misskey_write_callback)(void* contents, size_t size, size_t nmemb, void* userp);
+typedef struct {
+    void* data;
+    size_t size;
+    size_t capacity;
+} MisskeyBuffer;
+
+typedef struct {
+    const char* url;
+    const char* output_path;
+    misskey_write_callback write_cb;
+    void* write_userdata;
+    long resume_from;
+    int follow_redirects;
+} MisskeyDownloadOptions;
+
+MisskeyError misskey_drive_files_download(MisskeyClient* client, const char* file_id,
+                                          const MisskeyDownloadOptions* options,
+                                          long* http_code_out, long* content_length_out);
 MisskeyError misskey_drive_folders(MisskeyClient* client, int limit, const char* folder_id,
                                    char** response_out);
 MisskeyError misskey_drive_folders_create(MisskeyClient* client, const char* name,
