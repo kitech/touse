@@ -7,40 +7,40 @@ module misskey
 
 struct C.MisskeyClient {}
 
-fn C.misskey_client_new(host &char) &C.MisskeyClient
+fn C.misskey_client_new(host charptr) &C.MisskeyClient
 fn C.misskey_client_free(client &C.MisskeyClient)
-fn C.misskey_client_set_token(client &C.MisskeyClient, token &char)
+fn C.misskey_client_set_token(client &C.MisskeyClient, token charptr)
 fn C.misskey_client_set_timeout(client &C.MisskeyClient, timeout_secs int)
-fn C.misskey_request(client &C.MisskeyClient, endpoint &char, body &char, response &&char) int
-fn C.misskey_meta(client &C.MisskeyClient, response &&char) int
-fn C.misskey_notes_timeline(client &C.MisskeyClient, limit int, local int, response &&char) int
-fn C.misskey_notes_create(client &C.MisskeyClient, text &char, reply_id &char, renote_id &char, response &&char) int
-fn C.misskey_i_notifications(client &C.MisskeyClient, limit int, response &&char) int
-fn C.misskey_drive(client &C.MisskeyClient, response &&char) int
-fn C.misskey_drive_files(client &C.MisskeyClient, limit int, folder_id int, response &&char) int
-fn C.misskey_drive_files_create(client &C.MisskeyClient, file_path &char, folder_id &char, name &char, response &&char) int
-fn C.misskey_drive_files_delete(client &C.MisskeyClient, file_id &char, response &&char) int
-fn C.misskey_drive_files_update(client &C.MisskeyClient, file_id &char, folder_id &char, name &char, response &&char) int
-fn C.misskey_drive_files_find(client &C.MisskeyClient, hash &char, response &&char) int
-fn C.misskey_drive_files_show(client &C.MisskeyClient, file_id &char, url &char, response &&char) int
-fn C.misskey_drive_files_upload_from_url(client &C.MisskeyClient, url &char, folder_id &char, is_sensitive int, comment &char, response &&char) int
+fn C.misskey_request(client &C.MisskeyClient, endpoint charptr, body charptr, response &charptr) int
+fn C.misskey_meta(client &C.MisskeyClient, response &charptr) int
+fn C.misskey_notes_timeline(client &C.MisskeyClient, limit int, local int, response &charptr) int
+fn C.misskey_notes_create(client &C.MisskeyClient, text charptr, reply_id charptr, renote_id charptr, response &charptr) int
+fn C.misskey_i_notifications(client &C.MisskeyClient, limit int, response &charptr) int
+fn C.misskey_drive(client &C.MisskeyClient, response &charptr) int
+fn C.misskey_drive_files(client &C.MisskeyClient, limit int, folder_id int, response &charptr) int
+fn C.misskey_drive_files_create(client &C.MisskeyClient, file_path charptr, folder_id charptr, name charptr, response &charptr) int
+fn C.misskey_drive_files_delete(client &C.MisskeyClient, file_id charptr, response &charptr) int
+fn C.misskey_drive_files_update(client &C.MisskeyClient, file_id charptr, folder_id charptr, name charptr, response &charptr) int
+fn C.misskey_drive_files_find(client &C.MisskeyClient, hash charptr, response &charptr) int
+fn C.misskey_drive_files_show(client &C.MisskeyClient, file_id charptr, url charptr, response &charptr) int
+fn C.misskey_drive_files_upload_from_url(client &C.MisskeyClient, url charptr, folder_id charptr, is_sensitive int, comment charptr, response &charptr) int
 
 type WriteCallback = fn (voidptr, int, int, voidptr) int
 
-fn C.misskey_drive_files_download(client &C.MisskeyClient, file_id &char, options voidptr, http_code &int, content_length &int) int
+fn C.misskey_drive_files_download(client &C.MisskeyClient, file_id charptr, options voidptr, http_code &int, content_length &int) int
 
-fn C.misskey_drive_folders(client &C.MisskeyClient, limit int, folder_id &char, response &&char) int
-fn C.misskey_drive_folders_create(client &C.MisskeyClient, name &char, parent_id &char, response &&char) int
-fn C.misskey_drive_folders_delete(client &C.MisskeyClient, folder_id &char, response &&char) int
-fn C.misskey_drive_folders_update(client &C.MisskeyClient, folder_id &char, name &char, parent_id &char, response &&char) int
-fn C.misskey_translate(client &C.MisskeyClient, text &char, source_lang &char, target_lang &char, response &&char) int
+fn C.misskey_drive_folders(client &C.MisskeyClient, limit int, folder_id charptr, response &charptr) int
+fn C.misskey_drive_folders_create(client &C.MisskeyClient, name charptr, parent_id charptr, response &charptr) int
+fn C.misskey_drive_folders_delete(client &C.MisskeyClient, folder_id charptr, response &charptr) int
+fn C.misskey_drive_folders_update(client &C.MisskeyClient, folder_id charptr, name charptr, parent_id charptr, response &charptr) int
+fn C.misskey_translate(client &C.MisskeyClient, text charptr, source_lang charptr, target_lang charptr, response &charptr) int
 fn C.misskey_request_set_debug(client &C.MisskeyClient, enable int)
-fn C.misskey_free_string(client &C.MisskeyClient, str &char)
-fn C.misskey_error_str(err int) &char
+fn C.misskey_free_string(client &C.MisskeyClient, str charptr)
+fn C.misskey_error_str(err int) charptr
 
-fn C.misskey_client_new_with_allocator(host &char, allocator voidptr) &C.MisskeyClient
+fn C.misskey_client_new_with_allocator(host charptr, allocator voidptr) &C.MisskeyClient
 fn C.misskey_client_get_allocator(client &C.MisskeyClient) voidptr
-fn C.misskey_request_print_curl(client &C.MisskeyClient, endpoint &char, body &char)
+fn C.misskey_request_print_curl(client &C.MisskeyClient, endpoint charptr, body charptr)
 
 // Error codes
 pub enum MisskeyError {
@@ -244,8 +244,8 @@ pub struct DownloadOptions {
 }
 
 struct CDownloadOpts {
-	url             &char
-	output_path     &char
+	url             charptr
+	output_path     charptr
 	write_cb        voidptr
 	write_userdata  voidptr
 	resume_from     int

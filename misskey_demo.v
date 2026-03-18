@@ -7,23 +7,23 @@ import os
 
 struct C.MisskeyClient {}
 
-fn C.misskey_client_new(host &char) &C.MisskeyClient
+fn C.misskey_client_new(host charptr) &C.MisskeyClient
 fn C.misskey_client_free(client &C.MisskeyClient)
-fn C.misskey_client_set_token(client &C.MisskeyClient, token &char)
-fn C.misskey_request(client &C.MisskeyClient, endpoint &char, body &char, response &&char) int
-fn C.misskey_meta(client &C.MisskeyClient, response &&char) int
-fn C.misskey_notes_timeline(client &C.MisskeyClient, limit int, local int, response &&char) int
-fn C.misskey_i_notifications(client &C.MisskeyClient, limit int, response &&char) int
-fn C.misskey_drive(client &C.MisskeyClient, response &&char) int
-fn C.misskey_drive_files(client &C.MisskeyClient, limit int, folder_id int, response &&char) int
-fn C.misskey_drive_files_find(client &C.MisskeyClient, hash &char, response &&char) int
-fn C.misskey_drive_files_show(client &C.MisskeyClient, file_id &char, url &char, response &&char) int
-fn C.misskey_drive_files_upload_from_url(client &C.MisskeyClient, url &char, folder_id &char, is_sensitive int, comment &char, response &&char) int
-fn C.misskey_drive_folders(client &C.MisskeyClient, limit int, folder_id &char, response &&char) int
-fn C.misskey_translate(client &C.MisskeyClient, text &char, source_lang &char, target_lang &char, response &&char) int
+fn C.misskey_client_set_token(client &C.MisskeyClient, token charptr)
+fn C.misskey_request(client &C.MisskeyClient, endpoint charptr, body charptr, response &charptr) int
+fn C.misskey_meta(client &C.MisskeyClient, response &charptr) int
+fn C.misskey_notes_timeline(client &C.MisskeyClient, limit int, local int, response &charptr) int
+fn C.misskey_i_notifications(client &C.MisskeyClient, limit int, response &charptr) int
+fn C.misskey_drive(client &C.MisskeyClient, response &charptr) int
+fn C.misskey_drive_files(client &C.MisskeyClient, limit int, folder_id int, response &charptr) int
+fn C.misskey_drive_files_find(client &C.MisskeyClient, hash charptr, response &charptr) int
+fn C.misskey_drive_files_show(client &C.MisskeyClient, file_id charptr, url charptr, response &charptr) int
+fn C.misskey_drive_files_upload_from_url(client &C.MisskeyClient, url charptr, folder_id charptr, is_sensitive int, comment charptr, response &charptr) int
+fn C.misskey_drive_folders(client &C.MisskeyClient, limit int, folder_id charptr, response &charptr) int
+fn C.misskey_translate(client &C.MisskeyClient, text charptr, source_lang charptr, target_lang charptr, response &charptr) int
 fn C.misskey_request_set_debug(client &C.MisskeyClient, enable int)
-fn C.misskey_free_string(client &C.MisskeyClient, str &char)
-fn C.misskey_error_str(err int) &char
+fn C.misskey_free_string(client &C.MisskeyClient, str charptr)
+fn C.misskey_error_str(err int) charptr
 
 struct Client {
 	c_client &C.MisskeyClient
