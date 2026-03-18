@@ -111,6 +111,48 @@ int example_notifications(MisskeyClient* client, int limit) {
     return 0;
 }
 
+int example_drive_files(MisskeyClient* client, int limit) {
+    printf("\n=== Get Drive Files (limit %d) ===\n", limit);
+    char* resp = NULL;
+    MisskeyError err = misskey_drive_files(client, limit, 0, &resp);
+    if (err != MISSKEY_OK) {
+        printf("Error: %s\n", misskey_error_str(err));
+        return 1;
+    }
+    print_json_parsed(resp);
+    misskey_free_string(client, resp);
+    return 0;
+}
+
+int example_translate(MisskeyClient* client, const char* text,
+                       const char* source_lang, const char* target_lang) {
+    printf("\n=== Translate Text ===\n");
+    printf("Text: %s\n", text);
+    printf("From: %s -> To: %s\n", source_lang ? source_lang : "auto", target_lang);
+    char* resp = NULL;
+    MisskeyError err = misskey_translate(client, text, source_lang, target_lang, &resp);
+    if (err != MISSKEY_OK) {
+        printf("Error: %s\n", misskey_error_str(err));
+        return 1;
+    }
+    print_json_parsed(resp);
+    misskey_free_string(client, resp);
+    return 0;
+}
+
+int example_drive_folders(MisskeyClient* client, int limit) {
+    printf("\n=== Get Drive Folders (limit %d) ===\n", limit);
+    char* resp = NULL;
+    MisskeyError err = misskey_drive_folders(client, limit, NULL, &resp);
+    if (err != MISSKEY_OK) {
+        printf("Error: %s\n", misskey_error_str(err));
+        return 1;
+    }
+    print_json_parsed(resp);
+    misskey_free_string(client, resp);
+    return 0;
+}
+
 int main(int argc, char* argv[]) {
     const char* host = argc > 1 ? argv[1] : "misskey.io";
     const char* token = argc > 2 ? argv[2] : NULL;
@@ -144,6 +186,15 @@ int main(int argc, char* argv[]) {
     if (token) {
         misskey_client_set_token(client, token);
         printf("Token: [set - %zu chars]\n", strlen(token));
+        
+        misskey_request_set_debug(client, 1);
+        printf("\n--- Debug mode enabled ---\n");
+        
+        example_timeline(client, 3, 1);
+        example_notifications(client, 5);
+        example_drive_files(client, 5);
+        example_drive_folders(client, 5);
+        example_translate(client, "Hello from Misskey C Client!", "en", "ja");
     } else {
         printf("Token: [not set - some APIs will fail]\n");
     }
@@ -151,11 +202,6 @@ int main(int argc, char* argv[]) {
     printf("\n--- Starting API calls ---\n");
     
     example_meta(client);
-    
-    if (token) {
-        example_timeline(client, 3, 1);
-        example_notifications(client, 5);
-    }
     
     misskey_client_free(client);
     

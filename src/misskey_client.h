@@ -35,6 +35,9 @@ const MisskeyAllocator* misskey_client_get_allocator(const MisskeyClient* client
 
 MisskeyError misskey_request(MisskeyClient* client, const char* endpoint,
                              const char* request_body, char** response_out);
+void misskey_request_set_debug(MisskeyClient* client, int enable);
+void misskey_request_print_curl(MisskeyClient* client, const char* endpoint,
+                                const char* request_body);
 MisskeyError misskey_meta(MisskeyClient* client, char** response_out);
 MisskeyError misskey_notes_timeline(MisskeyClient* client, int limit,
                                      int local, char** response_out);
@@ -42,7 +45,33 @@ MisskeyError misskey_notes_create(MisskeyClient* client, const char* text,
                                    const char* reply_id, const char* renote_id,
                                    char** response_out);
 MisskeyError misskey_i_notifications(MisskeyClient* client, int limit,
-                                      char** response_out);
+                                       char** response_out);
+
+MisskeyError misskey_drive_files(MisskeyClient* client, int limit, int folder_id,
+                                  char** response_out);
+MisskeyError misskey_drive_files_create(MisskeyClient* client, const char* file_path,
+                                         const char* folder_id, const char* name,
+                                         char** response_out);
+MisskeyError misskey_drive_files_delete(MisskeyClient* client, const char* file_id,
+                                         char** response_out);
+MisskeyError misskey_drive_files_update(MisskeyClient* client, const char* file_id,
+                                         const char* folder_id, const char* name,
+                                         char** response_out);
+MisskeyError misskey_drive_files_find(MisskeyClient* client, const char* hash,
+                                       char** response_out);
+MisskeyError misskey_drive_folders(MisskeyClient* client, int limit, const char* folder_id,
+                                   char** response_out);
+MisskeyError misskey_drive_folders_create(MisskeyClient* client, const char* name,
+                                           const char* parent_id, char** response_out);
+MisskeyError misskey_drive_folders_delete(MisskeyClient* client, const char* folder_id,
+                                           char** response_out);
+MisskeyError misskey_drive_folders_update(MisskeyClient* client, const char* folder_id,
+                                           const char* name, const char* parent_id,
+                                           char** response_out);
+
+MisskeyError misskey_translate(MisskeyClient* client, const char* text,
+                                const char* source_lang, const char* target_lang,
+                                char** response_out);
 
 void misskey_free_string(MisskeyClient* client, char* str);
 

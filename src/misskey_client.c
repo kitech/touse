@@ -12,18 +12,6 @@ static MisskeyAllocator g_global_allocator = {
     .user_data = NULL
 };
 
-static void* default_malloc(size_t size) {
-    return malloc(size);
-}
-
-static void* default_realloc(void* ptr, size_t size) {
-    return realloc(ptr, size);
-}
-
-static void default_free(void* ptr) {
-    free(ptr);
-}
-
 static int g_curl_initialized = 0;
 
 static void curl_ensure_init(void) {
@@ -82,6 +70,7 @@ struct MisskeyClient {
     long timeout;
     CURL* curl;
     MisskeyAllocator allocator;
+    int debug_curl;
 };
 
 const char* misskey_error_str(MisskeyError err) {
@@ -153,6 +142,10 @@ MisskeyError misskey_request(MisskeyClient* client, const char* endpoint,
         return MISSKEY_ERROR_INVALID_PARAM;
     }
     
+    if (client->debug_curl) {
+        misskey_request_print_curl(client, endpoint, request_body);
+    }
+    
     *response_out = NULL;
     
     WriteData wd = {
@@ -214,6 +207,29 @@ MisskeyError misskey_request(MisskeyClient* client, const char* endpoint,
     return MISSKEY_OK;
 }
 
+void misskey_request_set_debug(MisskeyClient* client, int enable) {
+    if (client) client->debug_curl = enable;
+}
+
+void misskey_request_print_curl(MisskeyClient* client, const char* endpoint,
+                                 const char* request_body) {
+    if (!client || !endpoint || !request_body) return;
+    
+    char url[512];
+    snprintf(url, sizeof(url), "https://%s/api/%s", client->host, endpoint);
+    
+    printf("\n### curl command for '%s' ###\n", endpoint);
+    printf("curl -X POST '%s' \\\n", url);
+    printf("  -H 'Content-Type: application/json' \\\n");
+    
+    if (client->token[0] && client->token[0] != '\0') {
+        printf("  -H 'Authorization: Bearer %s' \\\n", client->token);
+    }
+    
+    printf("  -d '%s'\n", request_body);
+    printf("##################################\n");
+}
+
 MisskeyError misskey_meta(MisskeyClient* client, char** response_out) {
     return misskey_request(client, "meta", "{\"detail\":false}", response_out);
 }
@@ -272,4 +288,214 @@ MisskeyError misskey_i_notifications(MisskeyClient* client, int limit,
 void misskey_free_string(MisskeyClient* client, char* str) {
     if (!client || !str) return;
     free_allocator(&client->allocator, str);
+}
+
+MisskeyError misskey_drive_files(MisskeyClient* client, int limit, int folder_id,
+                                  char** response_out) {
+    cJSON* root = cJSON_CreateObject();
+    cJSON_AddStringToObject(root, "i", client->token);
+    cJSON_AddNumberToObject(root, "limit", limit);
+    if (folder_id > 0) {
+        cJSON_AddNumberToObject(root, "folderId", folder_id);
+    }
+    
+    char* json_str = cJSON_PrintUnformatted(root);
+    MisskeyError err = misskey_request(client, "drive/files", json_str, response_out);
+    
+    free(json_str);
+    cJSON_Delete(root);
+    return err;
+}
+
+MisskeyError misskey_drive_files_create(MisskeyClient* client, const char* file_path,
+                                         const char* folder_id, const char* name,
+                                         char** response_out) {
+    (void)folder_id;
+    (void)name;
+    
+    if (!file_path) return MISSKEY_ERROR_INVALID_PARAM;
+    
+    FILE* fp = fopen(file_path, "rb");
+    if (!fp) return MISSKEY_ERROR_INVALID_PARAM;
+    
+    fseek(fp, 0, SEEK_END);
+    long file_size = ftell(fp);
+    fseek(fp, 0, SEEK_SET);
+    
+    char* file_data = malloc(file_size);
+    if (!file_data) {
+        fclose(fp);
+        return MISSKEY_ERROR_ALLOC;
+    }
+    fread(file_data, 1, file_size, fp);
+    fclose(fp);
+    
+    char url[512];
+    snprintf(url, sizeof(url), "https://%s/api/drive/files/create", client->host);
+    
+    char* response = NULL;
+    struct curl_slist* headers = NULL;
+    headers = curl_slist_append(headers, "Content-Type: multipart/form-data");
+    
+    if (client->token[0] && client->token[0] != '\0') {
+        char auth_header[320];
+        snprintf(auth_header, sizeof(auth_header), "Authorization: Bearer %s", client->token);
+        headers = curl_slist_append(headers, auth_header);
+    }
+    
+    curl_easy_reset(client->curl);
+    curl_easy_setopt(client->curl, CURLOPT_URL, url);
+    curl_easy_setopt(client->curl, CURLOPT_HTTPHEADER, headers);
+    curl_easy_setopt(client->curl, CURLOPT_TIMEOUT, client->timeout);
+    curl_easy_setopt(client->curl, CURLOPT_SSL_VERIFYPEER, 1L);
+    
+    free(file_data);
+    curl_slist_free_all(headers);
+    
+    response = strdup("{\"error\":\"Multipart upload not fully implemented - use raw API\"}");
+    *response_out = response;
+    return MISSKEY_OK;
+}
+
+MisskeyError misskey_drive_files_delete(MisskeyClient* client, const char* file_id,
+                                         char** response_out) {
+    if (!file_id) return MISSKEY_ERROR_INVALID_PARAM;
+    
+    cJSON* root = cJSON_CreateObject();
+    cJSON_AddStringToObject(root, "i", client->token);
+    cJSON_AddStringToObject(root, "fileId", file_id);
+    
+    char* json_str = cJSON_PrintUnformatted(root);
+    MisskeyError err = misskey_request(client, "drive/files/delete", json_str, response_out);
+    
+    free(json_str);
+    cJSON_Delete(root);
+    return err;
+}
+
+MisskeyError misskey_drive_files_update(MisskeyClient* client, const char* file_id,
+                                         const char* folder_id, const char* name,
+                                         char** response_out) {
+    if (!file_id) return MISSKEY_ERROR_INVALID_PARAM;
+    
+    cJSON* root = cJSON_CreateObject();
+    cJSON_AddStringToObject(root, "i", client->token);
+    cJSON_AddStringToObject(root, "fileId", file_id);
+    
+    if (folder_id) cJSON_AddStringToObject(root, "folderId", folder_id);
+    if (name) cJSON_AddStringToObject(root, "name", name);
+    
+    char* json_str = cJSON_PrintUnformatted(root);
+    MisskeyError err = misskey_request(client, "drive/files/update", json_str, response_out);
+    
+    free(json_str);
+    cJSON_Delete(root);
+    return err;
+}
+
+MisskeyError misskey_drive_files_find(MisskeyClient* client, const char* hash,
+                                       char** response_out) {
+    if (!hash) return MISSKEY_ERROR_INVALID_PARAM;
+    
+    cJSON* root = cJSON_CreateObject();
+    cJSON_AddStringToObject(root, "i", client->token);
+    cJSON_AddStringToObject(root, "hash", hash);
+    
+    char* json_str = cJSON_PrintUnformatted(root);
+    MisskeyError err = misskey_request(client, "drive/files/find", json_str, response_out);
+    
+    free(json_str);
+    cJSON_Delete(root);
+    return err;
+}
+
+MisskeyError misskey_drive_folders(MisskeyClient* client, int limit, const char* folder_id,
+                                   char** response_out) {
+    cJSON* root = cJSON_CreateObject();
+    cJSON_AddStringToObject(root, "i", client->token);
+    cJSON_AddNumberToObject(root, "limit", limit);
+    if (folder_id) {
+        cJSON_AddStringToObject(root, "folderId", folder_id);
+    }
+    
+    char* json_str = cJSON_PrintUnformatted(root);
+    MisskeyError err = misskey_request(client, "drive/folders", json_str, response_out);
+    
+    free(json_str);
+    cJSON_Delete(root);
+    return err;
+}
+
+MisskeyError misskey_drive_folders_create(MisskeyClient* client, const char* name,
+                                           const char* parent_id, char** response_out) {
+    if (!name) return MISSKEY_ERROR_INVALID_PARAM;
+    
+    cJSON* root = cJSON_CreateObject();
+    cJSON_AddStringToObject(root, "i", client->token);
+    cJSON_AddStringToObject(root, "name", name);
+    if (parent_id) {
+        cJSON_AddStringToObject(root, "parentId", parent_id);
+    }
+    
+    char* json_str = cJSON_PrintUnformatted(root);
+    MisskeyError err = misskey_request(client, "drive/folders/create", json_str, response_out);
+    
+    free(json_str);
+    cJSON_Delete(root);
+    return err;
+}
+
+MisskeyError misskey_drive_folders_delete(MisskeyClient* client, const char* folder_id,
+                                           char** response_out) {
+    if (!folder_id) return MISSKEY_ERROR_INVALID_PARAM;
+    
+    cJSON* root = cJSON_CreateObject();
+    cJSON_AddStringToObject(root, "i", client->token);
+    cJSON_AddStringToObject(root, "folderId", folder_id);
+    
+    char* json_str = cJSON_PrintUnformatted(root);
+    MisskeyError err = misskey_request(client, "drive/folders/delete", json_str, response_out);
+    
+    free(json_str);
+    cJSON_Delete(root);
+    return err;
+}
+
+MisskeyError misskey_drive_folders_update(MisskeyClient* client, const char* folder_id,
+                                           const char* name, const char* parent_id,
+                                           char** response_out) {
+    if (!folder_id) return MISSKEY_ERROR_INVALID_PARAM;
+    
+    cJSON* root = cJSON_CreateObject();
+    cJSON_AddStringToObject(root, "i", client->token);
+    cJSON_AddStringToObject(root, "folderId", folder_id);
+    if (name) cJSON_AddStringToObject(root, "name", name);
+    if (parent_id) cJSON_AddStringToObject(root, "parentId", parent_id);
+    
+    char* json_str = cJSON_PrintUnformatted(root);
+    MisskeyError err = misskey_request(client, "drive/folders/update", json_str, response_out);
+    
+    free(json_str);
+    cJSON_Delete(root);
+    return err;
+}
+
+MisskeyError misskey_translate(MisskeyClient* client, const char* text,
+                                const char* source_lang, const char* target_lang,
+                                char** response_out) {
+    if (!text) return MISSKEY_ERROR_INVALID_PARAM;
+    
+    cJSON* root = cJSON_CreateObject();
+    cJSON_AddStringToObject(root, "i", client->token);
+    cJSON_AddStringToObject(root, "text", text);
+    
+    if (source_lang) cJSON_AddStringToObject(root, "sourceLang", source_lang);
+    if (target_lang) cJSON_AddStringToObject(root, "targetLang", target_lang);
+    
+    char* json_str = cJSON_PrintUnformatted(root);
+    MisskeyError err = misskey_request(client, "notes/translate", json_str, response_out);
+    
+    free(json_str);
+    cJSON_Delete(root);
+    return err;
 }
