@@ -33,18 +33,18 @@ pub fn ip_list_json(iplst voidptr, buf charptr, bufsz usize) int
 pub fn get_ipaddrs() ![]string{
     iplst := get_all_ip_addresses()
 
-    bufsz := 986
+    bufsz := 2986
     buf := [bufsz]i8{}
     rv := ip_list_json(iplst, charptr(&buf[0]), usize(bufsz))
     assert rv==0
     defer { free_ip_list(iplst) }
-    
+
     jstr := charptr(&buf[0]).tosref()
     // dump(jstr)
     addrs := json.decode(Addresses, jstr) !
     // dump(addrs)
     res := addrs.addresses.map(|x| x.address)
-    
+
     return res
 }
 
@@ -109,11 +109,11 @@ pub fn run_ipmon(stop &int, cbfn fn(string, string, int, int, voidptr), cbval vo
     mon := create_ip_monitor_event(onip_change, p)
     assert mon!=nil
     defer { free_ip_monitor_event(mon) }
-    
+
     rv := start_ip_monitor_event(mon)
     assert rv==0
     defer { stop_ip_monitor_event(mon) }
-    
+
     for *stop==0 {
         rv = process_ip_events(mon, 100)
         if rv < 0 {
@@ -121,12 +121,12 @@ pub fn run_ipmon(stop &int, cbfn fn(string, string, int, int, voidptr), cbval vo
             dump(s)
             break
         }
-        
+
         // idle here
         if rv == 1 {
             // no event timeout
         }
     }
-    
+
     println("ipmon done")
 }
