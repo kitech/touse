@@ -193,7 +193,28 @@ make clean && make && ./misskey_example localhost:3000 test_token
 
 # 测试 V 客户端
 LD_LIBRARY_PATH=. v run misskey_demo.v localhost:3000 test_token
+
+# Fuzz 测试
+make fuzz fuzz-cpp && ./fuzz_test && ./fuzz_test_cpp
 ```
+
+## Fuzz 测试
+
+### 测试覆盖
+| 测试项 | C API | C++ API |
+|--------|-------|---------|
+| 空字符串 | ✅ | ✅ |
+| 负数参数 | ✅ | ✅ |
+| 零值参数 | ✅ | ✅ |
+| 大数值参数 | ✅ | ✅ |
+| 特殊字符 | ✅ | ✅ |
+| 超长字符串 | ✅ | ✅ |
+| 无效主机 | ✅ | ✅ |
+| 畸形 URL | ✅ | ✅ |
+| 超时值 | ✅ | ✅ |
+| 调试开关 | ✅ | ✅ |
+| 移动语义 | - | ✅ |
+| 可选参数 | - | ✅ |
 
 ## 已知问题与限制
 
