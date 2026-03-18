@@ -130,6 +130,25 @@ def api_drive_files_find():
         return jsonify({"error": "Authentication failed"}), 401
     return jsonify([])
 
+@app.route('/api/drive/files/show', methods=['POST'])
+def api_drive_files_show():
+    if not check_auth():
+        return jsonify({"error": "Authentication failed"}), 401
+    data = request.get_json() or {}
+    file_id = data.get('fileId')
+    url = data.get('url')
+    if not file_id and not url:
+        return jsonify({"error": "fileId or url required"}), 400
+    return jsonify({
+        "id": file_id or gen_id(),
+        "name": "file_details.txt",
+        "type": "text/plain",
+        "size": 2048,
+        "url": url or "https://example.com/files/" + gen_id(),
+        "createdAt": datetime.now().isoformat(),
+        "md5": ''.join(random.choices(string.hexdigits.lower(), k=32)),
+    })
+
 @app.route('/api/drive/folders', methods=['POST'])
 def api_drive_folders():
     if not check_auth():
@@ -209,6 +228,7 @@ if __name__ == '__main__':
     print("  /api/drive/files/delete")
     print("  /api/drive/files/update")
     print("  /api/drive/files/find")
+    print("  /api/drive/files/show")
     print("  /api/drive/folders")
     print("  /api/drive/folders/create")
     print("  /api/drive/folders/delete")

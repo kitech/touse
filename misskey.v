@@ -21,6 +21,7 @@ fn C.misskey_drive_files_create(client &C.MisskeyClient, file_path &char, folder
 fn C.misskey_drive_files_delete(client &C.MisskeyClient, file_id &char, response &&char) int
 fn C.misskey_drive_files_update(client &C.MisskeyClient, file_id &char, folder_id &char, name &char, response &&char) int
 fn C.misskey_drive_files_find(client &C.MisskeyClient, hash &char, response &&char) int
+fn C.misskey_drive_files_show(client &C.MisskeyClient, file_id &char, url &char, response &&char) int
 fn C.misskey_drive_folders(client &C.MisskeyClient, limit int, folder_id &char, response &&char) int
 fn C.misskey_drive_folders_create(client &C.MisskeyClient, name &char, parent_id &char, response &&char) int
 fn C.misskey_drive_folders_delete(client &C.MisskeyClient, folder_id &char, response &&char) int
@@ -183,6 +184,19 @@ pub fn (mut c Client) drive_files_find(hash string) !string {
 	ret := C.misskey_drive_files_find(c.c_client, &char(hash.str), &response)
 	if ret != 0 {
 		return error('drive_files_find failed: ${MisskeyError(ret)}')
+	}
+	result := unsafe { cstring_to_vstring(response) }
+	C.misskey_free_string(c.c_client, response)
+	return result
+}
+
+pub fn (mut c Client) drive_files_show(file_id string, url string) !string {
+	file_id_cstr := if file_id.len > 0 { &char(file_id.str) } else { voidptr(0) }
+	url_cstr := if url.len > 0 { &char(url.str) } else { voidptr(0) }
+	mut response := &char(0)
+	ret := C.misskey_drive_files_show(c.c_client, file_id_cstr, url_cstr, &response)
+	if ret != 0 {
+		return error('drive_files_show failed: ${MisskeyError(ret)}')
 	}
 	result := unsafe { cstring_to_vstring(response) }
 	C.misskey_free_string(c.c_client, response)

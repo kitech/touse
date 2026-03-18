@@ -2,20 +2,25 @@ CC = gcc
 CFLAGS = -Wall -Wextra -I./src -O2
 LDFLAGS = -lcurl
 TARGET = misskey_example
+LIB = libmisskey.a
 SRC_DIR = src
 
-SOURCES = $(SRC_DIR)/misskey_client.c $(SRC_DIR)/examples.c $(SRC_DIR)/cJSON/cJSON.c
+SOURCES = $(SRC_DIR)/misskey_client.c $(SRC_DIR)/cJSON/cJSON.c
 HEADERS = $(SRC_DIR)/misskey_client.h $(SRC_DIR)/cJSON/cJSON.h
 
-.PHONY: all clean run run-tracked
+.PHONY: all clean run run-tracked lib
 
-all: $(TARGET)
+all: $(LIB) $(TARGET)
+
+$(LIB): $(SOURCES) $(HEADERS)
+	$(CC) $(CFLAGS) -c $(SOURCES)
+	ar rcs $(LIB) misskey_client.o cJSON.o
 
 $(TARGET): $(SOURCES) $(HEADERS)
-	$(CC) $(CFLAGS) -o $@ $(SOURCES) $(LDFLAGS)
+	$(CC) $(CFLAGS) -o $@ $(SOURCES) src/examples.c $(LDFLAGS)
 
 clean:
-	rm -f $(TARGET)
+	rm -f $(TARGET) $(LIB) *.o
 
 run: $(TARGET)
 	./$(TARGET) $(HOST) $(TOKEN)

@@ -119,7 +119,8 @@ proxychains ./misskey_example misskey.io YOUR_TOKEN
 | `misskey_drive_files_create()` | `/api/drive/files/create` | Upload file |
 | `misskey_drive_files_delete()` | `/api/drive/files/delete` | Delete file |
 | `misskey_drive_files_update()` | `/api/drive/files/update` | Update file |
-| `misskey_drive_files_find()` | `/api/drive/files/find` | Find file |
+| `misskey_drive_files_find()` | `/api/drive/files/find` | Find file by hash |
+| `misskey_drive_files_show()` | `/api/drive/files/show` | Get file properties |
 
 ### Drive API - Folders
 

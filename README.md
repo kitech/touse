@@ -119,7 +119,8 @@ proxychains ./misskey_example misskey.io YOUR_TOKEN
 | `misskey_drive_files_create()` | `/api/drive/files/create` | 上传文件 |
 | `misskey_drive_files_delete()` | `/api/drive/files/delete` | 删除文件 |
 | `misskey_drive_files_update()` | `/api/drive/files/update` | 更新文件 |
-| `misskey_drive_files_find()` | `/api/drive/files/find` | 查找文件 |
+| `misskey_drive_files_find()` | `/api/drive/files/find` | 按哈希查找文件 |
+| `misskey_drive_files_show()` | `/api/drive/files/show` | 获取文件属性 |
 
 ### 网盘API - 文件夹
 

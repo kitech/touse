@@ -476,6 +476,23 @@ MisskeyError misskey_drive_files_find(MisskeyClient* client, const char* hash,
     return err;
 }
 
+MisskeyError misskey_drive_files_show(MisskeyClient* client, const char* file_id,
+                                      const char* url, char** response_out) {
+    if (!file_id && !url) return MISSKEY_ERROR_INVALID_PARAM;
+    
+    cJSON* root = cJSON_CreateObject();
+    cJSON_AddStringToObject(root, "i", client->token);
+    if (file_id) cJSON_AddStringToObject(root, "fileId", file_id);
+    if (url) cJSON_AddStringToObject(root, "url", url);
+    
+    char* json_str = cJSON_PrintUnformatted(root);
+    MisskeyError err = misskey_request(client, "drive/files/show", json_str, response_out);
+    
+    free(json_str);
+    cJSON_Delete(root);
+    return err;
+}
+
 MisskeyError misskey_drive_folders(MisskeyClient* client, int limit, const char* folder_id,
                                    char** response_out) {
     cJSON* root = cJSON_CreateObject();

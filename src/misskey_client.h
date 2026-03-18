@@ -58,7 +58,9 @@ MisskeyError misskey_drive_files_update(MisskeyClient* client, const char* file_
                                          const char* folder_id, const char* name,
                                          char** response_out);
 MisskeyError misskey_drive_files_find(MisskeyClient* client, const char* hash,
-                                       char** response_out);
+                                        char** response_out);
+MisskeyError misskey_drive_files_show(MisskeyClient* client, const char* file_id,
+                                       const char* url, char** response_out);
 MisskeyError misskey_drive_folders(MisskeyClient* client, int limit, const char* folder_id,
                                    char** response_out);
 MisskeyError misskey_drive_folders_create(MisskeyClient* client, const char* name,
