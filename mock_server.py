@@ -80,6 +80,155 @@ def api_notifications():
     } for i in range(limit)]
     return jsonify(notifications)
 
+@app.route('/api/notes', methods=['POST'])
+def api_notes():
+    if not check_auth():
+        return jsonify({"error": "Authentication failed"}), 401
+    data = request.get_json() or {}
+    limit = min(data.get('limit', 10), 5)
+    notes = [{
+        "id": gen_id(),
+        "text": data.get('text', f"Note #{i+1}"),
+        "createdAt": datetime.now().isoformat(),
+        "userId": gen_id(),
+        "user": {"id": gen_id(), "name": "MockUser", "username": "mock"}
+    } for i in range(limit)]
+    return jsonify(notes)
+
+@app.route('/api/notes/show', methods=['POST'])
+def api_notes_show():
+    if not check_auth():
+        return jsonify({"error": "Authentication failed"}), 401
+    data = request.get_json() or {}
+    note_id = data.get('noteId', gen_id())
+    return jsonify({
+        "id": note_id,
+        "text": "This is a mock note",
+        "createdAt": datetime.now().isoformat(),
+        "userId": gen_id(),
+        "user": {"id": gen_id(), "name": "MockUser", "username": "mock"},
+        "cw": None,
+        "visibility": "public",
+        "reactions": {},
+        "renoteCount": 0,
+        "repliesCount": 0
+    })
+
+@app.route('/api/notes/delete', methods=['POST'])
+def api_notes_delete():
+    if not check_auth():
+        return jsonify({"error": "Authentication failed"}), 401
+    data = request.get_json() or {}
+    note_id = data.get('noteId')
+    if not note_id:
+        return jsonify({"error": "noteId is required"}), 400
+    return jsonify({"deleted": True, "noteId": note_id})
+
+@app.route('/api/clips/list', methods=['POST'])
+def api_clips_list():
+    if not check_auth():
+        return jsonify({"error": "Authentication failed"}), 401
+    return jsonify([{
+        "id": gen_id(),
+        "name": f"Clip {i+1}",
+        "description": f"Description for clip {i+1}",
+        "isPublic": random.choice([True, False]),
+        "createdAt": datetime.now().isoformat(),
+    } for i in range(3)])
+
+@app.route('/api/clips/show', methods=['POST'])
+def api_clips_show():
+    if not check_auth():
+        return jsonify({"error": "Authentication failed"}), 401
+    data = request.get_json() or {}
+    clip_id = data.get('clipId', gen_id())
+    return jsonify({
+        "id": clip_id,
+        "name": "Mock Clip",
+        "description": "This is a mock clip",
+        "isPublic": True,
+        "createdAt": datetime.now().isoformat(),
+        "notesCount": 5
+    })
+
+@app.route('/api/clips/create', methods=['POST'])
+def api_clips_create():
+    if not check_auth():
+        return jsonify({"error": "Authentication failed"}), 401
+    data = request.get_json() or {}
+    name = data.get('name')
+    if not name:
+        return jsonify({"error": "name is required"}), 400
+    return jsonify({
+        "id": gen_id(),
+        "name": name,
+        "description": data.get('description', ''),
+        "isPublic": data.get('isPublic', False),
+        "createdAt": datetime.now().isoformat(),
+    })
+
+@app.route('/api/clips/update', methods=['POST'])
+def api_clips_update():
+    if not check_auth():
+        return jsonify({"error": "Authentication failed"}), 401
+    data = request.get_json() or {}
+    clip_id = data.get('clipId', gen_id())
+    return jsonify({
+        "id": clip_id,
+        "name": data.get('name', 'Updated Clip'),
+        "description": data.get('description', ''),
+        "isPublic": data.get('isPublic', False),
+        "updatedAt": datetime.now().isoformat(),
+    })
+
+@app.route('/api/clips/delete', methods=['POST'])
+def api_clips_delete():
+    if not check_auth():
+        return jsonify({"error": "Authentication failed"}), 401
+    data = request.get_json() or {}
+    clip_id = data.get('clipId')
+    if not clip_id:
+        return jsonify({"error": "clipId is required"}), 400
+    return jsonify({"deleted": True, "clipId": clip_id})
+
+@app.route('/api/clips/add-note', methods=['POST'])
+def api_clips_add_note():
+    if not check_auth():
+        return jsonify({"error": "Authentication failed"}), 401
+    data = request.get_json() or {}
+    clip_id = data.get('clipId')
+    note_id = data.get('noteId')
+    if not clip_id or not note_id:
+        return jsonify({"error": "clipId and noteId are required"}), 400
+    return jsonify({"added": True, "clipId": clip_id, "noteId": note_id})
+
+@app.route('/api/clips/remove-note', methods=['POST'])
+def api_clips_remove_note():
+    if not check_auth():
+        return jsonify({"error": "Authentication failed"}), 401
+    data = request.get_json() or {}
+    clip_id = data.get('clipId')
+    note_id = data.get('noteId')
+    if not clip_id or not note_id:
+        return jsonify({"error": "clipId and noteId are required"}), 400
+    return jsonify({"removed": True, "clipId": clip_id, "noteId": note_id})
+
+@app.route('/api/clips/notes', methods=['POST'])
+def api_clips_notes():
+    if not check_auth():
+        return jsonify({"error": "Authentication failed"}), 401
+    data = request.get_json() or {}
+    clip_id = data.get('clipId')
+    if not clip_id:
+        return jsonify({"error": "clipId is required"}), 400
+    limit = min(data.get('limit', 10), 5)
+    return jsonify([{
+        "id": gen_id(),
+        "text": f"Note in clip #{i+1}",
+        "createdAt": datetime.now().isoformat(),
+        "user": {"id": gen_id(), "name": "MockUser", "username": "mock"}
+    } for i in range(limit)])
+
 @app.route('/api/drive', methods=['POST'])
 def api_drive():
     if not check_auth():

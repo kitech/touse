@@ -264,6 +264,70 @@ MisskeyError misskey_notes_timeline(MisskeyClient* client, int limit,
     return err;
 }
 
+MisskeyError misskey_notes(MisskeyClient* client, const char* text,
+                           const char* reply_id, const char* renote_id,
+                           const char* channel_id, int limit, int offset,
+                           const char* user_id, int local_only,
+                           int reply, int renote, int with_files,
+                           const char* since_id, const char* until_id,
+                           char** response_out) {
+    cJSON* root = cJSON_CreateObject();
+    cJSON_AddStringToObject(root, "i", client->token);
+    
+    if (text) cJSON_AddStringToObject(root, "text", text);
+    if (reply_id) cJSON_AddStringToObject(root, "replyId", reply_id);
+    if (renote_id) cJSON_AddStringToObject(root, "renoteId", renote_id);
+    if (channel_id) cJSON_AddStringToObject(root, "channelId", channel_id);
+    if (limit > 0) cJSON_AddNumberToObject(root, "limit", limit);
+    if (offset > 0) cJSON_AddNumberToObject(root, "offset", offset);
+    if (user_id) cJSON_AddStringToObject(root, "userId", user_id);
+    if (local_only) cJSON_AddBoolToObject(root, "localOnly", 1);
+    if (reply) cJSON_AddBoolToObject(root, "reply", 1);
+    if (renote) cJSON_AddBoolToObject(root, "renote", 1);
+    if (with_files) cJSON_AddBoolToObject(root, "withFiles", 1);
+    if (since_id) cJSON_AddStringToObject(root, "sinceId", since_id);
+    if (until_id) cJSON_AddStringToObject(root, "untilId", until_id);
+    
+    char* json_str = cJSON_PrintUnformatted(root);
+    MisskeyError err = misskey_request(client, "notes", json_str, response_out);
+    
+    free(json_str);
+    cJSON_Delete(root);
+    return err;
+}
+
+MisskeyError misskey_notes_show(MisskeyClient* client, const char* note_id,
+                                char** response_out) {
+    if (!note_id) return MISSKEY_ERROR_INVALID_PARAM;
+    
+    cJSON* root = cJSON_CreateObject();
+    cJSON_AddStringToObject(root, "i", client->token);
+    cJSON_AddStringToObject(root, "noteId", note_id);
+    
+    char* json_str = cJSON_PrintUnformatted(root);
+    MisskeyError err = misskey_request(client, "notes/show", json_str, response_out);
+    
+    free(json_str);
+    cJSON_Delete(root);
+    return err;
+}
+
+MisskeyError misskey_notes_delete(MisskeyClient* client, const char* note_id,
+                                  char** response_out) {
+    if (!note_id) return MISSKEY_ERROR_INVALID_PARAM;
+    
+    cJSON* root = cJSON_CreateObject();
+    cJSON_AddStringToObject(root, "i", client->token);
+    cJSON_AddStringToObject(root, "noteId", note_id);
+    
+    char* json_str = cJSON_PrintUnformatted(root);
+    MisskeyError err = misskey_request(client, "notes/delete", json_str, response_out);
+    
+    free(json_str);
+    cJSON_Delete(root);
+    return err;
+}
+
 MisskeyError misskey_notes_create(MisskeyClient* client, const char* text,
                                    const char* reply_id, const char* renote_id,
                                    char** response_out) {
@@ -612,6 +676,140 @@ MisskeyError misskey_translate(MisskeyClient* client, const char* text,
     
     char* json_str = cJSON_PrintUnformatted(root);
     MisskeyError err = misskey_request(client, "notes/translate", json_str, response_out);
+    
+    free(json_str);
+    cJSON_Delete(root);
+    return err;
+}
+
+MisskeyError misskey_clips_list(MisskeyClient* client, char** response_out) {
+    cJSON* root = cJSON_CreateObject();
+    cJSON_AddStringToObject(root, "i", client->token);
+    
+    char* json_str = cJSON_PrintUnformatted(root);
+    MisskeyError err = misskey_request(client, "clips/list", json_str, response_out);
+    
+    free(json_str);
+    cJSON_Delete(root);
+    return err;
+}
+
+MisskeyError misskey_clips_show(MisskeyClient* client, const char* clip_id,
+                                char** response_out) {
+    if (!clip_id) return MISSKEY_ERROR_INVALID_PARAM;
+    
+    cJSON* root = cJSON_CreateObject();
+    cJSON_AddStringToObject(root, "i", client->token);
+    cJSON_AddStringToObject(root, "clipId", clip_id);
+    
+    char* json_str = cJSON_PrintUnformatted(root);
+    MisskeyError err = misskey_request(client, "clips/show", json_str, response_out);
+    
+    free(json_str);
+    cJSON_Delete(root);
+    return err;
+}
+
+MisskeyError misskey_clips_create(MisskeyClient* client, const char* name,
+                                 const char* description, int is_public,
+                                 char** response_out) {
+    if (!name) return MISSKEY_ERROR_INVALID_PARAM;
+    
+    cJSON* root = cJSON_CreateObject();
+    cJSON_AddStringToObject(root, "i", client->token);
+    cJSON_AddStringToObject(root, "name", name);
+    if (description) cJSON_AddStringToObject(root, "description", description);
+    if (is_public) cJSON_AddBoolToObject(root, "isPublic", 1);
+    
+    char* json_str = cJSON_PrintUnformatted(root);
+    MisskeyError err = misskey_request(client, "clips/create", json_str, response_out);
+    
+    free(json_str);
+    cJSON_Delete(root);
+    return err;
+}
+
+MisskeyError misskey_clips_update(MisskeyClient* client, const char* clip_id,
+                                  const char* name, const char* description,
+                                  int is_public, char** response_out) {
+    if (!clip_id) return MISSKEY_ERROR_INVALID_PARAM;
+    
+    cJSON* root = cJSON_CreateObject();
+    cJSON_AddStringToObject(root, "i", client->token);
+    cJSON_AddStringToObject(root, "clipId", clip_id);
+    if (name) cJSON_AddStringToObject(root, "name", name);
+    if (description) cJSON_AddStringToObject(root, "description", description);
+    cJSON_AddBoolToObject(root, "isPublic", is_public ? 1 : 0);
+    
+    char* json_str = cJSON_PrintUnformatted(root);
+    MisskeyError err = misskey_request(client, "clips/update", json_str, response_out);
+    
+    free(json_str);
+    cJSON_Delete(root);
+    return err;
+}
+
+MisskeyError misskey_clips_delete(MisskeyClient* client, const char* clip_id,
+                                  char** response_out) {
+    if (!clip_id) return MISSKEY_ERROR_INVALID_PARAM;
+    
+    cJSON* root = cJSON_CreateObject();
+    cJSON_AddStringToObject(root, "i", client->token);
+    cJSON_AddStringToObject(root, "clipId", clip_id);
+    
+    char* json_str = cJSON_PrintUnformatted(root);
+    MisskeyError err = misskey_request(client, "clips/delete", json_str, response_out);
+    
+    free(json_str);
+    cJSON_Delete(root);
+    return err;
+}
+
+MisskeyError misskey_clips_add_note(MisskeyClient* client, const char* clip_id,
+                                   const char* note_id, char** response_out) {
+    if (!clip_id || !note_id) return MISSKEY_ERROR_INVALID_PARAM;
+    
+    cJSON* root = cJSON_CreateObject();
+    cJSON_AddStringToObject(root, "i", client->token);
+    cJSON_AddStringToObject(root, "clipId", clip_id);
+    cJSON_AddStringToObject(root, "noteId", note_id);
+    
+    char* json_str = cJSON_PrintUnformatted(root);
+    MisskeyError err = misskey_request(client, "clips/add-note", json_str, response_out);
+    
+    free(json_str);
+    cJSON_Delete(root);
+    return err;
+}
+
+MisskeyError misskey_clips_remove_note(MisskeyClient* client, const char* clip_id,
+                                      const char* note_id, char** response_out) {
+    if (!clip_id || !note_id) return MISSKEY_ERROR_INVALID_PARAM;
+    
+    cJSON* root = cJSON_CreateObject();
+    cJSON_AddStringToObject(root, "i", client->token);
+    cJSON_AddStringToObject(root, "clipId", clip_id);
+    cJSON_AddStringToObject(root, "noteId", note_id);
+    
+    char* json_str = cJSON_PrintUnformatted(root);
+    MisskeyError err = misskey_request(client, "clips/remove-note", json_str, response_out);
+    
+    free(json_str);
+    cJSON_Delete(root);
+    return err;
+}
+
+MisskeyError misskey_clips_notes(MisskeyClient* client, const char* clip_id,
+                                 int limit, char** response_out) {
+    if (!clip_id) return MISSKEY_ERROR_INVALID_PARAM;
+    
+    cJSON* root = cJSON_CreateObject();
+    cJSON_AddStringToObject(root, "i", client->token);
+    cJSON_AddStringToObject(root, "clipId", clip_id);
+    if (limit > 0) cJSON_AddNumberToObject(root, "limit", limit);
+    
+    char* json_str = cJSON_PrintUnformatted(root);
+    MisskeyError err = misskey_request(client, "clips/notes", json_str, response_out);
     
     free(json_str);
     cJSON_Delete(root);

@@ -1,6 +1,6 @@
 CC = gcc
 CXX = g++
-CFLAGS = -Wall -Wextra -I./src -O2
+CFLAGS = -Wall -Wextra -I./src -O1
 CXXFLAGS = -Wall -Wextra -I./src -O1 -std=c++17
 LDFLAGS = -lcurl
 TARGET = misskey_example

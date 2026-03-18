@@ -16,10 +16,27 @@ fn C.misskey_notes_timeline(client &C.MisskeyClient, limit int, local int, respo
 fn C.misskey_i_notifications(client &C.MisskeyClient, limit int, response &charptr) int
 fn C.misskey_drive(client &C.MisskeyClient, response &charptr) int
 fn C.misskey_drive_files(client &C.MisskeyClient, limit int, folder_id int, response &charptr) int
+fn C.misskey_drive_files_create(client &C.MisskeyClient, file_path charptr, folder_id charptr, name charptr, response &charptr) int
+fn C.misskey_drive_files_delete(client &C.MisskeyClient, file_id charptr, response &charptr) int
+fn C.misskey_drive_files_update(client &C.MisskeyClient, file_id charptr, folder_id charptr, name charptr, response &charptr) int
 fn C.misskey_drive_files_find(client &C.MisskeyClient, hash charptr, response &charptr) int
 fn C.misskey_drive_files_show(client &C.MisskeyClient, file_id charptr, url charptr, response &charptr) int
 fn C.misskey_drive_files_upload_from_url(client &C.MisskeyClient, url charptr, folder_id charptr, is_sensitive int, comment charptr, response &charptr) int
 fn C.misskey_drive_folders(client &C.MisskeyClient, limit int, folder_id charptr, response &charptr) int
+fn C.misskey_drive_folders_create(client &C.MisskeyClient, name charptr, parent_id charptr, response &charptr) int
+fn C.misskey_drive_folders_delete(client &C.MisskeyClient, folder_id charptr, response &charptr) int
+fn C.misskey_drive_folders_update(client &C.MisskeyClient, folder_id charptr, name charptr, parent_id charptr, response &charptr) int
+fn C.misskey_notes(client &C.MisskeyClient, text charptr, reply_id charptr, renote_id charptr, channel_id charptr, limit int, offset int, user_id charptr, local_only int, reply int, renote int, with_files int, since_id charptr, until_id charptr, response &charptr) int
+fn C.misskey_notes_show(client &C.MisskeyClient, note_id charptr, response &charptr) int
+fn C.misskey_notes_delete(client &C.MisskeyClient, note_id charptr, response &charptr) int
+fn C.misskey_clips_list(client &C.MisskeyClient, response &charptr) int
+fn C.misskey_clips_show(client &C.MisskeyClient, clip_id charptr, response &charptr) int
+fn C.misskey_clips_create(client &C.MisskeyClient, name charptr, description charptr, is_public int, response &charptr) int
+fn C.misskey_clips_update(client &C.MisskeyClient, clip_id charptr, name charptr, description charptr, is_public int, response &charptr) int
+fn C.misskey_clips_delete(client &C.MisskeyClient, clip_id charptr, response &charptr) int
+fn C.misskey_clips_add_note(client &C.MisskeyClient, clip_id charptr, note_id charptr, response &charptr) int
+fn C.misskey_clips_remove_note(client &C.MisskeyClient, clip_id charptr, note_id charptr, response &charptr) int
+fn C.misskey_clips_notes(client &C.MisskeyClient, clip_id charptr, limit int, response &charptr) int
 fn C.misskey_translate(client &C.MisskeyClient, text charptr, source_lang charptr, target_lang charptr, response &charptr) int
 fn C.misskey_request_set_debug(client &C.MisskeyClient, enable int)
 fn C.misskey_free_string(client &C.MisskeyClient, str charptr)
@@ -172,6 +189,137 @@ fn (mut c Client) translate(text string, source_lang string, target_lang string)
 	return result
 }
 
+fn (mut c Client) notes(text string, reply_id string, renote_id string, channel_id string, limit int, offset int, user_id string, local_only bool, reply bool, renote bool, with_files bool, since_id string, until_id string) !string {
+	text_cstr := if text.len > 0 { &char(text.str) } else { voidptr(0) }
+	reply_cstr := if reply_id.len > 0 { &char(reply_id.str) } else { voidptr(0) }
+	renote_cstr := if renote_id.len > 0 { &char(renote_id.str) } else { voidptr(0) }
+	channel_cstr := if channel_id.len > 0 { &char(channel_id.str) } else { voidptr(0) }
+	user_cstr := if user_id.len > 0 { &char(user_id.str) } else { voidptr(0) }
+	since_cstr := if since_id.len > 0 { &char(since_id.str) } else { voidptr(0) }
+	until_cstr := if until_id.len > 0 { &char(until_id.str) } else { voidptr(0) }
+	mut response := &char(0)
+	ret := C.misskey_notes(c.c_client, text_cstr, reply_cstr, renote_cstr, channel_cstr, limit, offset, user_cstr, if local_only { 1 } else { 0 }, if reply { 1 } else { 0 }, if renote { 1 } else { 0 }, if with_files { 1 } else { 0 }, since_cstr, until_cstr, &response)
+	if ret != 0 {
+		return error('notes failed')
+	}
+	result := unsafe { cstring_to_vstring(response) }
+	C.misskey_free_string(c.c_client, response)
+	return result
+}
+
+fn (mut c Client) notes_show(note_id string) !string {
+	mut response := &char(0)
+	ret := C.misskey_notes_show(c.c_client, &char(note_id.str), &response)
+	if ret != 0 {
+		return error('notes_show failed')
+	}
+	result := unsafe { cstring_to_vstring(response) }
+	C.misskey_free_string(c.c_client, response)
+	return result
+}
+
+fn (mut c Client) notes_delete(note_id string) !string {
+	mut response := &char(0)
+	ret := C.misskey_notes_delete(c.c_client, &char(note_id.str), &response)
+	if ret != 0 {
+		return error('notes_delete failed')
+	}
+	result := unsafe { cstring_to_vstring(response) }
+	C.misskey_free_string(c.c_client, response)
+	return result
+}
+
+fn (mut c Client) clips_list() !string {
+	mut response := &char(0)
+	ret := C.misskey_clips_list(c.c_client, &response)
+	if ret != 0 {
+		return error('clips_list failed')
+	}
+	result := unsafe { cstring_to_vstring(response) }
+	C.misskey_free_string(c.c_client, response)
+	return result
+}
+
+fn (mut c Client) clips_show(clip_id string) !string {
+	mut response := &char(0)
+	ret := C.misskey_clips_show(c.c_client, &char(clip_id.str), &response)
+	if ret != 0 {
+		return error('clips_show failed')
+	}
+	result := unsafe { cstring_to_vstring(response) }
+	C.misskey_free_string(c.c_client, response)
+	return result
+}
+
+fn (mut c Client) clips_create(name string, description string, is_public bool) !string {
+	desc_cstr := if description.len > 0 { &char(description.str) } else { voidptr(0) }
+	mut response := &char(0)
+	ret := C.misskey_clips_create(c.c_client, &char(name.str), desc_cstr, if is_public { 1 } else { 0 }, &response)
+	if ret != 0 {
+		return error('clips_create failed')
+	}
+	result := unsafe { cstring_to_vstring(response) }
+	C.misskey_free_string(c.c_client, response)
+	return result
+}
+
+fn (mut c Client) clips_update(clip_id string, name string, description string, is_public bool) !string {
+	name_cstr := if name.len > 0 { &char(name.str) } else { voidptr(0) }
+	desc_cstr := if description.len > 0 { &char(description.str) } else { voidptr(0) }
+	mut response := &char(0)
+	ret := C.misskey_clips_update(c.c_client, &char(clip_id.str), name_cstr, desc_cstr, if is_public { 1 } else { 0 }, &response)
+	if ret != 0 {
+		return error('clips_update failed')
+	}
+	result := unsafe { cstring_to_vstring(response) }
+	C.misskey_free_string(c.c_client, response)
+	return result
+}
+
+fn (mut c Client) clips_delete(clip_id string) !string {
+	mut response := &char(0)
+	ret := C.misskey_clips_delete(c.c_client, &char(clip_id.str), &response)
+	if ret != 0 {
+		return error('clips_delete failed')
+	}
+	result := unsafe { cstring_to_vstring(response) }
+	C.misskey_free_string(c.c_client, response)
+	return result
+}
+
+fn (mut c Client) clips_add_note(clip_id string, note_id string) !string {
+	mut response := &char(0)
+	ret := C.misskey_clips_add_note(c.c_client, &char(clip_id.str), &char(note_id.str), &response)
+	if ret != 0 {
+		return error('clips_add_note failed')
+	}
+	result := unsafe { cstring_to_vstring(response) }
+	C.misskey_free_string(c.c_client, response)
+	return result
+}
+
+fn (mut c Client) clips_remove_note(clip_id string, note_id string) !string {
+	mut response := &char(0)
+	ret := C.misskey_clips_remove_note(c.c_client, &char(clip_id.str), &char(note_id.str), &response)
+	if ret != 0 {
+		return error('clips_remove_note failed')
+	}
+	result := unsafe { cstring_to_vstring(response) }
+	C.misskey_free_string(c.c_client, response)
+	return result
+}
+
+fn (mut c Client) clips_notes(clip_id string, limit int) !string {
+	mut response := &char(0)
+	ret := C.misskey_clips_notes(c.c_client, &char(clip_id.str), limit, &response)
+	if ret != 0 {
+		return error('clips_notes failed')
+	}
+	result := unsafe { cstring_to_vstring(response) }
+	C.misskey_free_string(c.c_client, response)
+	return result
+}
+
 fn main() {
 	host := os.args[1] or { 'localhost:3000' }
 	token := os.args[2] or { 'test_token_12345' }
@@ -263,6 +411,54 @@ fn main() {
 	println('')
 	println('=== translate ===')
 	result = client.translate('Hello', 'en', 'ja') or {
+		println('Error: ${err}')
+		return
+	}
+	println(result)
+	
+	println('')
+	println('=== notes ===')
+	result = client.notes('', '', '', '', 5, 0, '', false, false, false, false, '', '') or {
+		println('Error: ${err}')
+		return
+	}
+	println(result)
+	
+	println('')
+	println('=== notes_show ===')
+	result = client.notes_show('test_note_id_123') or {
+		println('Error: ${err}')
+		return
+	}
+	println(result)
+	
+	println('')
+	println('=== clips_list ===')
+	result = client.clips_list() or {
+		println('Error: ${err}')
+		return
+	}
+	println(result)
+	
+	println('')
+	println('=== clips_show ===')
+	result = client.clips_show('test_clip_id_123') or {
+		println('Error: ${err}')
+		return
+	}
+	println(result)
+	
+	println('')
+	println('=== clips_create ===')
+	result = client.clips_create('Test Clip', 'A test clip', true) or {
+		println('Error: ${err}')
+		return
+	}
+	println(result)
+	
+	println('')
+	println('=== clips_notes ===')
+	result = client.clips_notes('test_clip_id_123', 10) or {
 		println('Error: ${err}')
 		return
 	}

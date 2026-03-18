@@ -153,6 +153,84 @@ int example_drive_folders(MisskeyClient* client, int limit) {
     return 0;
 }
 
+int example_notes(MisskeyClient* client) {
+    printf("\n=== Search Notes ===\n");
+    char* resp = NULL;
+    MisskeyError err = misskey_notes(client, NULL, NULL, NULL, NULL, 5, 0, NULL, 0, 0, 0, 0, NULL, NULL, &resp);
+    if (err != MISSKEY_OK) {
+        printf("Error: %s\n", misskey_error_str(err));
+        return 1;
+    }
+    print_json_parsed(resp);
+    misskey_free_string(client, resp);
+    return 0;
+}
+
+int example_notes_show(MisskeyClient* client, const char* note_id) {
+    printf("\n=== Get Note (id: %s) ===\n", note_id);
+    char* resp = NULL;
+    MisskeyError err = misskey_notes_show(client, note_id, &resp);
+    if (err != MISSKEY_OK) {
+        printf("Error: %s\n", misskey_error_str(err));
+        return 1;
+    }
+    print_json_parsed(resp);
+    misskey_free_string(client, resp);
+    return 0;
+}
+
+int example_clips_list(MisskeyClient* client) {
+    printf("\n=== List Clips ===\n");
+    char* resp = NULL;
+    MisskeyError err = misskey_clips_list(client, &resp);
+    if (err != MISSKEY_OK) {
+        printf("Error: %s\n", misskey_error_str(err));
+        return 1;
+    }
+    print_json_parsed(resp);
+    misskey_free_string(client, resp);
+    return 0;
+}
+
+int example_clips_show(MisskeyClient* client, const char* clip_id) {
+    printf("\n=== Get Clip (id: %s) ===\n", clip_id);
+    char* resp = NULL;
+    MisskeyError err = misskey_clips_show(client, clip_id, &resp);
+    if (err != MISSKEY_OK) {
+        printf("Error: %s\n", misskey_error_str(err));
+        return 1;
+    }
+    print_json_parsed(resp);
+    misskey_free_string(client, resp);
+    return 0;
+}
+
+int example_clips_create(MisskeyClient* client, const char* name) {
+    printf("\n=== Create Clip (name: %s) ===\n", name);
+    char* resp = NULL;
+    MisskeyError err = misskey_clips_create(client, name, "Test clip description", 1, &resp);
+    if (err != MISSKEY_OK) {
+        printf("Error: %s\n", misskey_error_str(err));
+        return 1;
+    }
+    print_json_parsed(resp);
+    misskey_free_string(client, resp);
+    return 0;
+}
+
+int example_clips_notes(MisskeyClient* client, const char* clip_id) {
+    printf("\n=== Get Clip Notes (clip_id: %s) ===\n", clip_id);
+    char* resp = NULL;
+    MisskeyError err = misskey_clips_notes(client, clip_id, 10, &resp);
+    if (err != MISSKEY_OK) {
+        printf("Error: %s\n", misskey_error_str(err));
+        return 1;
+    }
+    print_json_parsed(resp);
+    misskey_free_string(client, resp);
+    return 0;
+}
+
 int main(int argc, char* argv[]) {
     const char* host = argc > 1 ? argv[1] : "misskey.io";
     const char* token = argc > 2 ? argv[2] : NULL;
@@ -195,6 +273,12 @@ int main(int argc, char* argv[]) {
         example_drive_files(client, 5);
         example_drive_folders(client, 5);
         example_translate(client, "Hello from Misskey C Client!", "en", "ja");
+        example_notes(client);
+        example_notes_show(client, "test_note_123");
+        example_clips_list(client);
+        example_clips_show(client, "test_clip_123");
+        example_clips_create(client, "Test Clip");
+        example_clips_notes(client, "test_clip_123");
     } else {
         printf("Token: [not set - some APIs will fail]\n");
     }

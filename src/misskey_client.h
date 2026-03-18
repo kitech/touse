@@ -41,11 +41,22 @@ void misskey_request_print_curl(MisskeyClient* client, const char* endpoint,
 MisskeyError misskey_meta(MisskeyClient* client, char** response_out);
 MisskeyError misskey_notes_timeline(MisskeyClient* client, int limit,
                                      int local, char** response_out);
+MisskeyError misskey_notes(MisskeyClient* client, const char* text,
+                           const char* reply_id, const char* renote_id,
+                           const char* channel_id, int limit, int offset,
+                           const char* user_id, int local_only,
+                           int reply, int renote, int with_files,
+                           const char* since_id, const char* until_id,
+                           char** response_out);
+MisskeyError misskey_notes_show(MisskeyClient* client, const char* note_id,
+                                char** response_out);
+MisskeyError misskey_notes_delete(MisskeyClient* client, const char* note_id,
+                                  char** response_out);
 MisskeyError misskey_notes_create(MisskeyClient* client, const char* text,
-                                   const char* reply_id, const char* renote_id,
-                                   char** response_out);
+                                    const char* reply_id, const char* renote_id,
+                                    char** response_out);
 MisskeyError misskey_i_notifications(MisskeyClient* client, int limit,
-                                       char** response_out);
+                                        char** response_out);
 
 MisskeyError misskey_drive(MisskeyClient* client, char** response_out);
 
@@ -99,6 +110,24 @@ MisskeyError misskey_drive_folders_update(MisskeyClient* client, const char* fol
 MisskeyError misskey_translate(MisskeyClient* client, const char* text,
                                 const char* source_lang, const char* target_lang,
                                 char** response_out);
+
+MisskeyError misskey_clips_list(MisskeyClient* client, char** response_out);
+MisskeyError misskey_clips_show(MisskeyClient* client, const char* clip_id,
+                                char** response_out);
+MisskeyError misskey_clips_create(MisskeyClient* client, const char* name,
+                                 const char* description, int is_public,
+                                 char** response_out);
+MisskeyError misskey_clips_update(MisskeyClient* client, const char* clip_id,
+                                  const char* name, const char* description,
+                                  int is_public, char** response_out);
+MisskeyError misskey_clips_delete(MisskeyClient* client, const char* clip_id,
+                                  char** response_out);
+MisskeyError misskey_clips_add_note(MisskeyClient* client, const char* clip_id,
+                                   const char* note_id, char** response_out);
+MisskeyError misskey_clips_remove_note(MisskeyClient* client, const char* clip_id,
+                                      const char* note_id, char** response_out);
+MisskeyError misskey_clips_notes(MisskeyClient* client, const char* clip_id,
+                                 int limit, char** response_out);
 
 void misskey_free_string(MisskeyClient* client, char* str);
 
