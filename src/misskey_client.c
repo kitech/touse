@@ -62,7 +62,7 @@ static size_t write_callback(void* contents, size_t size, size_t nmemb, void* us
     wd->size += realsize;
     wd->data[wd->size] = 0;
     return realsize;
-}
+};
 
 struct MisskeyClient {
     char host[256];
@@ -310,10 +310,8 @@ MisskeyError misskey_drive_files(MisskeyClient* client, int limit, int folder_id
 MisskeyError misskey_drive_files_create(MisskeyClient* client, const char* file_path,
                                          const char* folder_id, const char* name,
                                          char** response_out) {
-    (void)folder_id;
-    (void)name;
-    
     if (!file_path) return MISSKEY_ERROR_INVALID_PARAM;
+    if (!response_out) return MISSKEY_ERROR_INVALID_PARAM;
     
     FILE* fp = fopen(file_path, "rb");
     if (!fp) return MISSKEY_ERROR_INVALID_PARAM;
@@ -330,30 +328,88 @@ MisskeyError misskey_drive_files_create(MisskeyClient* client, const char* file_
     fread(file_data, 1, file_size, fp);
     fclose(fp);
     
+    const char* basename = strrchr(file_path, '/');
+    if (!basename) basename = file_path;
+    else basename++;
+    if (name) basename = name;
+    
     char url[512];
     snprintf(url, sizeof(url), "https://%s/api/drive/files/create", client->host);
     
-    char* response = NULL;
-    struct curl_slist* headers = NULL;
-    headers = curl_slist_append(headers, "Content-Type: multipart/form-data");
+    WriteData wd = {
+        .data = alloc_allocator(&client->allocator, 1),
+        .size = 0,
+        .alloc = client->allocator
+    };
+    if (!wd.data) {
+        free(file_data);
+        return MISSKEY_ERROR_ALLOC;
+    }
     
+    struct curl_slist* headers = NULL;
     if (client->token[0] && client->token[0] != '\0') {
         char auth_header[320];
         snprintf(auth_header, sizeof(auth_header), "Authorization: Bearer %s", client->token);
         headers = curl_slist_append(headers, auth_header);
     }
     
+    curl_mime* mime = curl_mime_init(client->curl);
+    if (!mime) {
+        free(file_data);
+        free_allocator(&client->allocator, wd.data);
+        curl_slist_free_all(headers);
+        return MISSKEY_ERROR_ALLOC;
+    }
+    
+    curl_mimepart* part = curl_mime_addpart(mime);
+    curl_mime_name(part, "i");
+    curl_mime_data(part, client->token, CURL_ZERO_TERMINATED);
+    
+    part = curl_mime_addpart(mime);
+    curl_mime_name(part, "file");
+    curl_mime_filedata(part, file_path);
+    
+    if (folder_id) {
+        part = curl_mime_addpart(mime);
+        curl_mime_name(part, "folderId");
+        curl_mime_data(part, folder_id, CURL_ZERO_TERMINATED);
+    }
+    
+    if (name) {
+        part = curl_mime_addpart(mime);
+        curl_mime_name(part, "name");
+        curl_mime_data(part, name, CURL_ZERO_TERMINATED);
+    }
+    
     curl_easy_reset(client->curl);
     curl_easy_setopt(client->curl, CURLOPT_URL, url);
+    curl_easy_setopt(client->curl, CURLOPT_MIMEPOST, mime);
     curl_easy_setopt(client->curl, CURLOPT_HTTPHEADER, headers);
+    curl_easy_setopt(client->curl, CURLOPT_WRITEFUNCTION, write_callback);
+    curl_easy_setopt(client->curl, CURLOPT_WRITEDATA, &wd);
     curl_easy_setopt(client->curl, CURLOPT_TIMEOUT, client->timeout);
     curl_easy_setopt(client->curl, CURLOPT_SSL_VERIFYPEER, 1L);
     
+    CURLcode res = curl_easy_perform(client->curl);
+    
+    curl_mime_free(mime);
     free(file_data);
     curl_slist_free_all(headers);
     
-    response = strdup("{\"error\":\"Multipart upload not fully implemented - use raw API\"}");
-    *response_out = response;
+    if (res != CURLE_OK) {
+        free_allocator(&client->allocator, wd.data);
+        return MISSKEY_ERROR_NETWORK;
+    }
+    
+    long http_code = 0;
+    curl_easy_getinfo(client->curl, CURLINFO_RESPONSE_CODE, &http_code);
+    
+    if (http_code >= 400) {
+        free_allocator(&client->allocator, wd.data);
+        return MISSKEY_ERROR_HTTP;
+    }
+    
+    *response_out = wd.data;
     return MISSKEY_OK;
 }
 
