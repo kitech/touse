@@ -71,13 +71,15 @@ test_api "获取通知" "i/notifications" '{"limit":5}'
 
 echo ""
 echo "=========================================="
-echo "  网盘-文件 API"
+echo "  网盘 API"
 echo "=========================================="
+test_api "网盘容量" "drive" '{}'
 test_api "文件列表" "drive/files" '{"limit":5}'
 test_api "删除文件" "drive/files/delete" '{"fileId":"test123"}'
 test_api "更新文件" "drive/files/update" '{"fileId":"test123","name":"newname.txt"}'
 test_api "查找文件" "drive/files/find" '{"hash":"abc123"}'
 test_api "文件属性" "drive/files/show" '{"fileId":"test_file_id_123"}'
+test_api "URL上传" "drive/files/upload-from-url" '{"url":"https://example.com/test.png"}'
 
 echo ""
 echo "=========================================="

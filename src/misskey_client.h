@@ -47,6 +47,8 @@ MisskeyError misskey_notes_create(MisskeyClient* client, const char* text,
 MisskeyError misskey_i_notifications(MisskeyClient* client, int limit,
                                        char** response_out);
 
+MisskeyError misskey_drive(MisskeyClient* client, char** response_out);
+
 MisskeyError misskey_drive_files(MisskeyClient* client, int limit, int folder_id,
                                   char** response_out);
 MisskeyError misskey_drive_files_create(MisskeyClient* client, const char* file_path,
@@ -61,6 +63,9 @@ MisskeyError misskey_drive_files_find(MisskeyClient* client, const char* hash,
                                         char** response_out);
 MisskeyError misskey_drive_files_show(MisskeyClient* client, const char* file_id,
                                        const char* url, char** response_out);
+MisskeyError misskey_drive_files_upload_from_url(MisskeyClient* client, const char* url,
+                                                  const char* folder_id, int is_sensitive,
+                                                  const char* comment, char** response_out);
 MisskeyError misskey_drive_folders(MisskeyClient* client, int limit, const char* folder_id,
                                    char** response_out);
 MisskeyError misskey_drive_folders_create(MisskeyClient* client, const char* name,

@@ -301,6 +301,18 @@ void misskey_free_string(MisskeyClient* client, char* str) {
     free_allocator(&client->allocator, str);
 }
 
+MisskeyError misskey_drive(MisskeyClient* client, char** response_out) {
+    cJSON* root = cJSON_CreateObject();
+    cJSON_AddStringToObject(root, "i", client->token);
+    
+    char* json_str = cJSON_PrintUnformatted(root);
+    MisskeyError err = misskey_request(client, "drive", json_str, response_out);
+    
+    free(json_str);
+    cJSON_Delete(root);
+    return err;
+}
+
 MisskeyError misskey_drive_files(MisskeyClient* client, int limit, int folder_id,
                                   char** response_out) {
     cJSON* root = cJSON_CreateObject();
@@ -487,6 +499,26 @@ MisskeyError misskey_drive_files_show(MisskeyClient* client, const char* file_id
     
     char* json_str = cJSON_PrintUnformatted(root);
     MisskeyError err = misskey_request(client, "drive/files/show", json_str, response_out);
+    
+    free(json_str);
+    cJSON_Delete(root);
+    return err;
+}
+
+MisskeyError misskey_drive_files_upload_from_url(MisskeyClient* client, const char* url,
+                                                  const char* folder_id, int is_sensitive,
+                                                  const char* comment, char** response_out) {
+    if (!url) return MISSKEY_ERROR_INVALID_PARAM;
+    
+    cJSON* root = cJSON_CreateObject();
+    cJSON_AddStringToObject(root, "i", client->token);
+    cJSON_AddStringToObject(root, "url", url);
+    if (folder_id) cJSON_AddStringToObject(root, "folderId", folder_id);
+    if (is_sensitive) cJSON_AddTrueToObject(root, "isSensitive");
+    if (comment) cJSON_AddStringToObject(root, "comment", comment);
+    
+    char* json_str = cJSON_PrintUnformatted(root);
+    MisskeyError err = misskey_request(client, "drive/files/upload-from-url", json_str, response_out);
     
     free(json_str);
     cJSON_Delete(root);

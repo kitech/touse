@@ -111,21 +111,18 @@ proxychains ./misskey_example misskey.io YOUR_TOKEN
 |------|------|------|
 | `misskey_i_notifications()` | `/api/i/notifications` | 获取通知 |
 
-### 网盘API - 文件
+### 网盘API
 
 | 函数 | 端点 | 说明 |
 |------|------|------|
+| `misskey_drive()` | `/api/drive` | 获取网盘容量信息 |
 | `misskey_drive_files()` | `/api/drive/files` | 获取文件列表 |
 | `misskey_drive_files_create()` | `/api/drive/files/create` | 上传文件 |
 | `misskey_drive_files_delete()` | `/api/drive/files/delete` | 删除文件 |
 | `misskey_drive_files_update()` | `/api/drive/files/update` | 更新文件 |
 | `misskey_drive_files_find()` | `/api/drive/files/find` | 按哈希查找文件 |
 | `misskey_drive_files_show()` | `/api/drive/files/show` | 获取文件属性 |
-
-### 网盘API - 文件夹
-
-| 函数 | 端点 | 说明 |
-|------|------|------|
+| `misskey_drive_files_upload_from_url()` | `/api/drive/files/upload-from-url` | 从URL上传文件 |
 | `misskey_drive_folders()` | `/api/drive/folders` | 获取文件夹列表 |
 | `misskey_drive_folders_create()` | `/api/drive/folders/create` | 创建文件夹 |
 | `misskey_drive_folders_delete()` | `/api/drive/folders/delete` | 删除文件夹 |

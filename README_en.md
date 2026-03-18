@@ -111,21 +111,18 @@ proxychains ./misskey_example misskey.io YOUR_TOKEN
 |----------|----------|-------------|
 | `misskey_i_notifications()` | `/api/i/notifications` | Get notifications |
 
-### Drive API - Files
+### Drive API
 
 | Function | Endpoint | Description |
 |----------|----------|-------------|
+| `misskey_drive()` | `/api/drive` | Get drive capacity info |
 | `misskey_drive_files()` | `/api/drive/files` | List files |
 | `misskey_drive_files_create()` | `/api/drive/files/create` | Upload file |
 | `misskey_drive_files_delete()` | `/api/drive/files/delete` | Delete file |
 | `misskey_drive_files_update()` | `/api/drive/files/update` | Update file |
 | `misskey_drive_files_find()` | `/api/drive/files/find` | Find file by hash |
 | `misskey_drive_files_show()` | `/api/drive/files/show` | Get file properties |
-
-### Drive API - Folders
-
-| Function | Endpoint | Description |
-|----------|----------|-------------|
+| `misskey_drive_files_upload_from_url()` | `/api/drive/files/upload-from-url` | Upload file from URL |
 | `misskey_drive_folders()` | `/api/drive/folders` | List folders |
 | `misskey_drive_folders_create()` | `/api/drive/folders/create` | Create folder |
 | `misskey_drive_folders_delete()` | `/api/drive/folders/delete` | Delete folder |

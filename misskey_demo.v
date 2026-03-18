@@ -14,9 +14,11 @@ fn C.misskey_request(client &C.MisskeyClient, endpoint &char, body &char, respon
 fn C.misskey_meta(client &C.MisskeyClient, response &&char) int
 fn C.misskey_notes_timeline(client &C.MisskeyClient, limit int, local int, response &&char) int
 fn C.misskey_i_notifications(client &C.MisskeyClient, limit int, response &&char) int
+fn C.misskey_drive(client &C.MisskeyClient, response &&char) int
 fn C.misskey_drive_files(client &C.MisskeyClient, limit int, folder_id int, response &&char) int
 fn C.misskey_drive_files_find(client &C.MisskeyClient, hash &char, response &&char) int
 fn C.misskey_drive_files_show(client &C.MisskeyClient, file_id &char, url &char, response &&char) int
+fn C.misskey_drive_files_upload_from_url(client &C.MisskeyClient, url &char, folder_id &char, is_sensitive int, comment &char, response &&char) int
 fn C.misskey_drive_folders(client &C.MisskeyClient, limit int, folder_id &char, response &&char) int
 fn C.misskey_translate(client &C.MisskeyClient, text &char, source_lang &char, target_lang &char, response &&char) int
 fn C.misskey_request_set_debug(client &C.MisskeyClient, enable int)
@@ -85,6 +87,17 @@ fn (mut c Client) i_notifications(limit int) !string {
 	return result
 }
 
+fn (mut c Client) drive() !string {
+	mut response := &char(0)
+	ret := C.misskey_drive(c.c_client, &response)
+	if ret != 0 {
+		return error('drive failed')
+	}
+	result := unsafe { cstring_to_vstring(response) }
+	C.misskey_free_string(c.c_client, response)
+	return result
+}
+
 fn (mut c Client) drive_files(limit int, folder_id int) !string {
 	mut response := &char(0)
 	ret := C.misskey_drive_files(c.c_client, limit, folder_id, &response)
@@ -114,6 +127,20 @@ fn (mut c Client) drive_files_show(file_id string, url string) !string {
 	ret := C.misskey_drive_files_show(c.c_client, file_id_cstr, url_cstr, &response)
 	if ret != 0 {
 		return error('drive_files_show failed')
+	}
+	result := unsafe { cstring_to_vstring(response) }
+	C.misskey_free_string(c.c_client, response)
+	return result
+}
+
+fn (mut c Client) drive_files_upload_from_url(url string, folder_id string, is_sensitive bool, comment string) !string {
+	folder_cstr := if folder_id.len > 0 { &char(folder_id.str) } else { voidptr(0) }
+	comment_cstr := if comment.len > 0 { &char(comment.str) } else { voidptr(0) }
+	sensitive_val := if is_sensitive { 1 } else { 0 }
+	mut response := &char(0)
+	ret := C.misskey_drive_files_upload_from_url(c.c_client, &char(url.str), folder_cstr, sensitive_val, comment_cstr, &response)
+	if ret != 0 {
+		return error('drive_files_upload_from_url failed')
 	}
 	result := unsafe { cstring_to_vstring(response) }
 	C.misskey_free_string(c.c_client, response)
@@ -194,6 +221,14 @@ fn main() {
 	println(result)
 	
 	println('')
+	println('=== drive ===')
+	result = client.drive() or {
+		println('Error: ${err}')
+		return
+	}
+	println(result)
+	
+	println('')
 	println('=== drive_files ===')
 	result = client.drive_files(5, 0) or {
 		println('Error: ${err}')
@@ -204,6 +239,14 @@ fn main() {
 	println('')
 	println('=== drive_files_show ===')
 	result = client.drive_files_show('test_file_id_123', '') or {
+		println('Error: ${err}')
+		return
+	}
+	println(result)
+	
+	println('')
+	println('=== drive_files_upload_from_url ===')
+	result = client.drive_files_upload_from_url('https://example.com/test.png', '', false, '') or {
 		println('Error: ${err}')
 		return
 	}

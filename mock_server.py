@@ -80,6 +80,15 @@ def api_notifications():
     } for i in range(limit)]
     return jsonify(notifications)
 
+@app.route('/api/drive', methods=['POST'])
+def api_drive():
+    if not check_auth():
+        return jsonify({"error": "Authentication failed"}), 401
+    return jsonify({
+        "capacity": 5368709120,
+        "usage": 1073741824,
+    })
+
 @app.route('/api/drive/files', methods=['POST'])
 def api_drive_files():
     if not check_auth():
@@ -147,6 +156,23 @@ def api_drive_files_show():
         "url": url or "https://example.com/files/" + gen_id(),
         "createdAt": datetime.now().isoformat(),
         "md5": ''.join(random.choices(string.hexdigits.lower(), k=32)),
+    })
+
+@app.route('/api/drive/files/upload-from-url', methods=['POST'])
+def api_drive_files_upload_from_url():
+    if not check_auth():
+        return jsonify({"error": "Authentication failed"}), 401
+    data = request.get_json() or {}
+    url = data.get('url')
+    if not url:
+        return jsonify({"error": "url required"}), 400
+    return jsonify({
+        "id": gen_id(),
+        "name": url.split('/')[-1] or "downloaded_file.txt",
+        "type": "application/octet-stream",
+        "size": random.randint(1000, 100000),
+        "url": url,
+        "createdAt": datetime.now().isoformat(),
     })
 
 @app.route('/api/drive/folders', methods=['POST'])
@@ -223,12 +249,14 @@ if __name__ == '__main__':
     print("  /api/notes/timeline")
     print("  /api/notes/create")
     print("  /api/i/notifications")
+    print("  /api/drive")
     print("  /api/drive/files")
     print("  /api/drive/files/create")
     print("  /api/drive/files/delete")
     print("  /api/drive/files/update")
     print("  /api/drive/files/find")
     print("  /api/drive/files/show")
+    print("  /api/drive/files/upload-from-url")
     print("  /api/drive/folders")
     print("  /api/drive/folders/create")
     print("  /api/drive/folders/delete")
