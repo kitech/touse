@@ -1,0 +1,275 @@
+#include "misskey_client.h"
+#include "cJSON/cJSON.h"
+#include <curl/curl.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+static MisskeyAllocator g_global_allocator = {
+    .malloc_fn = malloc,
+    .realloc_fn = realloc,
+    .free_fn = free,
+    .user_data = NULL
+};
+
+static void* default_malloc(size_t size) {
+    return malloc(size);
+}
+
+static void* default_realloc(void* ptr, size_t size) {
+    return realloc(ptr, size);
+}
+
+static void default_free(void* ptr) {
+    free(ptr);
+}
+
+static int g_curl_initialized = 0;
+
+static void curl_ensure_init(void) {
+    if (!g_curl_initialized) {
+        curl_global_init(CURL_GLOBAL_DEFAULT);
+        g_curl_initialized = 1;
+    }
+}
+
+const MisskeyAllocator* misskey_get_default_allocator(void) {
+    return &g_global_allocator;
+}
+
+void misskey_set_global_allocator(const MisskeyAllocator* allocator) {
+    if (allocator && allocator->malloc_fn && allocator->realloc_fn && allocator->free_fn) {
+        memcpy(&g_global_allocator, allocator, sizeof(MisskeyAllocator));
+    }
+}
+
+static void* alloc_allocator(const MisskeyAllocator* alloc, size_t size) {
+    if (!alloc || !alloc->malloc_fn) return NULL;
+    return alloc->malloc_fn(size);
+}
+
+static void* realloc_allocator(const MisskeyAllocator* alloc, void* ptr, size_t size) {
+    if (!alloc || !alloc->realloc_fn) return NULL;
+    return alloc->realloc_fn(ptr, size);
+}
+
+static void free_allocator(const MisskeyAllocator* alloc, void* ptr) {
+    if (!alloc || !alloc->free_fn || !ptr) return;
+    alloc->free_fn(ptr);
+}
+
+typedef struct {
+    char* data;
+    size_t size;
+    MisskeyAllocator alloc;
+} WriteData;
+
+static size_t write_callback(void* contents, size_t size, size_t nmemb, void* userp) {
+    size_t realsize = size * nmemb;
+    WriteData* wd = (WriteData*)userp;
+    char* ptr = realloc_allocator(&wd->alloc, wd->data, wd->size + realsize + 1);
+    if (!ptr) return 0;
+    wd->data = ptr;
+    memcpy(wd->data + wd->size, contents, realsize);
+    wd->size += realsize;
+    wd->data[wd->size] = 0;
+    return realsize;
+}
+
+struct MisskeyClient {
+    char host[256];
+    char token[256];
+    long timeout;
+    CURL* curl;
+    MisskeyAllocator allocator;
+};
+
+const char* misskey_error_str(MisskeyError err) {
+    switch (err) {
+        case MISSKEY_OK: return "Success";
+        case MISSKEY_ERROR_INVALID_PARAM: return "Invalid parameter";
+        case MISSKEY_ERROR_NETWORK: return "Network error";
+        case MISSKEY_ERROR_HTTP: return "HTTP error";
+        case MISSKEY_ERROR_JSON: return "JSON error";
+        case MISSKEY_ERROR_AUTH: return "Authentication error";
+        case MISSKEY_ERROR_ALLOC: return "Allocation error";
+        default: return "Unknown error";
+    }
+}
+
+static MisskeyClient* client_new_internal(const char* host, const MisskeyAllocator* allocator) {
+    curl_ensure_init();
+    
+    MisskeyClient* client = alloc_allocator(allocator ? allocator : &g_global_allocator, sizeof(MisskeyClient));
+    if (!client) return NULL;
+    
+    memset(client, 0, sizeof(MisskeyClient));
+    
+    if (allocator && allocator->malloc_fn) {
+        memcpy(&client->allocator, allocator, sizeof(MisskeyAllocator));
+    } else {
+        memcpy(&client->allocator, &g_global_allocator, sizeof(MisskeyAllocator));
+    }
+    
+    strncpy(client->host, host ? host : "misskey.io", sizeof(client->host) - 1);
+    client->timeout = 30;
+    client->curl = curl_easy_init();
+    
+    return client;
+}
+
+MisskeyClient* misskey_client_new(const char* host) {
+    return client_new_internal(host, NULL);
+}
+
+MisskeyClient* misskey_client_new_with_allocator(const char* host, const MisskeyAllocator* allocator) {
+    return client_new_internal(host, allocator);
+}
+
+void misskey_client_free(MisskeyClient* client) {
+    if (!client) return;
+    if (client->curl) curl_easy_cleanup(client->curl);
+    free_allocator(&client->allocator, client);
+}
+
+void misskey_client_set_token(MisskeyClient* client, const char* token) {
+    if (client && token) {
+        strncpy(client->token, token, sizeof(client->token) - 1);
+    }
+}
+
+void misskey_client_set_timeout(MisskeyClient* client, long timeout_secs) {
+    if (client) client->timeout = timeout_secs;
+}
+
+const MisskeyAllocator* misskey_client_get_allocator(const MisskeyClient* client) {
+    if (!client) return NULL;
+    return &client->allocator;
+}
+
+MisskeyError misskey_request(MisskeyClient* client, const char* endpoint,
+                              const char* request_body, char** response_out) {
+    if (!client || !endpoint || !request_body || !response_out) {
+        return MISSKEY_ERROR_INVALID_PARAM;
+    }
+    
+    *response_out = NULL;
+    
+    WriteData wd = {
+        .data = alloc_allocator(&client->allocator, 1),
+        .size = 0,
+        .alloc = client->allocator
+    };
+    if (!wd.data) {
+        return MISSKEY_ERROR_ALLOC;
+    }
+    
+    char url[512];
+    snprintf(url, sizeof(url), "https://%s/api/%s", client->host, endpoint);
+    
+    struct curl_slist* headers = NULL;
+    headers = curl_slist_append(headers, "Content-Type: application/json");
+    if (!headers) {
+        free_allocator(&client->allocator, wd.data);
+        return MISSKEY_ERROR_ALLOC;
+    }
+    
+    if (client->token[0] && client->token[0] != '\0') {
+        char auth_header[320];
+        snprintf(auth_header, sizeof(auth_header), "Authorization: Bearer %s", client->token);
+        headers = curl_slist_append(headers, auth_header);
+        if (!headers) {
+            free_allocator(&client->allocator, wd.data);
+            return MISSKEY_ERROR_ALLOC;
+        }
+    }
+    
+    curl_easy_reset(client->curl);
+    curl_easy_setopt(client->curl, CURLOPT_URL, url);
+    curl_easy_setopt(client->curl, CURLOPT_POSTFIELDS, request_body);
+    curl_easy_setopt(client->curl, CURLOPT_HTTPHEADER, headers);
+    curl_easy_setopt(client->curl, CURLOPT_WRITEFUNCTION, write_callback);
+    curl_easy_setopt(client->curl, CURLOPT_WRITEDATA, &wd);
+    curl_easy_setopt(client->curl, CURLOPT_TIMEOUT, client->timeout);
+    curl_easy_setopt(client->curl, CURLOPT_SSL_VERIFYPEER, 1L);
+    
+    CURLcode res = curl_easy_perform(client->curl);
+    
+    curl_slist_free_all(headers);
+    
+    if (res != CURLE_OK) {
+        free_allocator(&client->allocator, wd.data);
+        return MISSKEY_ERROR_NETWORK;
+    }
+    
+    long http_code = 0;
+    curl_easy_getinfo(client->curl, CURLINFO_RESPONSE_CODE, &http_code);
+    
+    if (http_code >= 400) {
+        free_allocator(&client->allocator, wd.data);
+        return MISSKEY_ERROR_HTTP;
+    }
+    
+    *response_out = wd.data;
+    return MISSKEY_OK;
+}
+
+MisskeyError misskey_meta(MisskeyClient* client, char** response_out) {
+    return misskey_request(client, "meta", "{\"detail\":false}", response_out);
+}
+
+MisskeyError misskey_notes_timeline(MisskeyClient* client, int limit,
+                                     int local, char** response_out) {
+    cJSON* root = cJSON_CreateObject();
+    cJSON_AddStringToObject(root, "i", client->token);
+    cJSON_AddNumberToObject(root, "limit", limit);
+    if (local) {
+        cJSON_AddStringToObject(root, "channel", "local");
+    }
+    
+    char* json_str = cJSON_PrintUnformatted(root);
+    MisskeyError err = misskey_request(client, "notes/timeline", json_str, response_out);
+    
+    free(json_str);  // cJSON uses standard malloc
+    cJSON_Delete(root);
+    return err;
+}
+
+MisskeyError misskey_notes_create(MisskeyClient* client, const char* text,
+                                   const char* reply_id, const char* renote_id,
+                                   char** response_out) {
+    if (!text) return MISSKEY_ERROR_INVALID_PARAM;
+    
+    cJSON* root = cJSON_CreateObject();
+    cJSON_AddStringToObject(root, "i", client->token);
+    cJSON_AddStringToObject(root, "text", text);
+    
+    if (reply_id) cJSON_AddStringToObject(root, "replyId", reply_id);
+    if (renote_id) cJSON_AddStringToObject(root, "renoteId", renote_id);
+    
+    char* json_str = cJSON_PrintUnformatted(root);
+    MisskeyError err = misskey_request(client, "notes/create", json_str, response_out);
+    
+    free(json_str);  // cJSON uses standard malloc
+    cJSON_Delete(root);
+    return err;
+}
+
+MisskeyError misskey_i_notifications(MisskeyClient* client, int limit,
+                                      char** response_out) {
+    cJSON* root = cJSON_CreateObject();
+    cJSON_AddStringToObject(root, "i", client->token);
+    cJSON_AddNumberToObject(root, "limit", limit);
+    
+    char* json_str = cJSON_PrintUnformatted(root);
+    MisskeyError err = misskey_request(client, "i/notifications", json_str, response_out);
+    
+    free(json_str);  // cJSON uses standard malloc
+    cJSON_Delete(root);
+    return err;
+}
+
+void misskey_free_string(MisskeyClient* client, char* str) {
+    if (!client || !str) return;
+    free_allocator(&client->allocator, str);
+}
