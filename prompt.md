@@ -119,8 +119,10 @@ misskey/
 ├── src/
 │   ├── misskey_client.h      # C 头文件
 │   ├── misskey_client.c      # C 实现
+│   ├── misskey.hpp           # C++ 封装头文件
 │   ├── examples.c             # C 示例
-│   └── cJSON/                 # JSON 库
+│   ├── test_cpp.cpp          # C++ 测试程序
+│   └── cJSON/                # JSON 库
 ├── misskey.v                 # V 语言绑定
 ├── misskey_demo.v            # V 演示程序
 ├── mock_server.py            # Flask Mock 服务器
@@ -130,6 +132,31 @@ misskey/
 ├── test_api.sh              # Shell 测试脚本
 ├── libmisskey.a              # C 静态库
 └── misskey.so                # V 共享库
+```
+
+## C++ 封装
+
+### 类名
+`misskey::MisskeyApi`
+
+### 特性
+- RAII 资源管理（自动析构）
+- 现代 C++ 接口（std::string、std::optional）
+- 异常机制（misskey::MisskeyApi::Exception）
+- 移动语义支持
+
+### 编译
+```bash
+make cpp
+```
+
+### 测试命令
+```bash
+# 启动 Mock 服务器
+/opt/pyenv/bin/python mock_server.py &
+
+# 测试 C++ 客户端
+make cpp && ./misskey_cpp_test localhost:3000 test_token
 ```
 
 ## Misskey API 特性说明
