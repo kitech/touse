@@ -4,6 +4,7 @@ import log
 import time
 import sync
 import os
+import io
 import arrays
 
 pub fn (r &Mgr) runloop(interval ... int) {
@@ -20,6 +21,14 @@ pub fn (c &Conn) http_reply_error(stcode int, error string) {
 }
 pub fn (c &Conn) http_reply_ok(extra string) {
     c.http_reply(200, "", "It's just works $extra\n")
+}
+
+pub fn (c &Conn) write(buf []u8) !int {
+    rv := c.send(buf.bytestr())
+    return rv.ifor(buf.len, -1)
+}
+pub fn (c &Conn) str() string {
+    return '${@MOD}.Conn(${voidptr(c)})'
 }
 
 struct Globvars {
@@ -47,10 +56,10 @@ pub struct ListenOption {
     cbval voidptr
     wsuri string
     ssl bool
-    ca string 
-    key string 
+    ca string
+    key string
     cert string
-    
+
     rawfunc RawFunc = vnil
     httpfunc HttpFunc = vnil
     wsfunc WsFunc = vnil
@@ -75,7 +84,7 @@ pub fn (r &Mgr) listen(url string, opts ListenOption) {
 
 fn event_proc(c &Conn, ev Ev, evdata voidptr) {
     info := unsafe { &Funwrap(c.fn_data) }
-    
+
     if info.proto == .websocket && ev == .http_msg {
         req := &HttpMsg(evdata)
         upgrade := true
@@ -88,8 +97,11 @@ fn event_proc(c &Conn, ev Ev, evdata voidptr) {
             return
         }
     }
-    
+
     match ev {
+            .error {
+                log.error(charptr(evdata).tosdup())
+            }
         .ws_msg {
             fun := info.opts.wsfunc
             if fun != vnil {
@@ -109,7 +121,7 @@ fn event_proc(c &Conn, ev Ev, evdata voidptr) {
             }
         }
     }
-    
+
     if c.is_listening == ctrue && ev == .close {
         mgv.funs.delete(u64(c.id))
     }
@@ -128,14 +140,11 @@ pub fn (c &Conn) http_serve_dir_rewrite(req &HttpMsg, opts &HttpServeRewriteOpts
     path := opts.baseuri
     pathpfx := requri[1..]
 
-    dump(requri)
-    dump(path)
-    dump(opts)    
     if opts.baseuri == "" {
         c.http_serve_dir(req, &HttpServeOpts(opts))
         return
     }
-    
+
     dstfile := http_rewrite(path, requri, rootdir)
     log.info("Rewrite ${requri} => ${dstfile} \t:${@FILE_LINE}")
     if dstfile == "" || !os.exists(dstfile) {
@@ -159,7 +168,7 @@ fn dir_to_list_html(pathpfx string, dir string) string {
     })
     data = arr.join('\n')
     pdir := dir_list_html_format(0, 0, pathpfx, '..')
-    return data    
+    return data
 }
 
 fn dir_list_html_format(idx int, size u64, pathpfx string, name string) string {
@@ -174,6 +183,6 @@ pub fn http_rewrite(baseuri string, requri string, rootdir string) string {
     if !os.exists(dstfile) { return dstfile }
     if os.real_path(dstfile).starts_with(os.real_path(rootdir)) { return dstfile }
     if dstfile.count('..')==0 && dstfile.starts_with(rootdir) { return dstfile }
-    // maybe ../../ like 
+    // maybe ../../ like
     return ""
 }
