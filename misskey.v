@@ -53,6 +53,7 @@ fn C.misskey_translate_raw(client &C.MisskeyClient, note_id charptr, target_lang
 fn C.misskey_request_set_debug(client &C.MisskeyClient, enable int)
 fn C.misskey_free_string(client &C.MisskeyClient, str charptr)
 fn C.misskey_error_str(err int) charptr
+fn C.misskey_error_str_detail(client &C.MisskeyClient, err int) charptr
 
 fn C.misskey_client_new_with_allocator(host charptr, allocator voidptr) &C.MisskeyClient
 fn C.misskey_client_get_allocator(client &C.MisskeyClient) voidptr
@@ -229,6 +230,10 @@ fn (e MisskeyError) str() string {
 	return unsafe { cstring_to_vstring(C.misskey_error_str(int(e))) }
 }
 
+fn (e MisskeyError) detailed(c &Client) string {
+	return unsafe { cstring_to_vstring(C.misskey_error_str_detail(c.c_client, int(e))) }
+}
+
 // Client wrapper
 pub struct Client {
 	c_client &C.MisskeyClient
@@ -288,11 +293,7 @@ fn (c &Client) do_request(endpoint string, body string) !string {
 	mut response := &char(0)
 	ret := C.misskey_request(c.c_client, &char(endpoint.str), &char(body.str), &response)
 	if ret != 0 {
-		err_msg := c.get_error_msg()
-		if err_msg.len > 0 {
-			return error(err_msg)
-		}
-		return error('request failed: ${MisskeyError(ret)}')
+		return error('${MisskeyError(ret).detailed(c)}')
 	}
 	result := unsafe { cstring_to_vstring(response) }
 	C.misskey_free_string(c.c_client, response)
@@ -308,7 +309,7 @@ pub fn (c &Client) notes_timeline_raw(limit int, local bool) !string {
 	mut response := &char(0)
 	ret := C.misskey_notes_timeline_raw(c.c_client, limit, local_val, &response)
 	if ret != 0 {
-		return error('notes_timeline failed: ${MisskeyError(ret)}')
+		return error('notes_timeline failed: ${MisskeyError(ret).detailed(c)}')
 	}
 	result := unsafe { cstring_to_vstring(response) }
 	C.misskey_free_string(c.c_client, response)
@@ -321,7 +322,7 @@ pub fn (c &Client) notes_create_raw(text string, reply_id string, renote_id stri
 	mut response := &char(0)
 	ret := C.misskey_notes_create_raw(c.c_client, &char(text.str), reply_cstr, renote_cstr, &response)
 	if ret != 0 {
-		return error('notes_create failed: ${MisskeyError(ret)}')
+		return error('notes_create failed: ${MisskeyError(ret).detailed(c)}')
 	}
 	result := unsafe { cstring_to_vstring(response) }
 	C.misskey_free_string(c.c_client, response)
@@ -332,7 +333,7 @@ pub fn (c &Client) i_notifications_raw(limit int) !string {
 	mut response := &char(0)
 	ret := C.misskey_i_notifications_raw(c.c_client, limit, &response)
 	if ret != 0 {
-		return error('i_notifications failed: ${MisskeyError(ret)}')
+		return error('i_notifications failed: ${MisskeyError(ret).detailed(c)}')
 	}
 	result := unsafe { cstring_to_vstring(response) }
 	C.misskey_free_string(c.c_client, response)
@@ -343,7 +344,7 @@ pub fn (c &Client) drive_raw() !string {
 	mut response := &char(0)
 	ret := C.misskey_drive_raw(c.c_client, &response)
 	if ret != 0 {
-		return error('drive failed: ${MisskeyError(ret)}')
+		return error('drive failed: ${MisskeyError(ret).detailed(c)}')
 	}
 	result := unsafe { cstring_to_vstring(response) }
 	C.misskey_free_string(c.c_client, response)
@@ -354,7 +355,7 @@ pub fn (c &Client) drive_files_raw(limit int, folder_id int) !string {
 	mut response := &char(0)
 	ret := C.misskey_drive_files_raw(c.c_client, limit, folder_id, &response)
 	if ret != 0 {
-		return error('drive_files failed: ${MisskeyError(ret)}')
+		return error('drive_files failed: ${MisskeyError(ret).detailed(c)}')
 	}
 	result := unsafe { cstring_to_vstring(response) }
 	C.misskey_free_string(c.c_client, response)
@@ -367,7 +368,7 @@ pub fn (c &Client) drive_files_create_raw(file_path string, folder_id string, na
 	mut response := &char(0)
 	ret := C.misskey_drive_files_create_raw(c.c_client, &char(file_path.str), folder_cstr, name_cstr, &response)
 	if ret != 0 {
-		return error('drive_files_create failed: ${MisskeyError(ret)}')
+		return error('drive_files_create failed: ${MisskeyError(ret).detailed(c)}')
 	}
 	result := unsafe { cstring_to_vstring(response) }
 	C.misskey_free_string(c.c_client, response)
@@ -378,7 +379,7 @@ pub fn (c &Client) drive_files_delete_raw(file_id string) !string {
 	mut response := &char(0)
 	ret := C.misskey_drive_files_delete_raw(c.c_client, &char(file_id.str), &response)
 	if ret != 0 {
-		return error('drive_files_delete failed: ${MisskeyError(ret)}')
+		return error('drive_files_delete failed: ${MisskeyError(ret).detailed(c)}')
 	}
 	result := unsafe { cstring_to_vstring(response) }
 	C.misskey_free_string(c.c_client, response)
@@ -391,7 +392,7 @@ pub fn (c &Client) drive_files_update_raw(file_id string, folder_id string, name
 	mut response := &char(0)
 	ret := C.misskey_drive_files_update_raw(c.c_client, &char(file_id.str), folder_cstr, name_cstr, &response)
 	if ret != 0 {
-		return error('drive_files_update failed: ${MisskeyError(ret)}')
+		return error('drive_files_update failed: ${MisskeyError(ret).detailed(c)}')
 	}
 	result := unsafe { cstring_to_vstring(response) }
 	C.misskey_free_string(c.c_client, response)
@@ -402,7 +403,7 @@ pub fn (c &Client) drive_files_find_raw(hash string) !string {
 	mut response := &char(0)
 	ret := C.misskey_drive_files_find_raw(c.c_client, &char(hash.str), &response)
 	if ret != 0 {
-		return error('drive_files_find failed: ${MisskeyError(ret)}')
+		return error('drive_files_find failed: ${MisskeyError(ret).detailed(c)}')
 	}
 	result := unsafe { cstring_to_vstring(response) }
 	C.misskey_free_string(c.c_client, response)
@@ -415,7 +416,7 @@ pub fn (c &Client) drive_files_show_raw(file_id string, url string) !string {
 	mut response := &char(0)
 	ret := C.misskey_drive_files_show_raw(c.c_client, file_id_cstr, url_cstr, &response)
 	if ret != 0 {
-		return error('drive_files_show failed: ${MisskeyError(ret)}')
+		return error('drive_files_show failed: ${MisskeyError(ret).detailed(c)}')
 	}
 	result := unsafe { cstring_to_vstring(response) }
 	C.misskey_free_string(c.c_client, response)
@@ -429,7 +430,7 @@ pub fn (c &Client) drive_files_upload_from_url_raw(url string, folder_id string,
 	mut response := &char(0)
 	ret := C.misskey_drive_files_upload_from_url_raw(c.c_client, &char(url.str), folder_cstr, sensitive_val, comment_cstr, &response)
 	if ret != 0 {
-		return error('drive_files_upload_from_url failed: ${MisskeyError(ret)}')
+		return error('drive_files_upload_from_url failed: ${MisskeyError(ret).detailed(c)}')
 	}
 	result := unsafe { cstring_to_vstring(response) }
 	C.misskey_free_string(c.c_client, response)
@@ -467,7 +468,7 @@ pub fn (c &Client) drive_files_download(dl_opts DownloadOptions) !int {
 	mut content_length := 0
 	ret := C.misskey_drive_files_download(c.c_client, file_id_cstr, opts_c, &http_code, &content_length)
 	if ret != 0 {
-		return error('drive_files_download failed: ${MisskeyError(ret)}')
+		return error('drive_files_download failed: ${MisskeyError(ret).detailed(c)}')
 	}
 	return http_code
 }
@@ -477,7 +478,7 @@ pub fn (c &Client) drive_folders_raw(limit int, folder_id string) !string {
 	mut response := &char(0)
 	ret := C.misskey_drive_folders_raw(c.c_client, limit, folder_cstr, &response)
 	if ret != 0 {
-		return error('drive_folders failed: ${MisskeyError(ret)}')
+		return error('drive_folders failed: ${MisskeyError(ret).detailed(c)}')
 	}
 	result := unsafe { cstring_to_vstring(response) }
 	C.misskey_free_string(c.c_client, response)
@@ -489,7 +490,7 @@ pub fn (c &Client) drive_folders_create_raw(name string, parent_id string) !stri
 	mut response := &char(0)
 	ret := C.misskey_drive_folders_create_raw(c.c_client, &char(name.str), parent_cstr, &response)
 	if ret != 0 {
-		return error('drive_folders_create failed: ${MisskeyError(ret)}')
+		return error('drive_folders_create failed: ${MisskeyError(ret).detailed(c)}')
 	}
 	result := unsafe { cstring_to_vstring(response) }
 	C.misskey_free_string(c.c_client, response)
@@ -500,7 +501,7 @@ pub fn (c &Client) drive_folders_delete_raw(folder_id string) !string {
 	mut response := &char(0)
 	ret := C.misskey_drive_folders_delete_raw(c.c_client, &char(folder_id.str), &response)
 	if ret != 0 {
-		return error('drive_folders_delete failed: ${MisskeyError(ret)}')
+		return error('drive_folders_delete failed: ${MisskeyError(ret).detailed(c)}')
 	}
 	result := unsafe { cstring_to_vstring(response) }
 	C.misskey_free_string(c.c_client, response)
@@ -513,7 +514,7 @@ pub fn (c &Client) drive_folders_update_raw(folder_id string, name string, paren
 	mut response := &char(0)
 	ret := C.misskey_drive_folders_update_raw(c.c_client, &char(folder_id.str), name_cstr, parent_cstr, &response)
 	if ret != 0 {
-		return error('drive_folders_update failed: ${MisskeyError(ret)}')
+		return error('drive_folders_update failed: ${MisskeyError(ret).detailed(c)}')
 	}
 	result := unsafe { cstring_to_vstring(response) }
 	C.misskey_free_string(c.c_client, response)
@@ -525,7 +526,7 @@ pub fn (c &Client) translate_raw(note_id string, target_lang string) !string {
 	mut response := &char(0)
 	ret := C.misskey_translate_raw(c.c_client, &char(note_id.str), tgt_cstr, &response)
 	if ret != 0 {
-		return error('translate failed: ${MisskeyError(ret)}')
+		return error('translate failed: ${MisskeyError(ret).detailed(c)}')
 	}
 	result := unsafe { cstring_to_vstring(response) }
 	C.misskey_free_string(c.c_client, response)
@@ -543,7 +544,7 @@ pub fn (c &Client) notes_raw(text string, reply_id string, renote_id string, cha
 	mut response := &char(0)
 	ret := C.misskey_notes_raw(c.c_client, text_cstr, reply_cstr, renote_cstr, channel_cstr, limit, offset, user_cstr, if local_only { 1 } else { 0 }, if reply { 1 } else { 0 }, if renote { 1 } else { 0 }, if with_files { 1 } else { 0 }, since_cstr, until_cstr, &response)
 	if ret != 0 {
-		return error('notes failed: ${MisskeyError(ret)}')
+		return error('notes failed: ${MisskeyError(ret).detailed(c)}')
 	}
 	result := unsafe { cstring_to_vstring(response) }
 	C.misskey_free_string(c.c_client, response)
@@ -554,7 +555,7 @@ pub fn (c &Client) notes_show_raw(note_id string) !string {
 	mut response := &char(0)
 	ret := C.misskey_notes_show_raw(c.c_client, &char(note_id.str), &response)
 	if ret != 0 {
-		return error('notes_show failed: ${MisskeyError(ret)}')
+		return error('notes_show failed: ${MisskeyError(ret).detailed(c)}')
 	}
 	result := unsafe { cstring_to_vstring(response) }
 	C.misskey_free_string(c.c_client, response)
@@ -565,7 +566,7 @@ pub fn (c &Client) notes_delete_raw(note_id string) !string {
 	mut response := &char(0)
 	ret := C.misskey_notes_delete_raw(c.c_client, &char(note_id.str), &response)
 	if ret != 0 {
-		return error('notes_delete failed: ${MisskeyError(ret)}')
+		return error('notes_delete failed: ${MisskeyError(ret).detailed(c)}')
 	}
 	result := unsafe { cstring_to_vstring(response) }
 	C.misskey_free_string(c.c_client, response)
@@ -576,7 +577,7 @@ pub fn (c &Client) clips_list_raw() !string {
 	mut response := &char(0)
 	ret := C.misskey_clips_list_raw(c.c_client, &response)
 	if ret != 0 {
-		return error('clips_list failed: ${MisskeyError(ret)}')
+		return error('clips_list failed: ${MisskeyError(ret).detailed(c)}')
 	}
 	result := unsafe { cstring_to_vstring(response) }
 	C.misskey_free_string(c.c_client, response)
@@ -587,7 +588,7 @@ pub fn (c &Client) clips_show_raw(clip_id string) !string {
 	mut response := &char(0)
 	ret := C.misskey_clips_show_raw(c.c_client, &char(clip_id.str), &response)
 	if ret != 0 {
-		return error('clips_show failed: ${MisskeyError(ret)}')
+		return error('clips_show failed: ${MisskeyError(ret).detailed(c)}')
 	}
 	result := unsafe { cstring_to_vstring(response) }
 	C.misskey_free_string(c.c_client, response)
@@ -599,7 +600,7 @@ pub fn (c &Client) clips_create_raw(name string, description string, is_public b
 	mut response := &char(0)
 	ret := C.misskey_clips_create_raw(c.c_client, &char(name.str), desc_cstr, if is_public { 1 } else { 0 }, &response)
 	if ret != 0 {
-		return error('clips_create failed: ${MisskeyError(ret)}')
+		return error('clips_create failed: ${MisskeyError(ret).detailed(c)}')
 	}
 	result := unsafe { cstring_to_vstring(response) }
 	C.misskey_free_string(c.c_client, response)
@@ -612,7 +613,7 @@ pub fn (c &Client) clips_update_raw(clip_id string, name string, description str
 	mut response := &char(0)
 	ret := C.misskey_clips_update_raw(c.c_client, &char(clip_id.str), name_cstr, desc_cstr, if is_public { 1 } else { 0 }, &response)
 	if ret != 0 {
-		return error('clips_update failed: ${MisskeyError(ret)}')
+		return error('clips_update failed: ${MisskeyError(ret).detailed(c)}')
 	}
 	result := unsafe { cstring_to_vstring(response) }
 	C.misskey_free_string(c.c_client, response)
@@ -623,7 +624,7 @@ pub fn (c &Client) clips_delete_raw(clip_id string) !string {
 	mut response := &char(0)
 	ret := C.misskey_clips_delete_raw(c.c_client, &char(clip_id.str), &response)
 	if ret != 0 {
-		return error('clips_delete failed: ${MisskeyError(ret)}')
+		return error('clips_delete failed: ${MisskeyError(ret).detailed(c)}')
 	}
 	result := unsafe { cstring_to_vstring(response) }
 	C.misskey_free_string(c.c_client, response)
@@ -634,7 +635,7 @@ pub fn (c &Client) clips_add_note_raw(clip_id string, note_id string) !string {
 	mut response := &char(0)
 	ret := C.misskey_clips_add_note_raw(c.c_client, &char(clip_id.str), &char(note_id.str), &response)
 	if ret != 0 {
-		return error('clips_add_note failed: ${MisskeyError(ret)}')
+		return error('clips_add_note failed: ${MisskeyError(ret).detailed(c)}')
 	}
 	result := unsafe { cstring_to_vstring(response) }
 	C.misskey_free_string(c.c_client, response)
@@ -645,7 +646,7 @@ pub fn (c &Client) clips_remove_note_raw(clip_id string, note_id string) !string
 	mut response := &char(0)
 	ret := C.misskey_clips_remove_note_raw(c.c_client, &char(clip_id.str), &char(note_id.str), &response)
 	if ret != 0 {
-		return error('clips_remove_note failed: ${MisskeyError(ret)}')
+		return error('clips_remove_note failed: ${MisskeyError(ret).detailed(c)}')
 	}
 	result := unsafe { cstring_to_vstring(response) }
 	C.misskey_free_string(c.c_client, response)
@@ -656,7 +657,7 @@ pub fn (c &Client) clips_notes_raw(clip_id string, limit int) !string {
 	mut response := &char(0)
 	ret := C.misskey_clips_notes_raw(c.c_client, &char(clip_id.str), limit, &response)
 	if ret != 0 {
-		return error('clips_notes failed: ${MisskeyError(ret)}')
+		return error('clips_notes failed: ${MisskeyError(ret).detailed(c)}')
 	}
 	result := unsafe { cstring_to_vstring(response) }
 	C.misskey_free_string(c.c_client, response)
@@ -876,7 +877,7 @@ pub fn (c &Client) meta() !Meta {
 	C.misskey_meta_init(cmeta)
 	ret := C.misskey_meta(c.c_client, cmeta)
 	if ret != 0 {
-		return error('meta failed: ${MisskeyError(ret)}')
+		return error('meta failed: ${MisskeyError(ret).detailed(c)}')
 	}
 	result := to_meta(cmeta)
 	return result
@@ -888,7 +889,7 @@ pub fn (c &Client) notes_timeline(limit int, local bool) ![]Note {
 	mut count := 0
 	ret := C.misskey_notes_timeline(c.c_client, limit, local_val, &notes_ptr, &count)
 	if ret != 0 {
-		return error('notes_timeline failed: ${MisskeyError(ret)}')
+		return error('notes_timeline failed: ${MisskeyError(ret).detailed(c)}')
 	}
 	
 	mut result := []Note{len: count}
@@ -906,7 +907,7 @@ pub fn (c &Client) notes_create(text string, reply_id string, renote_id string) 
 	C.misskey_note_init(cnote)
 	ret := C.misskey_notes_create(c.c_client, &char(text.str), reply_cstr, renote_cstr, cnote)
 	if ret != 0 {
-		return error('notes_create failed: ${MisskeyError(ret)}')
+		return error('notes_create failed: ${MisskeyError(ret).detailed(c)}')
 	}
 	return to_note(cnote)
 }
@@ -916,7 +917,7 @@ pub fn (c &Client) notes_show(note_id string) !Note {
 	C.misskey_note_init(cnote)
 	ret := C.misskey_notes_show(c.c_client, &char(note_id.str), cnote)
 	if ret != 0 {
-		return error('notes_show failed: ${MisskeyError(ret)}')
+		return error('notes_show failed: ${MisskeyError(ret).detailed(c)}')
 	}
 	return to_note(cnote)
 }
@@ -924,7 +925,7 @@ pub fn (c &Client) notes_show(note_id string) !Note {
 pub fn (c &Client) notes_delete(note_id string) ! {
 	ret := C.misskey_notes_delete(c.c_client, &char(note_id.str), voidptr(0))
 	if ret != 0 {
-		return error('notes_delete failed: ${MisskeyError(ret)}')
+		return error('notes_delete failed: ${MisskeyError(ret).detailed(c)}')
 	}
 }
 
@@ -933,7 +934,7 @@ pub fn (c &Client) i_notifications(limit int) ![]Notification {
 	mut count := 0
 	ret := C.misskey_i_notifications(c.c_client, limit, &notif_ptr, &count)
 	if ret != 0 {
-		return error('i_notifications failed: ${MisskeyError(ret)}')
+		return error('i_notifications failed: ${MisskeyError(ret).detailed(c)}')
 	}
 	
 	mut result := []Notification{len: count}
@@ -949,7 +950,7 @@ pub fn (c &Client) drive() !DriveInfo {
 	C.misskey_drive_info_init(cinfo)
 	ret := C.misskey_drive(c.c_client, cinfo)
 	if ret != 0 {
-		return error('drive failed: ${MisskeyError(ret)}')
+		return error('drive failed: ${MisskeyError(ret).detailed(c)}')
 	}
 	return DriveInfo{
 		capacity: cinfo.capacity
@@ -964,7 +965,7 @@ pub fn (c &Client) drive_files(limit int, folder_id string) ![]DriveFile {
 	mut count := 0
 	ret := C.misskey_drive_files(c.c_client, limit, folder_cstr, &files_ptr, &count)
 	if ret != 0 {
-		return error('drive_files failed: ${MisskeyError(ret)}')
+		return error('drive_files failed: ${MisskeyError(ret).detailed(c)}')
 	}
 	
 	mut result := []DriveFile{len: count}
@@ -982,7 +983,7 @@ pub fn (c &Client) drive_files_create(file_path string, folder_id string, name s
 	C.misskey_drive_file_init(cfile)
 	ret := C.misskey_drive_files_create(c.c_client, &char(file_path.str), folder_cstr, name_cstr, cfile)
 	if ret != 0 {
-		return error('drive_files_create failed: ${MisskeyError(ret)}')
+		return error('drive_files_create failed: ${MisskeyError(ret).detailed(c)}')
 	}
 	return to_drive_file(cfile)
 }
@@ -990,7 +991,7 @@ pub fn (c &Client) drive_files_create(file_path string, folder_id string, name s
 pub fn (c &Client) drive_files_delete(file_id string) ! {
 	ret := C.misskey_drive_files_delete(c.c_client, &char(file_id.str), voidptr(0))
 	if ret != 0 {
-		return error('drive_files_delete failed: ${MisskeyError(ret)}')
+		return error('drive_files_delete failed: ${MisskeyError(ret).detailed(c)}')
 	}
 }
 
@@ -1000,7 +1001,7 @@ pub fn (c &Client) drive_folders(limit int, folder_id string) ![]DriveFolder {
 	mut count := 0
 	ret := C.misskey_drive_folders(c.c_client, limit, folder_cstr, &folders_ptr, &count)
 	if ret != 0 {
-		return error('drive_folders failed: ${MisskeyError(ret)}')
+		return error('drive_folders failed: ${MisskeyError(ret).detailed(c)}')
 	}
 	
 	mut result := []DriveFolder{len: count}
@@ -1016,7 +1017,7 @@ pub fn (c &Client) translate(note_id string, target_lang string) !TranslateResul
 	C.misskey_translate_result_init(cresult)
 	ret := C.misskey_translate(c.c_client, &char(note_id.str), &char(target_lang.str), cresult)
 	if ret != 0 {
-		return error('translate failed: ${MisskeyError(ret)}')
+		return error('translate failed: ${MisskeyError(ret).detailed(c)}')
 	}
 	return TranslateResult{
 		text: unsafe { cstring_to_vstring(&char(cresult.text)) }
@@ -1030,7 +1031,7 @@ pub fn (c &Client) clips_list() ![]Clip {
 	mut count := 0
 	ret := C.misskey_clips_list(c.c_client, &clips_ptr, &count)
 	if ret != 0 {
-		return error('clips_list failed: ${MisskeyError(ret)}')
+		return error('clips_list failed: ${MisskeyError(ret).detailed(c)}')
 	}
 	
 	mut result := []Clip{len: count}
@@ -1047,7 +1048,7 @@ pub fn (c &Client) clips_create(name string, description string, is_public bool)
 	C.misskey_clip_init(cclip)
 	ret := C.misskey_clips_create(c.c_client, &char(name.str), desc_cstr, if is_public { 1 } else { 0 }, cclip)
 	if ret != 0 {
-		return error('clips_create failed: ${MisskeyError(ret)}')
+		return error('clips_create failed: ${MisskeyError(ret).detailed(c)}')
 	}
 	return to_clip(cclip)
 }
@@ -1055,6 +1056,6 @@ pub fn (c &Client) clips_create(name string, description string, is_public bool)
 pub fn (c &Client) clips_delete(clip_id string) ! {
 	ret := C.misskey_clips_delete(c.c_client, &char(clip_id.str), voidptr(0))
 	if ret != 0 {
-		return error('clips_delete failed: ${MisskeyError(ret)}')
+		return error('clips_delete failed: ${MisskeyError(ret).detailed(c)}')
 	}
 }

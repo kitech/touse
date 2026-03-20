@@ -24,6 +24,7 @@ typedef enum {
 } MisskeyError;
 
 const char* misskey_error_str(MisskeyError err);
+const char* misskey_error_str_detail(MisskeyClient* client, MisskeyError err);
 void misskey_client_get_last_error(MisskeyClient* client, long* http_code, char** error_detail);
 
 MisskeyClient* misskey_client_new(const char* host);

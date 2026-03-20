@@ -78,6 +78,8 @@ struct MisskeyClient {
 };
 
 const char* misskey_error_str(MisskeyError err) {
+    // Note: This function is kept for backwards compatibility
+    // For detailed error messages, use misskey_client_get_last_error instead
     switch (err) {
         case MISSKEY_OK: return "Success";
         case MISSKEY_ERROR_INVALID_PARAM: return "Invalid parameter";
@@ -88,6 +90,50 @@ const char* misskey_error_str(MisskeyError err) {
         case MISSKEY_ERROR_ALLOC: return "Allocation error";
         default: return "Unknown error";
     }
+}
+
+// Returns detailed error string including HTTP code and response body
+// The returned string is stored in a static buffer, not allocated
+// Caller should copy the result if needed
+const char* misskey_error_str_detail(MisskeyClient* client, MisskeyError err) {
+    static char err_buf[2048];
+    
+    if (!client) {
+        switch (err) {
+            case MISSKEY_OK: return "Success";
+            case MISSKEY_ERROR_INVALID_PARAM: return "Invalid parameter";
+            case MISSKEY_ERROR_NETWORK: return "Network error";
+            case MISSKEY_ERROR_HTTP: return "HTTP error";
+            case MISSKEY_ERROR_JSON: return "JSON error";
+            case MISSKEY_ERROR_AUTH: return "Authentication error";
+            case MISSKEY_ERROR_ALLOC: return "Allocation error";
+            default: return "Unknown error";
+        }
+    }
+    
+    long http_code = client->last_http_code;
+    const char* detail = client->last_error_detail ? client->last_error_detail : "";
+    
+    if (http_code > 0 && detail[0] != '\0') {
+        snprintf(err_buf, sizeof(err_buf), "HTTP %ld: %s", http_code, detail);
+    } else if (http_code > 0) {
+        snprintf(err_buf, sizeof(err_buf), "HTTP %ld", http_code);
+    } else if (detail[0] != '\0') {
+        snprintf(err_buf, sizeof(err_buf), "%s", detail);
+    } else {
+        switch (err) {
+            case MISSKEY_OK: return "Success";
+            case MISSKEY_ERROR_INVALID_PARAM: return "Invalid parameter";
+            case MISSKEY_ERROR_NETWORK: return "Network error";
+            case MISSKEY_ERROR_HTTP: return "HTTP error";
+            case MISSKEY_ERROR_JSON: return "JSON error";
+            case MISSKEY_ERROR_AUTH: return "Authentication error";
+            case MISSKEY_ERROR_ALLOC: return "Allocation error";
+            default: return "Unknown error";
+        }
+    }
+    
+    return err_buf;
 }
 
 static MisskeyClient* client_new_internal(const char* host, const MisskeyAllocator* allocator) {
