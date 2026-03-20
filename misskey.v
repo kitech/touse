@@ -1,9 +1,10 @@
 module misskey
 
-#flag linux -I./src
-#flag linux -L.
-#flag linux -lmisskey
-#flag linux -lcurl
+import json // includes cJSON
+
+#flag -I@DIR/src
+#flag @DIR/misskey_client.o
+#flag -lcurl
 
 #include "misskey_client.h"
 
@@ -257,15 +258,28 @@ pub fn (c &Client) set_debug(enable bool) {
 	C.misskey_request_set_debug(c.c_client, if enable { 1 } else { 0 })
 }
 
-pub fn (c &Client) get_last_error() string {
+pub fn (c &Client) get_last_error() (int, string) {
 	mut http_code := 0
 	mut error_detail := &char(0)
 	C.misskey_client_get_last_error(c.c_client, &http_code, &error_detail)
+	detail := if !isnil(error_detail) {
+		unsafe { cstring_to_vstring(error_detail) }
+	} else {
+		''
+	}
+	return http_code, detail
+}
+
+fn (c &Client) get_error_msg() string {
+	http_code, detail := c.get_last_error()
 	if http_code > 0 {
+		if detail.len > 0 {
+			return 'HTTP ${http_code}: ${detail}'
+		}
 		return 'HTTP ${http_code}'
 	}
-	if !isnil(error_detail) {
-		return unsafe { cstring_to_vstring(error_detail) }
+	if detail.len > 0 {
+		return detail
 	}
 	return ''
 }
@@ -274,6 +288,10 @@ fn (c &Client) do_request(endpoint string, body string) !string {
 	mut response := &char(0)
 	ret := C.misskey_request(c.c_client, &char(endpoint.str), &char(body.str), &response)
 	if ret != 0 {
+		err_msg := c.get_error_msg()
+		if err_msg.len > 0 {
+			return error(err_msg)
+		}
 		return error('request failed: ${MisskeyError(ret)}')
 	}
 	result := unsafe { cstring_to_vstring(response) }

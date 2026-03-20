@@ -234,12 +234,16 @@ MisskeyError misskey_request(MisskeyClient* client, const char* endpoint,
     
     if (http_code >= 400) {
         wd.data[wd.size] = '\0';
+        char err_buf[1024];
         if (wd.size > 0) {
-            size_t err_len = wd.size + 1;
-            client->last_error_detail = alloc_allocator(&client->allocator, err_len);
-            if (client->last_error_detail) {
-                memcpy(client->last_error_detail, wd.data, err_len);
-            }
+            snprintf(err_buf, sizeof(err_buf), "HTTP %ld: %.*s", http_code, (int)(wd.size > 900 ? 900 : wd.size), wd.data);
+        } else {
+            snprintf(err_buf, sizeof(err_buf), "HTTP %ld", http_code);
+        }
+        size_t err_len = strlen(err_buf) + 1;
+        client->last_error_detail = alloc_allocator(&client->allocator, err_len);
+        if (client->last_error_detail) {
+            memcpy(client->last_error_detail, err_buf, err_len);
         }
         free_allocator(&client->allocator, wd.data);
         wd.data = NULL;

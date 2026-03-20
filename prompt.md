@@ -123,15 +123,15 @@ misskey/
 │   ├── examples.c             # C 示例
 │   ├── test_cpp.cpp          # C++ 测试程序
 │   └── cJSON/                # JSON 库
-├── misskey.v                 # V 语言绑定
-├── misskey_demo.v            # V 演示程序
-├── mock_server.py            # Flask Mock 服务器
+├── misskey.v                 # V 语言绑定模块
+├── examples/
+│   └── demo.v               # V 演示程序
+├── mock_server.py             # Flask Mock 服务器
 ├── Makefile
 ├── README.md                 # 中文文档
 ├── README_en.md              # 英文文档
-├── test_api.sh              # Shell 测试脚本
-├── libmisskey.a              # C 静态库
-└── misskey.so                # V 共享库
+├── test_api.sh               # Shell 测试脚本
+└── libmisskey.a              # C 静态库
 ```
 
 ## C++ 封装
@@ -183,6 +183,26 @@ make cpp && ./misskey_cpp_test localhost:3000 test_token
 - 端口：3000
 - 所有 API 返回模拟数据
 
+### Mock 服务器端点
+| 端点 | 说明 |
+|------|------|
+| `/api/meta` | 服务器信息 |
+| `/api/notes/timeline` | 时间线 |
+| `/api/notes/create` | 创建笔记 |
+| `/api/notes/delete` | 删除笔记 |
+| `/api/i/notifications` | 通知列表 |
+| `/api/i` | 用户信息 |
+| `/api/drive` | 网盘容量 |
+| `/api/drive/files` | 文件列表 |
+| `/api/drive/folders` | 文件夹列表 |
+| `/api/clips/list` | 收藏夹列表 |
+| `/api/announcements` | 公告列表 |
+| `/api/stats` | 统计信息 |
+| `/api/notes/global-timeline` | 全局时间线 |
+| `/api/i/favorites` | 收藏列表 |
+| `/api/antenna/list` | 天线列表 |
+| `/api/channel/list` | 频道列表 |
+
 ### 测试命令
 ```bash
 # 启动 Mock 服务器
@@ -192,7 +212,7 @@ make cpp && ./misskey_cpp_test localhost:3000 test_token
 make clean && make && ./misskey_example localhost:3000 test_token
 
 # 测试 V 客户端
-LD_LIBRARY_PATH=. v run misskey_demo.v localhost:3000 test_token
+v examples/demo.v && ./examples/demo localhost:3000 test_token
 
 # Fuzz 测试
 make fuzz fuzz-cpp && ./fuzz_test && ./fuzz_test_cpp
@@ -216,8 +236,96 @@ make fuzz fuzz-cpp && ./fuzz_test && ./fuzz_test_cpp
 | 移动语义 | - | ✅ |
 | 可选参数 | - | ✅ |
 
+## V Binding 开发指南
+
+### 1. API 函数命名规范
+
+- **结构体 API**（默认）：返回 V 结构体，如 `meta()`, `notes_timeline()`
+- **Raw API**：返回 JSON 字符串，如 `meta_raw()`, `notes_timeline_raw()`
+
+### 2. V 语言 0.5 类型映射
+
+| C 类型 | V 类型 |
+|--------|--------|
+| `char*` | `charptr` |
+| `char**` | `&charptr` |
+| `byte` | `u8` |
+| `[heap]` | `@[heap]` |
+| `&char(0)` | `voidptr(0)` |
+
+### 3. 指针和数组处理
+
+```v
+// C 函数声明使用 voidptr
+fn C.misskey_meta(client &C.MisskeyClient, response &charptr) int
+
+// 字符串转换
+fn cstr_to_string(cptr voidptr) string {
+    if cptr == unsafe { nil } {
+        return ''
+    }
+    return unsafe { cstring_to_vstring(&char(cptr)) }
+}
+
+// 固定大小数组访问
+cstr_to_string(voidptr(&cmeta.name[0]))
+```
+
+### 4. Receiver 语法
+
+```v
+// 使用不可变引用
+pub fn (c &Client) meta() !Meta
+pub fn (c &Client) notes_timeline_raw(limit int, local bool) !string
+```
+
+### 5. 编译配置
+
+```v
+module misskey
+
+import json // includes cJSON
+
+#flag -I@DIR/src
+#flag @DIR/cJSON.o
+#flag @DIR/misskey_client.o
+#flag -lcurl
+
+#include "misskey_client.h"
+```
+
+### 6. 错误处理
+
+```v
+// 获取详细错误信息
+fn (c &Client) get_last_error() (int, string)
+
+fn (c &Client) get_error_msg() string {
+    http_code, detail := c.get_last_error()
+    if http_code > 0 {
+        if detail.len > 0 {
+            return 'HTTP ${http_code}: ${detail}'
+        }
+        return 'HTTP ${http_code}'
+    }
+    if detail.len > 0 {
+        return detail
+    }
+    return ''
+}
+
+// HTTP 错误格式：HTTP {状态码}: {详情}
+```
+
+### 7. cJSON 冲突解决方案
+
+V 自带 json 模块使用 cJSON，与独立的 cJSON.o 冲突：
+- 移除独立的 cJSON.o
+- 使用 V 自带的 `import json`（包含 cJSON）
+
 ## 已知问题与限制
 
 1. **上传不支持断点续传**：网络中断需重新上传整个文件
-2. **V 0.5 不支持 `json.Any`**：需要直接处理 JSON 字符串
-3. **文件上传使用 curl_mime API**：需要正确处理 multipart 数据
+2. **V 不支持函数重载**：不能有两个同名不同返回类型的函数
+3. **cJSON 冲突**：使用 V 自带的 json 模块 (cJSON)
+4. **Misskey 不支持帖子编辑**：只能删除后重建

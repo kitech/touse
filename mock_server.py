@@ -80,6 +80,164 @@ def api_notifications():
     } for i in range(limit)]
     return jsonify(notifications)
 
+@app.route('/api/i', methods=['POST'])
+def api_i():
+    if not check_auth():
+        return jsonify({"error": "Authentication failed"}), 401
+    return jsonify({
+        "id": gen_id(),
+        "username": "testuser",
+        "name": "Test User",
+        "email": "test@example.com",
+        "avatarUrl": "https://example.com/avatar.png",
+        "bannerUrl": "https://example.com/banner.png",
+        "bio": "This is a test user",
+        "url": "https://example.com/@testuser",
+        "createdAt": "2024-01-01T00:00:00.000Z",
+        "updatedAt": "2024-01-01T00:00:00.000Z",
+        "isLocked": False,
+        "isBot": False,
+        "isCat": False,
+        "isAdmin": False,
+        "isModerator": False,
+        "isSuspended": False,
+        "notesCount": 123,
+        "repliesCount": 45,
+        "renotesCount": 67,
+        "followingCount": 89,
+        "followersCount": 101,
+        "driveCapacity": 2147483647,
+        "driveUsage": 1073741824,
+        "tags": ["test", "mock"],
+        "pinnedNotes": [],
+        "pinnedNoteIds": [],
+        "ffVisibility": "public",
+        "followingVisibility": "public",
+        "followersVisibility": "public",
+        "emailNotificationTypes": ["follow", "reply", "mention"],
+        "achievements": [],
+        "unreadAntennaCount": 0,
+        "unreadNotificationCount": 5,
+        "unreadMentionCount": 2,
+        "unreadSpecifiedReceiveNotificationCount": 0,
+        "unreadFollowRequestCount": 0,
+        "hasPendingReceivedFollowRequest": False,
+        "mutedWords": [],
+        "mutedInstances": [],
+        "mutingNotificationTypes": [],
+        "email": "test@example.com",
+        "notify": "normal",
+        "withReplies": True,
+        "alwaysMarkNsfw": False,
+        "autoSensitive": False,
+        "career": "",
+        "location": "Test Location",
+        "birthday": "2024-01-01",
+        "lang": "en-US",
+        "description": "Test user description",
+    })
+
+@app.route('/api/announcements', methods=['POST'])
+def api_announcements():
+    if not check_auth():
+        return jsonify({"error": "Authentication failed"}), 401
+    data = request.get_json() or {}
+    limit = min(data.get('limit', 10), 5)
+    announcements = [{
+        "id": gen_id(),
+        "title": f"Mock Announcement #{i+1}",
+        "text": f"This is mock announcement content #{i+1}. It contains important information about the server.",
+        "image": None,
+        "icon": "info",
+        "style": "info",
+        "createdAt": datetime.now().isoformat(),
+        "updatedAt": datetime.now().isoformat(),
+        "reads": random.randint(100, 10000),
+        "isRead": random.choice([True, False]),
+    } for i in range(limit)]
+    return jsonify(announcements)
+
+@app.route('/api/stats', methods=['POST'])
+def api_stats():
+    return jsonify({
+        "notesCount": random.randint(1000000, 10000000),
+        "usersCount": random.randint(10000, 100000),
+        "instancesCount": random.randint(100, 1000),
+        "notesCountToday": random.randint(1000, 10000),
+        "notesCountDiff": random.randint(-100, 500),
+        "activeUsersCount": random.randint(100, 1000),
+        "activeUsersCountDiff": random.randint(-50, 100),
+    })
+
+@app.route('/api/notes/global-timeline', methods=['POST'])
+def api_global_timeline():
+    if not check_auth():
+        return jsonify({"error": "Authentication failed"}), 401
+    data = request.get_json() or {}
+    limit = min(data.get('limit', 10), 5)
+    notes = [{
+        "id": gen_id(),
+        "text": f"Global note #{i+1}",
+        "createdAt": datetime.now().isoformat(),
+        "user": {"id": gen_id(), "name": f"User{i}", "username": f"user{i}"}
+    } for i in range(limit)]
+    return jsonify(notes)
+
+@app.route('/api/i/favorites', methods=['POST'])
+def api_favorites():
+    if not check_auth():
+        return jsonify({"error": "Authentication failed"}), 401
+    data = request.get_json() or {}
+    limit = min(data.get('limit', 10), 5)
+    favorites = [{
+        "id": gen_id(),
+        "note": {
+            "id": gen_id(),
+            "text": f"Favorite note #{i+1}",
+            "createdAt": datetime.now().isoformat(),
+            "user": {"id": gen_id(), "name": f"User{i}", "username": f"user{i}"}
+        },
+        "createdAt": datetime.now().isoformat(),
+    } for i in range(limit)]
+    return jsonify(favorites)
+
+@app.route('/api/antenna/list', methods=['POST'])
+def api_antenna_list():
+    if not check_auth():
+        return jsonify({"error": "Authentication failed"}), 401
+    antennas = [{
+        "id": gen_id(),
+        "name": f"Antenna {i+1}",
+        "src": "home",
+        "keywords": [["misskey"], ["vlang"]],
+        "excludeKeywords": [["test"]],
+        "users": [],
+        "caseSensitive": False,
+        "notify": False,
+        "withReplies": True,
+        "withFile": False,
+        "isActive": True,
+        "createdAt": datetime.now().isoformat(),
+    } for i in range(2)]
+    return jsonify(antennas)
+
+@app.route('/api/channel/list', methods=['POST'])
+def api_channel_list():
+    if not check_auth():
+        return jsonify({"error": "Authentication failed"}), 401
+    channels = [{
+        "id": gen_id(),
+        "name": f"Channel {i+1}",
+        "description": f"Description for channel {i+1}",
+        "bannerUrl": None,
+        "color": "#{''.join(random.choices('0123456789ABCDEF', k=6))}",
+        "userId": gen_id(),
+        "createdAt": datetime.now().isoformat(),
+        "notesCount": random.randint(10, 1000),
+        "followersCount": random.randint(5, 500),
+    } for i in range(2)]
+    return jsonify(channels)
+
 @app.route('/api/notes', methods=['POST'])
 def api_notes():
     if not check_auth():
