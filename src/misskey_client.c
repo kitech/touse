@@ -1004,3 +1004,958 @@ MisskeyError misskey_drive_files_download(MisskeyClient* client, const char* fil
     
     return MISSKEY_OK;
 }
+
+static void parse_user(cJSON* obj, MisskeyUser* user) {
+    if (!obj || !user) return;
+    misskey_user_init(user);
+    
+    cJSON* item;
+    if ((item = cJSON_GetObjectItem(obj, "id")) && item->type == cJSON_String)
+        strncpy(user->id, item->valuestring, sizeof(user->id) - 1);
+    if ((item = cJSON_GetObjectItem(obj, "name")) && item->type == cJSON_String)
+        strncpy(user->name, item->valuestring, sizeof(user->name) - 1);
+    if ((item = cJSON_GetObjectItem(obj, "username")) && item->type == cJSON_String)
+        strncpy(user->username, item->valuestring, sizeof(user->username) - 1);
+    if ((item = cJSON_GetObjectItem(obj, "host")) && item->type == cJSON_String)
+        strncpy(user->host, item->valuestring, sizeof(user->host) - 1);
+    if ((item = cJSON_GetObjectItem(obj, "avatarUrl")) && item->type == cJSON_String)
+        strncpy(user->avatar_url, item->valuestring, sizeof(user->avatar_url) - 1);
+    if ((item = cJSON_GetObjectItem(obj, "avatarBlurhash")) && item->type == cJSON_String)
+        strncpy(user->avatar_blurhash, item->valuestring, sizeof(user->avatar_blurhash) - 1);
+    if ((item = cJSON_GetObjectItem(obj, "isBot")) && item->type == cJSON_Number)
+        user->is_bot = item->valueint;
+    if ((item = cJSON_GetObjectItem(obj, "isCat")) && item->type == cJSON_Number)
+        user->is_cat = item->valueint;
+}
+
+static void parse_note(cJSON* obj, MisskeyNote* note) {
+    if (!obj || !note) return;
+    misskey_note_init(note);
+    
+    cJSON* item;
+    if ((item = cJSON_GetObjectItem(obj, "id")) && item->type == cJSON_String)
+        strncpy(note->id, item->valuestring, sizeof(note->id) - 1);
+    if ((item = cJSON_GetObjectItem(obj, "createdAt")) && item->type == cJSON_String)
+        strncpy(note->created_at, item->valuestring, sizeof(note->created_at) - 1);
+    if ((item = cJSON_GetObjectItem(obj, "text")) && item->type == cJSON_String)
+        strncpy(note->text, item->valuestring, sizeof(note->text) - 1);
+    if ((item = cJSON_GetObjectItem(obj, "cw")) && item->type == cJSON_String)
+        strncpy(note->cw, item->valuestring, sizeof(note->cw) - 1);
+    if ((item = cJSON_GetObjectItem(obj, "appId")) && item->type == cJSON_String)
+        strncpy(note->app_id, item->valuestring, sizeof(note->app_id) - 1);
+    if ((item = cJSON_GetObjectItem(obj, "userId")) && item->type == cJSON_String)
+        strncpy(note->user_id, item->valuestring, sizeof(note->user_id) - 1);
+    if ((item = cJSON_GetObjectItem(obj, "replyId")) && item->type == cJSON_String)
+        strncpy(note->reply_id, item->valuestring, sizeof(note->reply_id) - 1);
+    if ((item = cJSON_GetObjectItem(obj, "renoteId")) && item->type == cJSON_String)
+        strncpy(note->renote_id, item->valuestring, sizeof(note->renote_id) - 1);
+    if ((item = cJSON_GetObjectItem(obj, "channelId")) && item->type == cJSON_String)
+        strncpy(note->channel_id, item->valuestring, sizeof(note->channel_id) - 1);
+    if ((item = cJSON_GetObjectItem(obj, "uri")) && item->type == cJSON_String)
+        strncpy(note->uri, item->valuestring, sizeof(note->uri) - 1);
+    if ((item = cJSON_GetObjectItem(obj, "url")) && item->type == cJSON_String)
+        strncpy(note->url, item->valuestring, sizeof(note->url) - 1);
+    if ((item = cJSON_GetObjectItem(obj, "visibility")) && item->type == cJSON_String)
+        strncpy((char*)&note->visibility, item->valuestring, sizeof(int) - 1);
+    if ((item = cJSON_GetObjectItem(obj, "localOnly")) && item->type == cJSON_Number)
+        note->local_only = item->valueint;
+    if ((item = cJSON_GetObjectItem(obj, "visibleUserIdsCount")) && item->type == cJSON_Number)
+        note->visible_user_ids_count = item->valueint;
+    if ((item = cJSON_GetObjectItem(obj, "reactionsCount")) && item->type == cJSON_Number)
+        note->reactions_count = item->valueint;
+    if ((item = cJSON_GetObjectItem(obj, "repliesCount")) && item->type == cJSON_Number)
+        note->replies_count = item->valueint;
+    if ((item = cJSON_GetObjectItem(obj, "renoteCount")) && item->type == cJSON_Number)
+        note->renote_count = item->valueint;
+    if ((item = cJSON_GetObjectItem(obj, "reactionEmojis")) && item->type == cJSON_Object) {
+        char* emojis = cJSON_Print(item);
+        if (emojis) {
+            strncpy(note->reaction_emojis, emojis, sizeof(note->reaction_emojis) - 1);
+            free(emojis);
+        }
+    }
+    
+    cJSON* user = cJSON_GetObjectItem(obj, "user");
+    if (user) parse_user(user, &note->user);
+}
+
+void misskey_note_init(MisskeyNote* note) {
+    if (!note) return;
+    memset(note, 0, sizeof(MisskeyNote));
+}
+
+void misskey_user_init(MisskeyUser* user) {
+    if (!user) return;
+    memset(user, 0, sizeof(MisskeyUser));
+}
+
+void misskey_notification_init(MisskeyNotification* n) {
+    if (!n) return;
+    memset(n, 0, sizeof(MisskeyNotification));
+}
+
+void misskey_drive_file_init(MisskeyDriveFile* f) {
+    if (!f) return;
+    memset(f, 0, sizeof(MisskeyDriveFile));
+}
+
+void misskey_drive_folder_init(MisskeyDriveFolder* f) {
+    if (!f) return;
+    memset(f, 0, sizeof(MisskeyDriveFolder));
+}
+
+void misskey_drive_info_init(MisskeyDriveInfo* info) {
+    if (!info) return;
+    memset(info, 0, sizeof(MisskeyDriveInfo));
+}
+
+void misskey_translate_result_init(MisskeyTranslateResult* r) {
+    if (!r) return;
+    memset(r, 0, sizeof(MisskeyTranslateResult));
+}
+
+void misskey_clip_init(MisskeyClip* c) {
+    if (!c) return;
+    memset(c, 0, sizeof(MisskeyClip));
+}
+
+void misskey_meta_init(MisskeyMeta* m) {
+    if (!m) return;
+    memset(m, 0, sizeof(MisskeyMeta));
+}
+
+MisskeyError misskey_meta_struct(MisskeyClient* client, MisskeyMeta* meta) {
+    if (!client || !meta) return MISSKEY_ERROR_INVALID_PARAM;
+    misskey_meta_init(meta);
+    
+    char* resp = NULL;
+    MisskeyError err = misskey_meta(client, &resp);
+    if (err != MISSKEY_OK) return err;
+    
+    cJSON* root = cJSON_Parse(resp);
+    if (!root) {
+        misskey_free_string(client, resp);
+        return MISSKEY_ERROR_JSON;
+    }
+    
+    cJSON* item;
+    if ((item = cJSON_GetObjectItem(root, "name")) && item->type == cJSON_String)
+        strncpy(meta->name, item->valuestring, sizeof(meta->name) - 1);
+    if ((item = cJSON_GetObjectItem(root, "version")) && item->type == cJSON_String)
+        strncpy(meta->version, item->valuestring, sizeof(meta->version) - 1);
+    if ((item = cJSON_GetObjectItem(root, "uri")) && item->type == cJSON_String)
+        strncpy(meta->uri, item->valuestring, sizeof(meta->uri) - 1);
+    if ((item = cJSON_GetObjectItem(root, "description")) && item->type == cJSON_String)
+        strncpy(meta->description, item->valuestring, sizeof(meta->description) - 1);
+    if ((item = cJSON_GetObjectItem(root, "maintainerName")) && item->type == cJSON_String)
+        strncpy(meta->maintainer_name, item->valuestring, sizeof(meta->maintainer_name) - 1);
+    if ((item = cJSON_GetObjectItem(root, "maintainerEmail")) && item->type == cJSON_String)
+        strncpy(meta->maintainer_email, item->valuestring, sizeof(meta->maintainer_email) - 1);
+    if ((item = cJSON_GetObjectItem(root, "langs")) && item->type == cJSON_Array) {
+        char* langs = cJSON_Print(item);
+        if (langs) {
+            strncpy(meta->langs, langs, sizeof(meta->langs) - 1);
+            free(langs);
+        }
+    }
+    if ((item = cJSON_GetObjectItem(root, "features")) && item->type == cJSON_Object) {
+        char* feats = cJSON_Print(item);
+        if (feats) {
+            strncpy(meta->features, feats, sizeof(meta->features) - 1);
+            free(feats);
+        }
+    }
+    if ((item = cJSON_GetObjectItem(root, "mascotImageUrl")) && item->type == cJSON_String)
+        strncpy(meta->mascot_image_url, item->valuestring, sizeof(meta->mascot_image_url) - 1);
+    if ((item = cJSON_GetObjectItem(root, "bannerUrl")) && item->type == cJSON_String)
+        strncpy(meta->banner_url, item->valuestring, sizeof(meta->banner_url) - 1);
+    if ((item = cJSON_GetObjectItem(root, "errorImageUrl")) && item->type == cJSON_String)
+        strncpy(meta->error_image_url, item->valuestring, sizeof(meta->error_image_url) - 1);
+    if ((item = cJSON_GetObjectItem(root, "iconUrl")) && item->type == cJSON_String)
+        strncpy(meta->icon_url, item->valuestring, sizeof(meta->icon_url) - 1);
+    if ((item = cJSON_GetObjectItem(root, "backgroundImageUrl")) && item->type == cJSON_String)
+        strncpy(meta->background_image_url, item->valuestring, sizeof(meta->background_image_url) - 1);
+    if ((item = cJSON_GetObjectItem(root, "logoImageUrl")) && item->type == cJSON_String)
+        strncpy(meta->logo_image_url, item->valuestring, sizeof(meta->logo_image_url) - 1);
+    if ((item = cJSON_GetObjectItem(root, "maxNoteTextLength")) && item->type == cJSON_Number)
+        meta->max_note_text_length = item->valueint;
+    if ((item = cJSON_GetObjectItem(root, "enableEmojiReactions")) && item->type == cJSON_True)
+        meta->enable_emoji_reactions = 1;
+    if ((item = cJSON_GetObjectItem(root, "enableRecursiveReaction")) && item->type == cJSON_True)
+        meta->enable_recursive_reaction = 1;
+    if ((item = cJSON_GetObjectItem(root, "driveCapacity")) && item->type == cJSON_Number)
+        meta->drive_capacity = item->valueint;
+    if ((item = cJSON_GetObjectItem(root, "enableEmail")) && item->type == cJSON_True)
+        meta->enable_email = 1;
+    if ((item = cJSON_GetObjectItem(root, "enableTwitter")) && item->type == cJSON_True)
+        meta->enable_twitter = 1;
+    if ((item = cJSON_GetObjectItem(root, "enableGithub")) && item->type == cJSON_True)
+        meta->enable_github = 1;
+    if ((item = cJSON_GetObjectItem(root, "enableDiscord")) && item->type == cJSON_True)
+        meta->enable_discord = 1;
+    
+    cJSON_Delete(root);
+    misskey_free_string(client, resp);
+    return MISSKEY_OK;
+}
+
+MisskeyError misskey_notes_timeline_struct(MisskeyClient* client, int limit, int local, MisskeyNote** notes_out, int* count_out) {
+    if (!client || !notes_out || !count_out) return MISSKEY_ERROR_INVALID_PARAM;
+    *notes_out = NULL;
+    *count_out = 0;
+    
+    char* resp = NULL;
+    MisskeyError err = misskey_notes_timeline(client, limit, local, &resp);
+    if (err != MISSKEY_OK) return err;
+    
+    cJSON* root = cJSON_Parse(resp);
+    if (!root || root->type != cJSON_Array) {
+        misskey_free_string(client, resp);
+        return MISSKEY_ERROR_JSON;
+    }
+    
+    int count = cJSON_GetArraySize(root);
+    if (count == 0) {
+        cJSON_Delete(root);
+        misskey_free_string(client, resp);
+        return MISSKEY_OK;
+    }
+    
+    MisskeyNote* notes = alloc_allocator(&client->allocator, count * sizeof(MisskeyNote));
+    if (!notes) {
+        cJSON_Delete(root);
+        misskey_free_string(client, resp);
+        return MISSKEY_ERROR_ALLOC;
+    }
+    
+    for (int i = 0; i < count; i++) {
+        cJSON* item = cJSON_GetArrayItem(root, i);
+        parse_note(item, &notes[i]);
+    }
+    
+    *notes_out = notes;
+    *count_out = count;
+    
+    cJSON_Delete(root);
+    misskey_free_string(client, resp);
+    return MISSKEY_OK;
+}
+
+MisskeyError misskey_notes_create_struct(MisskeyClient* client, const char* text, const char* reply_id, const char* renote_id, MisskeyNote* note_out) {
+    if (!client || !note_out) return MISSKEY_ERROR_INVALID_PARAM;
+    misskey_note_init(note_out);
+    
+    char* resp = NULL;
+    MisskeyError err = misskey_notes_create(client, text, reply_id, renote_id, &resp);
+    if (err != MISSKEY_OK) return err;
+    
+    cJSON* root = cJSON_Parse(resp);
+    if (!root) {
+        misskey_free_string(client, resp);
+        return MISSKEY_ERROR_JSON;
+    }
+    
+    cJSON* created_note = cJSON_GetObjectItem(root, "createdNote");
+    if (created_note) {
+        parse_note(created_note, note_out);
+    }
+    
+    cJSON_Delete(root);
+    misskey_free_string(client, resp);
+    return MISSKEY_OK;
+}
+
+MisskeyError misskey_notes_show_struct(MisskeyClient* client, const char* note_id, MisskeyNote* note_out) {
+    if (!client || !note_id || !note_out) return MISSKEY_ERROR_INVALID_PARAM;
+    misskey_note_init(note_out);
+    
+    char* resp = NULL;
+    MisskeyError err = misskey_notes_show(client, note_id, &resp);
+    if (err != MISSKEY_OK) return err;
+    
+    cJSON* root = cJSON_Parse(resp);
+    if (!root) {
+        misskey_free_string(client, resp);
+        return MISSKEY_ERROR_JSON;
+    }
+    
+    parse_note(root, note_out);
+    
+    cJSON_Delete(root);
+    misskey_free_string(client, resp);
+    return MISSKEY_OK;
+}
+
+MisskeyError misskey_notes_delete_struct(MisskeyClient* client, const char* note_id, char note_id_out[32]) {
+    if (!client || !note_id || !note_id_out) return MISSKEY_ERROR_INVALID_PARAM;
+    note_id_out[0] = '\0';
+    
+    char* resp = NULL;
+    MisskeyError err = misskey_notes_delete(client, note_id, &resp);
+    if (err != MISSKEY_OK) return err;
+    
+    strncpy(note_id_out, note_id, 31);
+    
+    misskey_free_string(client, resp);
+    return MISSKEY_OK;
+}
+
+MisskeyError misskey_notes_struct(MisskeyClient* client, const char* text, const char* reply_id, const char* renote_id, const char* channel_id, int limit, int offset, const char* user_id, int local_only, int reply, int renote, int with_files, const char* since_id, const char* until_id, MisskeyNote** notes_out, int* count_out) {
+    if (!client || !notes_out || !count_out) return MISSKEY_ERROR_INVALID_PARAM;
+    *notes_out = NULL;
+    *count_out = 0;
+    
+    char* resp = NULL;
+    MisskeyError err = misskey_notes(client, text, reply_id, renote_id, channel_id, limit, offset, user_id, local_only, reply, renote, with_files, since_id, until_id, &resp);
+    if (err != MISSKEY_OK) return err;
+    
+    cJSON* root = cJSON_Parse(resp);
+    if (!root || root->type != cJSON_Array) {
+        misskey_free_string(client, resp);
+        return MISSKEY_ERROR_JSON;
+    }
+    
+    int count = cJSON_GetArraySize(root);
+    if (count == 0) {
+        cJSON_Delete(root);
+        misskey_free_string(client, resp);
+        return MISSKEY_OK;
+    }
+    
+    MisskeyNote* notes = alloc_allocator(&client->allocator, count * sizeof(MisskeyNote));
+    if (!notes) {
+        cJSON_Delete(root);
+        misskey_free_string(client, resp);
+        return MISSKEY_ERROR_ALLOC;
+    }
+    
+    for (int i = 0; i < count; i++) {
+        cJSON* item = cJSON_GetArrayItem(root, i);
+        parse_note(item, &notes[i]);
+    }
+    
+    *notes_out = notes;
+    *count_out = count;
+    
+    cJSON_Delete(root);
+    misskey_free_string(client, resp);
+    return MISSKEY_OK;
+}
+
+MisskeyError misskey_i_notifications_struct(MisskeyClient* client, int limit, MisskeyNotification** notifications_out, int* count_out) {
+    if (!client || !notifications_out || !count_out) return MISSKEY_ERROR_INVALID_PARAM;
+    *notifications_out = NULL;
+    *count_out = 0;
+    
+    char* resp = NULL;
+    MisskeyError err = misskey_i_notifications(client, limit, &resp);
+    if (err != MISSKEY_OK) return err;
+    
+    cJSON* root = cJSON_Parse(resp);
+    if (!root || root->type != cJSON_Array) {
+        misskey_free_string(client, resp);
+        return MISSKEY_ERROR_JSON;
+    }
+    
+    int count = cJSON_GetArraySize(root);
+    if (count == 0) {
+        cJSON_Delete(root);
+        misskey_free_string(client, resp);
+        return MISSKEY_OK;
+    }
+    
+    MisskeyNotification* notifications = alloc_allocator(&client->allocator, count * sizeof(MisskeyNotification));
+    if (!notifications) {
+        cJSON_Delete(root);
+        misskey_free_string(client, resp);
+        return MISSKEY_ERROR_ALLOC;
+    }
+    
+    for (int i = 0; i < count; i++) {
+        cJSON* item = cJSON_GetArrayItem(root, i);
+        misskey_notification_init(&notifications[i]);
+        
+        cJSON* nitem;
+        if ((nitem = cJSON_GetObjectItem(item, "id")) && nitem->type == cJSON_String)
+            strncpy(notifications[i].id, nitem->valuestring, sizeof(notifications[i].id) - 1);
+        if ((nitem = cJSON_GetObjectItem(item, "createdAt")) && nitem->type == cJSON_String)
+            strncpy(notifications[i].created_at, nitem->valuestring, sizeof(notifications[i].created_at) - 1);
+        if ((nitem = cJSON_GetObjectItem(item, "type")) && nitem->type == cJSON_String)
+            strncpy(notifications[i].type, nitem->valuestring, sizeof(notifications[i].type) - 1);
+        if ((nitem = cJSON_GetObjectItem(item, "userId")) && nitem->type == cJSON_String)
+            strncpy(notifications[i].user_id, nitem->valuestring, sizeof(notifications[i].user_id) - 1);
+        if ((nitem = cJSON_GetObjectItem(item, "userName")) && nitem->type == cJSON_String)
+            strncpy(notifications[i].user_name, nitem->valuestring, sizeof(notifications[i].user_name) - 1);
+        if ((nitem = cJSON_GetObjectItem(item, "noteId")) && nitem->type == cJSON_String)
+            strncpy(notifications[i].note_id, nitem->valuestring, sizeof(notifications[i].note_id) - 1);
+        if ((nitem = cJSON_GetObjectItem(item, "reaction")) && nitem->type == cJSON_String)
+            strncpy(notifications[i].reaction, nitem->valuestring, sizeof(notifications[i].reaction) - 1);
+        if ((nitem = cJSON_GetObjectItem(item, "message")) && nitem->type == cJSON_String)
+            strncpy(notifications[i].message, nitem->valuestring, sizeof(notifications[i].message) - 1);
+        
+        cJSON* user = cJSON_GetObjectItem(item, "user");
+        if (user) parse_user(user, &notifications[i].user);
+    }
+    
+    *notifications_out = notifications;
+    *count_out = count;
+    
+    cJSON_Delete(root);
+    misskey_free_string(client, resp);
+    return MISSKEY_OK;
+}
+
+MisskeyError misskey_drive_struct(MisskeyClient* client, MisskeyDriveInfo* info) {
+    if (!client || !info) return MISSKEY_ERROR_INVALID_PARAM;
+    misskey_drive_info_init(info);
+    
+    char* resp = NULL;
+    MisskeyError err = misskey_drive(client, &resp);
+    if (err != MISSKEY_OK) return err;
+    
+    cJSON* root = cJSON_Parse(resp);
+    if (!root) {
+        misskey_free_string(client, resp);
+        return MISSKEY_ERROR_JSON;
+    }
+    
+    cJSON* item;
+    if ((item = cJSON_GetObjectItem(root, "capacity")) && item->type == cJSON_Number)
+        info->capacity = (int)item->valueint;
+    if ((item = cJSON_GetObjectItem(root, "usage")) && item->type == cJSON_Number)
+        info->usage = (int)item->valueint;
+    if ((item = cJSON_GetObjectItem(root, "isOverQuotaCapacity")) && item->type == cJSON_True)
+        info->drive_usage_over_quota = 1;
+    if ((item = cJSON_GetObjectItem(root, "incCapacity")) && item->type == cJSON_Number)
+        info->inc_capacity = (int)item->valueint;
+    
+    cJSON_Delete(root);
+    misskey_free_string(client, resp);
+    return MISSKEY_OK;
+}
+
+static MisskeyError parse_drive_files(MisskeyClient* client, char* resp, MisskeyDriveFile** files_out, int* count_out) {
+    if (!resp || !files_out || !count_out) return MISSKEY_ERROR_INVALID_PARAM;
+    *files_out = NULL;
+    *count_out = 0;
+    
+    cJSON* root = cJSON_Parse(resp);
+    if (!root || root->type != cJSON_Array) {
+        return MISSKEY_ERROR_JSON;
+    }
+    
+    int count = cJSON_GetArraySize(root);
+    if (count == 0) {
+        cJSON_Delete(root);
+        return MISSKEY_OK;
+    }
+    
+    MisskeyDriveFile* files = alloc_allocator(&client->allocator, count * sizeof(MisskeyDriveFile));
+    if (!files) {
+        cJSON_Delete(root);
+        return MISSKEY_ERROR_ALLOC;
+    }
+    
+    for (int i = 0; i < count; i++) {
+        cJSON* item = cJSON_GetArrayItem(root, i);
+        misskey_drive_file_init(&files[i]);
+        
+        cJSON* fitem;
+        if ((fitem = cJSON_GetObjectItem(item, "id")) && fitem->type == cJSON_String)
+            strncpy(files[i].id, fitem->valuestring, sizeof(files[i].id) - 1);
+        if ((fitem = cJSON_GetObjectItem(item, "createdAt")) && fitem->type == cJSON_String)
+            strncpy(files[i].created_at, fitem->valuestring, sizeof(files[i].created_at) - 1);
+        if ((fitem = cJSON_GetObjectItem(item, "name")) && fitem->type == cJSON_String)
+            strncpy(files[i].name, fitem->valuestring, sizeof(files[i].name) - 1);
+        if ((fitem = cJSON_GetObjectItem(item, "type")) && fitem->type == cJSON_String)
+            strncpy(files[i].type, fitem->valuestring, sizeof(files[i].type) - 1);
+        if ((fitem = cJSON_GetObjectItem(item, "md5")) && fitem->type == cJSON_String)
+            strncpy(files[i].md5, fitem->valuestring, sizeof(files[i].md5) - 1);
+        if ((fitem = cJSON_GetObjectItem(item, "size")) && fitem->type == cJSON_Number)
+            files[i].size = (size_t)item->valueint;
+        if ((fitem = cJSON_GetObjectItem(item, "url")) && fitem->type == cJSON_String)
+            strncpy(files[i].url, fitem->valuestring, sizeof(files[i].url) - 1);
+        if ((fitem = cJSON_GetObjectItem(item, "thumbnailUrl")) && fitem->type == cJSON_String)
+            strncpy(files[i].thumbnail_url, fitem->valuestring, sizeof(files[i].thumbnail_url) - 1);
+        if ((fitem = cJSON_GetObjectItem(item, "folderId")) && fitem->type == cJSON_String)
+            strncpy(files[i].folder_id, fitem->valuestring, sizeof(files[i].folder_id) - 1);
+        if ((fitem = cJSON_GetObjectItem(item, "userId")) && fitem->type == cJSON_String)
+            strncpy(files[i].user_id, fitem->valuestring, sizeof(files[i].user_id) - 1);
+        if ((fitem = cJSON_GetObjectItem(item, "isSensitive")) && fitem->type == cJSON_True)
+            files[i].is_sensitive = 1;
+    }
+    
+    *files_out = files;
+    *count_out = count;
+    
+    cJSON_Delete(root);
+    return MISSKEY_OK;
+}
+
+MisskeyError misskey_drive_files_struct(MisskeyClient* client, int limit, const char* folder_id, MisskeyDriveFile** files_out, int* count_out) {
+    if (!client || !files_out || !count_out) return MISSKEY_ERROR_INVALID_PARAM;
+    
+    char* resp = NULL;
+    MisskeyError err = misskey_drive_files(client, limit, folder_id ? 1 : 0, &resp);
+    if (err != MISSKEY_OK) return err;
+    
+    err = parse_drive_files(client, resp, files_out, count_out);
+    misskey_free_string(client, resp);
+    return err;
+}
+
+MisskeyError misskey_drive_files_create_struct(MisskeyClient* client, const char* file_path, const char* folder_id, const char* name, MisskeyDriveFile* file_out) {
+    if (!client || !file_out) return MISSKEY_ERROR_INVALID_PARAM;
+    misskey_drive_file_init(file_out);
+    
+    char* resp = NULL;
+    MisskeyError err = misskey_drive_files_create(client, file_path, folder_id, name, &resp);
+    if (err != MISSKEY_OK) return err;
+    
+    cJSON* root = cJSON_Parse(resp);
+    if (root) {
+        cJSON* item;
+        if ((item = cJSON_GetObjectItem(root, "id")) && item->type == cJSON_String)
+            strncpy(file_out->id, item->valuestring, sizeof(file_out->id) - 1);
+        if ((item = cJSON_GetObjectItem(root, "name")) && item->type == cJSON_String)
+            strncpy(file_out->name, item->valuestring, sizeof(file_out->name) - 1);
+        if ((item = cJSON_GetObjectItem(root, "type")) && item->type == cJSON_String)
+            strncpy(file_out->type, item->valuestring, sizeof(file_out->type) - 1);
+        if ((item = cJSON_GetObjectItem(root, "url")) && item->type == cJSON_String)
+            strncpy(file_out->url, item->valuestring, sizeof(file_out->url) - 1);
+        cJSON_Delete(root);
+    }
+    misskey_free_string(client, resp);
+    return MISSKEY_OK;
+}
+
+MisskeyError misskey_drive_files_delete_struct(MisskeyClient* client, const char* file_id, char file_id_out[32]) {
+    if (!client || !file_id || !file_id_out) return MISSKEY_ERROR_INVALID_PARAM;
+    file_id_out[0] = '\0';
+    
+    char* resp = NULL;
+    MisskeyError err = misskey_drive_files_delete(client, file_id, &resp);
+    if (err != MISSKEY_OK) return err;
+    
+    strncpy(file_id_out, file_id, 31);
+    misskey_free_string(client, resp);
+    return MISSKEY_OK;
+}
+
+MisskeyError misskey_drive_files_update_struct(MisskeyClient* client, const char* file_id, const char* folder_id, const char* name, MisskeyDriveFile* file_out) {
+    if (!client || !file_out) return MISSKEY_ERROR_INVALID_PARAM;
+    misskey_drive_file_init(file_out);
+    
+    char* resp = NULL;
+    MisskeyError err = misskey_drive_files_update(client, file_id, folder_id, name, &resp);
+    if (err != MISSKEY_OK) return err;
+    
+    cJSON* root = cJSON_Parse(resp);
+    if (root) {
+        cJSON* item;
+        if ((item = cJSON_GetObjectItem(root, "id")) && item->type == cJSON_String)
+            strncpy(file_out->id, item->valuestring, sizeof(file_out->id) - 1);
+        if ((item = cJSON_GetObjectItem(root, "name")) && item->type == cJSON_String)
+            strncpy(file_out->name, item->valuestring, sizeof(file_out->name) - 1);
+        cJSON_Delete(root);
+    }
+    misskey_free_string(client, resp);
+    return MISSKEY_OK;
+}
+
+MisskeyError misskey_drive_files_find_struct(MisskeyClient* client, const char* hash, MisskeyDriveFile** files_out, int* count_out) {
+    if (!client || !files_out || !count_out) return MISSKEY_ERROR_INVALID_PARAM;
+    
+    char* resp = NULL;
+    MisskeyError err = misskey_drive_files_find(client, hash, &resp);
+    if (err != MISSKEY_OK) return err;
+    
+    err = parse_drive_files(client, resp, files_out, count_out);
+    misskey_free_string(client, resp);
+    return err;
+}
+
+MisskeyError misskey_drive_files_show_struct(MisskeyClient* client, const char* file_id, const char* url, MisskeyDriveFile* file_out) {
+    if (!client || !file_out) return MISSKEY_ERROR_INVALID_PARAM;
+    misskey_drive_file_init(file_out);
+    
+    char* resp = NULL;
+    MisskeyError err = misskey_drive_files_show(client, file_id, url, &resp);
+    if (err != MISSKEY_OK) return err;
+    
+    cJSON* root = cJSON_Parse(resp);
+    if (root) {
+        cJSON* item;
+        if ((item = cJSON_GetObjectItem(root, "id")) && item->type == cJSON_String)
+            strncpy(file_out->id, item->valuestring, sizeof(file_out->id) - 1);
+        if ((item = cJSON_GetObjectItem(root, "name")) && item->type == cJSON_String)
+            strncpy(file_out->name, item->valuestring, sizeof(file_out->name) - 1);
+        if ((item = cJSON_GetObjectItem(root, "url")) && item->type == cJSON_String)
+            strncpy(file_out->url, item->valuestring, sizeof(file_out->url) - 1);
+        cJSON_Delete(root);
+    }
+    misskey_free_string(client, resp);
+    return MISSKEY_OK;
+}
+
+MisskeyError misskey_drive_files_upload_from_url_struct(MisskeyClient* client, const char* url, const char* folder_id, int is_sensitive, const char* comment, MisskeyDriveFile* file_out) {
+    if (!client || !file_out) return MISSKEY_ERROR_INVALID_PARAM;
+    misskey_drive_file_init(file_out);
+    
+    char* resp = NULL;
+    MisskeyError err = misskey_drive_files_upload_from_url(client, url, folder_id, is_sensitive, comment, &resp);
+    if (err != MISSKEY_OK) return err;
+    
+    cJSON* root = cJSON_Parse(resp);
+    if (root) {
+        cJSON* item;
+        if ((item = cJSON_GetObjectItem(root, "id")) && item->type == cJSON_String)
+            strncpy(file_out->id, item->valuestring, sizeof(file_out->id) - 1);
+        if ((item = cJSON_GetObjectItem(root, "name")) && item->type == cJSON_String)
+            strncpy(file_out->name, item->valuestring, sizeof(file_out->name) - 1);
+        cJSON_Delete(root);
+    }
+    misskey_free_string(client, resp);
+    return MISSKEY_OK;
+}
+
+MisskeyError misskey_drive_folders_struct(MisskeyClient* client, int limit, const char* folder_id, MisskeyDriveFolder** folders_out, int* count_out) {
+    if (!client || !folders_out || !count_out) return MISSKEY_ERROR_INVALID_PARAM;
+    *folders_out = NULL;
+    *count_out = 0;
+    
+    char* resp = NULL;
+    MisskeyError err = misskey_drive_folders(client, limit, folder_id, &resp);
+    if (err != MISSKEY_OK) return err;
+    
+    cJSON* root = cJSON_Parse(resp);
+    if (!root || root->type != cJSON_Array) {
+        misskey_free_string(client, resp);
+        return MISSKEY_ERROR_JSON;
+    }
+    
+    int count = cJSON_GetArraySize(root);
+    if (count == 0) {
+        cJSON_Delete(root);
+        misskey_free_string(client, resp);
+        return MISSKEY_OK;
+    }
+    
+    MisskeyDriveFolder* folders = alloc_allocator(&client->allocator, count * sizeof(MisskeyDriveFolder));
+    if (!folders) {
+        cJSON_Delete(root);
+        misskey_free_string(client, resp);
+        return MISSKEY_ERROR_ALLOC;
+    }
+    
+    for (int i = 0; i < count; i++) {
+        cJSON* item = cJSON_GetArrayItem(root, i);
+        misskey_drive_folder_init(&folders[i]);
+        
+        cJSON* fitem;
+        if ((fitem = cJSON_GetObjectItem(item, "id")) && fitem->type == cJSON_String)
+            strncpy(folders[i].id, fitem->valuestring, sizeof(folders[i].id) - 1);
+        if ((fitem = cJSON_GetObjectItem(item, "createdAt")) && fitem->type == cJSON_String)
+            strncpy(folders[i].created_at, fitem->valuestring, sizeof(folders[i].created_at) - 1);
+        if ((fitem = cJSON_GetObjectItem(item, "name")) && fitem->type == cJSON_String)
+            strncpy(folders[i].name, fitem->valuestring, sizeof(folders[i].name) - 1);
+        if ((fitem = cJSON_GetObjectItem(item, "parentId")) && fitem->type == cJSON_String)
+            strncpy(folders[i].parent_id, fitem->valuestring, sizeof(folders[i].parent_id) - 1);
+        if ((fitem = cJSON_GetObjectItem(item, "foldersCount")) && fitem->type == cJSON_Number)
+            folders[i].folders_count = fitem->valueint;
+        if ((fitem = cJSON_GetObjectItem(item, "filesCount")) && fitem->type == cJSON_Number)
+            folders[i].files_count = fitem->valueint;
+    }
+    
+    *folders_out = folders;
+    *count_out = count;
+    
+    cJSON_Delete(root);
+    misskey_free_string(client, resp);
+    return MISSKEY_OK;
+}
+
+MisskeyError misskey_drive_folders_create_struct(MisskeyClient* client, const char* name, const char* parent_id, MisskeyDriveFolder* folder_out) {
+    if (!client || !folder_out) return MISSKEY_ERROR_INVALID_PARAM;
+    misskey_drive_folder_init(folder_out);
+    
+    char* resp = NULL;
+    MisskeyError err = misskey_drive_folders_create(client, name, parent_id, &resp);
+    if (err != MISSKEY_OK) return err;
+    
+    cJSON* root = cJSON_Parse(resp);
+    if (root) {
+        cJSON* item;
+        if ((item = cJSON_GetObjectItem(root, "id")) && item->type == cJSON_String)
+            strncpy(folder_out->id, item->valuestring, sizeof(folder_out->id) - 1);
+        if ((item = cJSON_GetObjectItem(root, "name")) && item->type == cJSON_String)
+            strncpy(folder_out->name, item->valuestring, sizeof(folder_out->name) - 1);
+        cJSON_Delete(root);
+    }
+    misskey_free_string(client, resp);
+    return MISSKEY_OK;
+}
+
+MisskeyError misskey_drive_folders_delete_struct(MisskeyClient* client, const char* folder_id, char folder_id_out[32]) {
+    if (!client || !folder_id || !folder_id_out) return MISSKEY_ERROR_INVALID_PARAM;
+    folder_id_out[0] = '\0';
+    
+    char* resp = NULL;
+    MisskeyError err = misskey_drive_folders_delete(client, folder_id, &resp);
+    if (err != MISSKEY_OK) return err;
+    
+    strncpy(folder_id_out, folder_id, 31);
+    misskey_free_string(client, resp);
+    return MISSKEY_OK;
+}
+
+MisskeyError misskey_drive_folders_update_struct(MisskeyClient* client, const char* folder_id, const char* name, const char* parent_id, MisskeyDriveFolder* folder_out) {
+    if (!client || !folder_out) return MISSKEY_ERROR_INVALID_PARAM;
+    misskey_drive_folder_init(folder_out);
+    
+    char* resp = NULL;
+    MisskeyError err = misskey_drive_folders_update(client, folder_id, name, parent_id, &resp);
+    if (err != MISSKEY_OK) return err;
+    
+    cJSON* root = cJSON_Parse(resp);
+    if (root) {
+        cJSON* item;
+        if ((item = cJSON_GetObjectItem(root, "id")) && item->type == cJSON_String)
+            strncpy(folder_out->id, item->valuestring, sizeof(folder_out->id) - 1);
+        if ((item = cJSON_GetObjectItem(root, "name")) && item->type == cJSON_String)
+            strncpy(folder_out->name, item->valuestring, sizeof(folder_out->name) - 1);
+        cJSON_Delete(root);
+    }
+    misskey_free_string(client, resp);
+    return MISSKEY_OK;
+}
+
+MisskeyError misskey_translate_struct(MisskeyClient* client, const char* note_id, const char* target_lang, MisskeyTranslateResult* result_out) {
+    if (!client || !note_id || !target_lang || !result_out) return MISSKEY_ERROR_INVALID_PARAM;
+    misskey_translate_result_init(result_out);
+    
+    char* resp = NULL;
+    MisskeyError err = misskey_translate(client, note_id, target_lang, &resp);
+    if (err != MISSKEY_OK) return err;
+    
+    cJSON* root = cJSON_Parse(resp);
+    if (!root) {
+        misskey_free_string(client, resp);
+        return MISSKEY_ERROR_JSON;
+    }
+    
+    cJSON* item;
+    if ((item = cJSON_GetObjectItem(root, "text")) && item->type == cJSON_String)
+        strncpy(result_out->text, item->valuestring, sizeof(result_out->text) - 1);
+    if ((item = cJSON_GetObjectItem(root, "sourceLang")) && item->type == cJSON_String)
+        strncpy(result_out->source_lang, item->valuestring, sizeof(result_out->source_lang) - 1);
+    if ((item = cJSON_GetObjectItem(root, "targetLang")) && item->type == cJSON_String)
+        strncpy(result_out->target_lang, item->valuestring, sizeof(result_out->target_lang) - 1);
+    
+    cJSON_Delete(root);
+    misskey_free_string(client, resp);
+    return MISSKEY_OK;
+}
+
+MisskeyError misskey_clips_list_struct(MisskeyClient* client, MisskeyClip** clips_out, int* count_out) {
+    if (!client || !clips_out || !count_out) return MISSKEY_ERROR_INVALID_PARAM;
+    *clips_out = NULL;
+    *count_out = 0;
+    
+    char* resp = NULL;
+    MisskeyError err = misskey_clips_list(client, &resp);
+    if (err != MISSKEY_OK) return err;
+    
+    cJSON* root = cJSON_Parse(resp);
+    if (!root || root->type != cJSON_Array) {
+        misskey_free_string(client, resp);
+        return MISSKEY_ERROR_JSON;
+    }
+    
+    int count = cJSON_GetArraySize(root);
+    if (count == 0) {
+        cJSON_Delete(root);
+        misskey_free_string(client, resp);
+        return MISSKEY_OK;
+    }
+    
+    MisskeyClip* clips = alloc_allocator(&client->allocator, count * sizeof(MisskeyClip));
+    if (!clips) {
+        cJSON_Delete(root);
+        misskey_free_string(client, resp);
+        return MISSKEY_ERROR_ALLOC;
+    }
+    
+    for (int i = 0; i < count; i++) {
+        cJSON* item = cJSON_GetArrayItem(root, i);
+        misskey_clip_init(&clips[i]);
+        
+        cJSON* citem;
+        if ((citem = cJSON_GetObjectItem(item, "id")) && citem->type == cJSON_String)
+            strncpy(clips[i].id, citem->valuestring, sizeof(clips[i].id) - 1);
+        if ((citem = cJSON_GetObjectItem(item, "createdAt")) && citem->type == cJSON_String)
+            strncpy(clips[i].created_at, citem->valuestring, sizeof(clips[i].created_at) - 1);
+        if ((citem = cJSON_GetObjectItem(item, "name")) && citem->type == cJSON_String)
+            strncpy(clips[i].name, citem->valuestring, sizeof(clips[i].name) - 1);
+        if ((citem = cJSON_GetObjectItem(item, "description")) && citem->type == cJSON_String)
+            strncpy(clips[i].description, citem->valuestring, sizeof(clips[i].description) - 1);
+        if ((citem = cJSON_GetObjectItem(item, "isPublic")) && citem->type == cJSON_True)
+            clips[i].is_public = 1;
+        if ((citem = cJSON_GetObjectItem(item, "notesCount")) && citem->type == cJSON_Number)
+            clips[i].notes_count = citem->valueint;
+    }
+    
+    *clips_out = clips;
+    *count_out = count;
+    
+    cJSON_Delete(root);
+    misskey_free_string(client, resp);
+    return MISSKEY_OK;
+}
+
+MisskeyError misskey_clips_show_struct(MisskeyClient* client, const char* clip_id, MisskeyClip* clip_out) {
+    if (!client || !clip_id || !clip_out) return MISSKEY_ERROR_INVALID_PARAM;
+    misskey_clip_init(clip_out);
+    
+    char* resp = NULL;
+    MisskeyError err = misskey_clips_show(client, clip_id, &resp);
+    if (err != MISSKEY_OK) return err;
+    
+    cJSON* root = cJSON_Parse(resp);
+    if (root) {
+        cJSON* item;
+        if ((item = cJSON_GetObjectItem(root, "id")) && item->type == cJSON_String)
+            strncpy(clip_out->id, item->valuestring, sizeof(clip_out->id) - 1);
+        if ((item = cJSON_GetObjectItem(root, "name")) && item->type == cJSON_String)
+            strncpy(clip_out->name, item->valuestring, sizeof(clip_out->name) - 1);
+        if ((item = cJSON_GetObjectItem(root, "description")) && item->type == cJSON_String)
+            strncpy(clip_out->description, item->valuestring, sizeof(clip_out->description) - 1);
+        if ((item = cJSON_GetObjectItem(root, "isPublic")) && item->type == cJSON_True)
+            clip_out->is_public = 1;
+        if ((item = cJSON_GetObjectItem(root, "notesCount")) && item->type == cJSON_Number)
+            clip_out->notes_count = item->valueint;
+        cJSON_Delete(root);
+    }
+    misskey_free_string(client, resp);
+    return MISSKEY_OK;
+}
+
+MisskeyError misskey_clips_create_struct(MisskeyClient* client, const char* name, const char* description, int is_public, MisskeyClip* clip_out) {
+    if (!client || !clip_out) return MISSKEY_ERROR_INVALID_PARAM;
+    misskey_clip_init(clip_out);
+    
+    char* resp = NULL;
+    MisskeyError err = misskey_clips_create(client, name, description, is_public, &resp);
+    if (err != MISSKEY_OK) return err;
+    
+    cJSON* root = cJSON_Parse(resp);
+    if (root) {
+        cJSON* item;
+        if ((item = cJSON_GetObjectItem(root, "id")) && item->type == cJSON_String)
+            strncpy(clip_out->id, item->valuestring, sizeof(clip_out->id) - 1);
+        if ((item = cJSON_GetObjectItem(root, "name")) && item->type == cJSON_String)
+            strncpy(clip_out->name, item->valuestring, sizeof(clip_out->name) - 1);
+        if ((item = cJSON_GetObjectItem(root, "description")) && item->type == cJSON_String)
+            strncpy(clip_out->description, item->valuestring, sizeof(clip_out->description) - 1);
+        clip_out->is_public = is_public;
+        cJSON_Delete(root);
+    }
+    misskey_free_string(client, resp);
+    return MISSKEY_OK;
+}
+
+MisskeyError misskey_clips_update_struct(MisskeyClient* client, const char* clip_id, const char* name, const char* description, int is_public, MisskeyClip* clip_out) {
+    if (!client || !clip_out) return MISSKEY_ERROR_INVALID_PARAM;
+    misskey_clip_init(clip_out);
+    
+    char* resp = NULL;
+    MisskeyError err = misskey_clips_update(client, clip_id, name, description, is_public, &resp);
+    if (err != MISSKEY_OK) return err;
+    
+    cJSON* root = cJSON_Parse(resp);
+    if (root) {
+        cJSON* item;
+        if ((item = cJSON_GetObjectItem(root, "id")) && item->type == cJSON_String)
+            strncpy(clip_out->id, item->valuestring, sizeof(clip_out->id) - 1);
+        if ((item = cJSON_GetObjectItem(root, "name")) && item->type == cJSON_String)
+            strncpy(clip_out->name, item->valuestring, sizeof(clip_out->name) - 1);
+        cJSON_Delete(root);
+    }
+    misskey_free_string(client, resp);
+    return MISSKEY_OK;
+}
+
+MisskeyError misskey_clips_delete_struct(MisskeyClient* client, const char* clip_id, char clip_id_out[32]) {
+    if (!client || !clip_id || !clip_id_out) return MISSKEY_ERROR_INVALID_PARAM;
+    clip_id_out[0] = '\0';
+    
+    char* resp = NULL;
+    MisskeyError err = misskey_clips_delete(client, clip_id, &resp);
+    if (err != MISSKEY_OK) return err;
+    
+    strncpy(clip_id_out, clip_id, 31);
+    misskey_free_string(client, resp);
+    return MISSKEY_OK;
+}
+
+MisskeyError misskey_clips_notes_struct(MisskeyClient* client, const char* clip_id, int limit, MisskeyNote** notes_out, int* count_out) {
+    if (!client || !notes_out || !count_out) return MISSKEY_ERROR_INVALID_PARAM;
+    *notes_out = NULL;
+    *count_out = 0;
+    
+    char* resp = NULL;
+    MisskeyError err = misskey_clips_notes(client, clip_id, limit, &resp);
+    if (err != MISSKEY_OK) return err;
+    
+    cJSON* root = cJSON_Parse(resp);
+    if (!root || root->type != cJSON_Array) {
+        misskey_free_string(client, resp);
+        return MISSKEY_ERROR_JSON;
+    }
+    
+    int count = cJSON_GetArraySize(root);
+    if (count == 0) {
+        cJSON_Delete(root);
+        misskey_free_string(client, resp);
+        return MISSKEY_OK;
+    }
+    
+    MisskeyNote* notes = alloc_allocator(&client->allocator, count * sizeof(MisskeyNote));
+    if (!notes) {
+        cJSON_Delete(root);
+        misskey_free_string(client, resp);
+        return MISSKEY_ERROR_ALLOC;
+    }
+    
+    for (int i = 0; i < count; i++) {
+        cJSON* item = cJSON_GetArrayItem(root, i);
+        parse_note(item, &notes[i]);
+    }
+    
+    *notes_out = notes;
+    *count_out = count;
+    
+    cJSON_Delete(root);
+    misskey_free_string(client, resp);
+    return MISSKEY_OK;
+}
+
+void misskey_free_notes(MisskeyClient* client, MisskeyNote* notes, int count) {
+    if (notes) free_allocator(&client->allocator, notes);
+}
+
+void misskey_free_notifications(MisskeyClient* client, MisskeyNotification* notifications, int count) {
+    if (notifications) free_allocator(&client->allocator, notifications);
+}
+
+void misskey_free_drive_files(MisskeyClient* client, MisskeyDriveFile* files, int count) {
+    if (files) free_allocator(&client->allocator, files);
+}
+
+void misskey_free_drive_folders(MisskeyClient* client, MisskeyDriveFolder* folders, int count) {
+    if (folders) free_allocator(&client->allocator, folders);
+}
+
+void misskey_free_clips(MisskeyClient* client, MisskeyClip* clips, int count) {
+    if (clips) free_allocator(&client->allocator, clips);
+}

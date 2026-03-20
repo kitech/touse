@@ -471,6 +471,174 @@ int example_clips_notes(MisskeyClient* client) {
     return 0;
 }
 
+int example_struct_api(MisskeyClient* client) {
+    printf("\n=== Structured API Test ===\n");
+    
+    printf("\n--- meta_struct ---\n");
+    MisskeyMeta meta;
+    misskey_meta_init(&meta);
+    MisskeyError err = misskey_meta_struct(client, &meta);
+    if (err != MISSKEY_OK) {
+        print_error_details(client, err);
+        return 1;
+    }
+    printf("Server name: %s\n", meta.name);
+    printf("Version: %s\n", meta.version);
+    printf("Max note length: %d\n", meta.max_note_text_length);
+    
+    printf("\n--- notes_timeline_struct ---\n");
+    MisskeyNote* notes = NULL;
+    int note_count = 0;
+    err = misskey_notes_timeline_struct(client, 3, 0, &notes, &note_count);
+    if (err != MISSKEY_OK) {
+        print_error_details(client, err);
+        if (notes) misskey_free_notes(client, notes, note_count);
+        return 1;
+    }
+    printf("Got %d notes:\n", note_count);
+    for (int i = 0; i < note_count; i++) {
+        printf("  [%d] %s - @%s: %s\n", i + 1, notes[i].id, notes[i].user.username, notes[i].text);
+    }
+    misskey_free_notes(client, notes, note_count);
+    
+    printf("\n--- notes_create_struct ---\n");
+    MisskeyNote created_note;
+    misskey_note_init(&created_note);
+    err = misskey_notes_create_struct(client, "Test from structured API", NULL, NULL, &created_note);
+    if (err != MISSKEY_OK) {
+        print_error_details(client, err);
+        return 1;
+    }
+    printf("Created note ID: %s\n", created_note.id);
+    printf("Text: %s\n", created_note.text);
+    printf("User: @%s\n", created_note.user.username);
+    
+    printf("\n--- notes_show_struct ---\n");
+    MisskeyNote shown_note;
+    misskey_note_init(&shown_note);
+    err = misskey_notes_show_struct(client, created_note.id, &shown_note);
+    if (err != MISSKEY_OK) {
+        print_error_details(client, err);
+        char del_resp[32];
+        misskey_notes_delete_struct(client, created_note.id, del_resp);
+        return 1;
+    }
+    printf("Fetched note: %s\n", shown_note.text);
+    
+    printf("\n--- translate_struct ---\n");
+    MisskeyTranslateResult trans_result;
+    misskey_translate_result_init(&trans_result);
+    err = misskey_translate_struct(client, created_note.id, "ja", &trans_result);
+    if (err == MISSKEY_OK) {
+        printf("Source lang: %s -> Target lang: %s\n", trans_result.source_lang, trans_result.target_lang);
+        printf("Translated: %s\n", trans_result.text);
+    } else {
+        printf("Translate failed (may not be supported)\n");
+    }
+    
+    printf("\n--- notes_delete_struct ---\n");
+    char deleted_id[32];
+    err = misskey_notes_delete_struct(client, created_note.id, deleted_id);
+    if (err == MISSKEY_OK) {
+        printf("Deleted note: %s\n", deleted_id);
+    } else {
+        print_error_details(client, err);
+    }
+    
+    printf("\n--- i_notifications_struct ---\n");
+    MisskeyNotification* notifications = NULL;
+    int notif_count = 0;
+    err = misskey_i_notifications_struct(client, 5, &notifications, &notif_count);
+    if (err != MISSKEY_OK) {
+        print_error_details(client, err);
+        if (notifications) misskey_free_notifications(client, notifications, notif_count);
+        return 1;
+    }
+    printf("Got %d notifications:\n", notif_count);
+    for (int i = 0; i < notif_count; i++) {
+        printf("  [%d] %s - type: %s\n", i + 1, notifications[i].id, notifications[i].type);
+    }
+    misskey_free_notifications(client, notifications, notif_count);
+    
+    printf("\n--- drive_struct ---\n");
+    MisskeyDriveInfo drive_info;
+    misskey_drive_info_init(&drive_info);
+    err = misskey_drive_struct(client, &drive_info);
+    if (err != MISSKEY_OK) {
+        print_error_details(client, err);
+        return 1;
+    }
+    printf("Drive capacity: %d bytes\n", drive_info.capacity);
+    printf("Drive usage: %d bytes\n", drive_info.usage);
+    
+    printf("\n--- drive_folders_struct ---\n");
+    MisskeyDriveFolder* folders = NULL;
+    int folder_count = 0;
+    err = misskey_drive_folders_struct(client, 5, NULL, &folders, &folder_count);
+    if (err != MISSKEY_OK) {
+        print_error_details(client, err);
+        if (folders) misskey_free_drive_folders(client, folders, folder_count);
+        return 1;
+    }
+    printf("Got %d folders:\n", folder_count);
+    for (int i = 0; i < folder_count; i++) {
+        printf("  [%d] %s - %s\n", i + 1, folders[i].id, folders[i].name);
+    }
+    misskey_free_drive_folders(client, folders, folder_count);
+    
+    printf("\n--- drive_files_struct ---\n");
+    MisskeyDriveFile* files = NULL;
+    int file_count = 0;
+    err = misskey_drive_files_struct(client, 5, NULL, &files, &file_count);
+    if (err != MISSKEY_OK) {
+        print_error_details(client, err);
+        if (files) misskey_free_drive_files(client, files, file_count);
+        return 1;
+    }
+    printf("Got %d files:\n", file_count);
+    for (int i = 0; i < file_count; i++) {
+        printf("  [%d] %s - %s (%zu bytes)\n", i + 1, files[i].id, files[i].name, files[i].size);
+    }
+    misskey_free_drive_files(client, files, file_count);
+    
+    printf("\n--- clips_list_struct ---\n");
+    MisskeyClip* clips = NULL;
+    int clip_count = 0;
+    err = misskey_clips_list_struct(client, &clips, &clip_count);
+    if (err != MISSKEY_OK) {
+        print_error_details(client, err);
+        if (clips) misskey_free_clips(client, clips, clip_count);
+        return 1;
+    }
+    printf("Got %d clips:\n", clip_count);
+    for (int i = 0; i < clip_count; i++) {
+        printf("  [%d] %s - %s (public: %s)\n", i + 1, clips[i].id, clips[i].name, clips[i].is_public ? "yes" : "no");
+    }
+    misskey_free_clips(client, clips, clip_count);
+    
+    printf("\n--- clips_create_struct ---\n");
+    MisskeyClip new_clip;
+    misskey_clip_init(&new_clip);
+    err = misskey_clips_create_struct(client, "Test Clip Struct", "Created by structured API", 1, &new_clip);
+    if (err != MISSKEY_OK) {
+        print_error_details(client, err);
+        return 1;
+    }
+    printf("Created clip: %s - %s\n", new_clip.id, new_clip.name);
+    
+    printf("\n--- clips_delete_struct ---\n");
+    char deleted_clip_id[32];
+    err = misskey_clips_delete_struct(client, new_clip.id, deleted_clip_id);
+    if (err == MISSKEY_OK) {
+        printf("Deleted clip: %s\n", deleted_clip_id);
+    } else {
+        print_error_details(client, err);
+    }
+    
+    printf("\n=== Structured API Test Done ===\n");
+    return 0;
+}
+
 int main(int argc, char* argv[]) {
     const char* host = argc > 1 ? argv[1] : "misskey.io";
     const char* token = argc > 2 ? argv[2] : NULL;
@@ -526,6 +694,25 @@ int main(int argc, char* argv[]) {
     printf("\n--- Starting API calls ---\n");
     
     api_call_start("meta");  api_call_end(example_meta(client) == 0);
+    
+    misskey_client_free(client);
+    
+    printf("\n===========================================\n");
+    printf("  Testing Structured API\n");
+    printf("===========================================\n");
+    
+    client = misskey_client_new(host);
+    if (!client) {
+        fprintf(stderr, "Failed to create client\n");
+        return 1;
+    }
+    
+    if (token) {
+        misskey_client_set_token(client, token);
+        misskey_request_set_debug(client, 0);
+        
+        api_call_start("struct/meta");  api_call_end(example_struct_api(client) == 0);
+    }
     
     misskey_client_free(client);
     
