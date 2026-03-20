@@ -246,6 +246,28 @@ fn C.misskey_free_drive_files(client &C.MisskeyClient, files &C.MisskeyDriveFile
 fn C.misskey_free_drive_folders(client &C.MisskeyClient, folders &C.MisskeyDriveFolder, count int)
 fn C.misskey_free_clips(client &C.MisskeyClient, clips &C.MisskeyClip, count int)
 
+pub enum StreamChannel {
+	main           = 0
+	home_timeline  = 1
+	local_timeline = 2
+	hybrid_timeline = 3
+	global_timeline = 4
+}
+
+struct C.MisskeyStream {}
+
+type StreamCallback = fn (msg_type string, body string, user_data voidptr)
+
+fn C.misskey_stream_new(host charptr, token charptr) &C.MisskeyStream
+fn C.misskey_stream_free(stream &C.MisskeyStream)
+fn C.misskey_stream_connect(stream &C.MisskeyStream, channel int, channel_id charptr) int
+fn C.misskey_stream_disconnect(stream &C.MisskeyStream, channel_id charptr) int
+fn C.misskey_stream_poll(stream &C.MisskeyStream, timeout_ms int) int
+fn C.misskey_stream_send(stream &C.MisskeyStream, channel_id charptr, msg_type charptr, body charptr) int
+fn C.misskey_stream_set_callback(stream &C.MisskeyStream, callback StreamCallback, user_data voidptr)
+fn C.misskey_stream_subscribe_note(stream &C.MisskeyStream, note_id charptr) int
+fn C.misskey_stream_unsubscribe_note(stream &C.MisskeyStream, note_id charptr) int
+
 // Error codes
 pub enum MisskeyError {
 	ok            = 0
@@ -1299,4 +1321,66 @@ pub fn (c &Client) clips_delete(clip_id string) ! {
 	if ret != 0 {
 		return error('clips_delete failed: ${MisskeyError(ret).detailed(c)}')
 	}
+}
+
+pub type StreamEventHandler = fn (msg_type string, body string)
+
+@[heap]
+pub struct Stream {
+mut:
+	c_stream &C.MisskeyStream
+	handler StreamEventHandler
+}
+
+pub fn stream_new(host string, token string) !Stream {
+	c_stream := C.misskey_stream_new(&char(host.str), &char(token.str))
+	if c_stream == unsafe { nil } {
+		return error('failed to create stream')
+	}
+	return Stream{
+		c_stream: c_stream
+	}
+}
+
+pub fn (s &Stream) freeit() {
+	C.misskey_stream_free(s.c_stream)
+}
+
+pub fn (s &Stream) connect(channel StreamChannel, channel_id string) ! {
+	ret := C.misskey_stream_connect(s.c_stream, int(channel), &char(channel_id.str))
+	if ret != 0 {
+		return error('failed to connect to stream channel: ${MisskeyError(ret)}')
+	}
+}
+
+pub fn (s &Stream) disconnect(channel_id string) ! {
+	ret := C.misskey_stream_disconnect(s.c_stream, &char(channel_id.str))
+	if ret != 0 {
+		return error('failed to disconnect from stream channel: ${MisskeyError(ret)}')
+	}
+}
+
+pub fn (s &Stream) subscribe_note(note_id string) ! {
+	ret := C.misskey_stream_subscribe_note(s.c_stream, &char(note_id.str))
+	if ret != 0 {
+		return error('failed to subscribe to note: ${MisskeyError(ret)}')
+	}
+}
+
+pub fn (s &Stream) unsubscribe_note(note_id string) ! {
+	ret := C.misskey_stream_unsubscribe_note(s.c_stream, &char(note_id.str))
+	if ret != 0 {
+		return error('failed to unsubscribe from note: ${MisskeyError(ret)}')
+	}
+}
+
+pub fn (s &Stream) poll(timeout_ms int) ! {
+	ret := C.misskey_stream_poll(s.c_stream, timeout_ms)
+	if ret != 0 {
+		return error('stream poll failed: ${MisskeyError(ret)}')
+	}
+}
+
+pub fn (s &Stream) set_handler(handler StreamEventHandler) {
+	s.handler = handler
 }

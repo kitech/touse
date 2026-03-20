@@ -1,9 +1,13 @@
 #include "misskey_client.h"
 #include "cJSON/cJSON.h"
 #include <curl/curl.h>
+#include <curl/websockets.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/time.h>
+#include <sys/types.h>
+#include <unistd.h>
 
 #define MISSKEY_CURL_VERSION_7_55_0 (LIBCURL_VERSION_NUM >= 0x073700)
 
@@ -2418,4 +2422,182 @@ void misskey_free_drive_folders(MisskeyClient* client, MisskeyDriveFolder* folde
 
 void misskey_free_clips(MisskeyClient* client, MisskeyClip* clips, int count) {
     if (clips) free_allocator(&client->allocator, clips);
+}
+
+struct MisskeyStream {
+    char host[256];
+    char token[256];
+    CURL* curl;
+    MisskeyStreamCallback callback;
+    void* user_data;
+    char recv_buffer[32768];
+    size_t recv_len;
+};
+
+static const char* misskey_stream_channel_name(MisskeyStreamChannel channel) {
+    switch (channel) {
+        case MISSKEY_STREAM_CHANNEL_MAIN: return "main";
+        case MISSKEY_STREAM_CHANNEL_HOME_TIMELINE: return "homeTimeline";
+        case MISSKEY_STREAM_CHANNEL_LOCAL_TIMELINE: return "localTimeline";
+        case MISSKEY_STREAM_CHANNEL_HYBRID_TIMELINE: return "hybridTimeline";
+        case MISSKEY_STREAM_CHANNEL_GLOBAL_TIMELINE: return "globalTimeline";
+        default: return "main";
+    }
+}
+
+MisskeyStream* misskey_stream_new(const char* host, const char* token) {
+    if (!host) return NULL;
+    
+    MisskeyStream* stream = malloc(sizeof(MisskeyStream));
+    if (!stream) return NULL;
+    
+    memset(stream, 0, sizeof(MisskeyStream));
+    strncpy(stream->host, host, sizeof(stream->host) - 1);
+    if (token) strncpy(stream->token, token, sizeof(stream->token) - 1);
+    
+    curl_ensure_init();
+    stream->curl = curl_easy_init();
+    if (!stream->curl) {
+        free(stream);
+        return NULL;
+    }
+    
+    char url[512];
+    snprintf(url, sizeof(url), "wss://%s/streaming?i=%s", stream->host, stream->token);
+    curl_easy_setopt(stream->curl, CURLOPT_URL, url);
+    curl_easy_setopt(stream->curl, CURLOPT_CONNECT_ONLY, 2L);
+    curl_easy_setopt(stream->curl, CURLOPT_SSL_VERIFYPEER, 1L);
+    
+    return stream;
+}
+
+void misskey_stream_free(MisskeyStream* stream) {
+    if (!stream) return;
+    if (stream->curl) {
+        size_t sent;
+        curl_ws_send(stream->curl, "", 0, &sent, 0, CURLWS_CLOSE);
+        curl_easy_cleanup(stream->curl);
+    }
+    free(stream);
+}
+
+MisskeyError misskey_stream_connect(MisskeyStream* stream, MisskeyStreamChannel channel, const char* channel_id) {
+    if (!stream || !stream->curl) return MISSKEY_ERROR_INVALID_PARAM;
+    
+    char msg[1024];
+    const char* ch_name = misskey_stream_channel_name(channel);
+    snprintf(msg, sizeof(msg),
+        "{\"type\":\"connect\",\"body\":{\"channel\":\"%s\",\"id\":\"%s\"}}",
+        ch_name, channel_id);
+    
+    size_t sent;
+    CURLcode res = curl_ws_send(stream->curl, msg, strlen(msg), &sent, 0, CURLWS_TEXT);
+    if (res != CURLE_OK) return MISSKEY_ERROR_NETWORK;
+    return MISSKEY_OK;
+}
+
+MisskeyError misskey_stream_disconnect(MisskeyStream* stream, const char* channel_id) {
+    if (!stream || !stream->curl) return MISSKEY_ERROR_INVALID_PARAM;
+    
+    char msg[512];
+    snprintf(msg, sizeof(msg),
+        "{\"type\":\"disconnect\",\"body\":{\"id\":\"%s\"}}",
+        channel_id);
+    
+    size_t sent;
+    CURLcode res = curl_ws_send(stream->curl, msg, strlen(msg), &sent, 0, CURLWS_TEXT);
+    if (res != CURLE_OK) return MISSKEY_ERROR_NETWORK;
+    return MISSKEY_OK;
+}
+
+MisskeyError misskey_stream_send(MisskeyStream* stream, const char* channel_id, const char* type, const char* body) {
+    if (!stream || !stream->curl) return MISSKEY_ERROR_INVALID_PARAM;
+    
+    char msg[2048];
+    snprintf(msg, sizeof(msg),
+        "{\"type\":\"channel\",\"body\":{\"id\":\"%s\",\"type\":\"%s\",\"body\":%s}}",
+        channel_id, type, body);
+    
+    size_t sent;
+    CURLcode res = curl_ws_send(stream->curl, msg, strlen(msg), &sent, 0, CURLWS_TEXT);
+    if (res != CURLE_OK) return MISSKEY_ERROR_NETWORK;
+    return MISSKEY_OK;
+}
+
+MisskeyError misskey_stream_poll(MisskeyStream* stream, int timeout_ms) {
+    if (!stream || !stream->curl) return MISSKEY_ERROR_INVALID_PARAM;
+    
+    struct timeval tv;
+    tv.tv_sec = timeout_ms / 1000;
+    tv.tv_usec = (timeout_ms % 1000) * 1000;
+    
+    fd_set fdread;
+    FD_ZERO(&fdread);
+    curl_socket_t sockfd;
+    curl_easy_getinfo(stream->curl, CURLINFO_ACTIVESOCKET, &sockfd);
+    FD_SET(sockfd, &fdread);
+    
+    int ret = select(sockfd + 1, &fdread, NULL, NULL, &tv);
+    if (ret <= 0) return MISSKEY_OK;
+    
+    size_t rlen = 0;
+    const struct curl_ws_frame* meta = NULL;
+    
+    CURLcode res = curl_ws_recv(stream->curl, stream->recv_buffer, sizeof(stream->recv_buffer) - 1, &rlen, &meta);
+    if (res == CURLE_OK && rlen > 0 && meta) {
+        stream->recv_buffer[rlen] = '\0';
+        
+        cJSON* root = cJSON_Parse(stream->recv_buffer);
+        if (root) {
+            cJSON* type_item = cJSON_GetObjectItem(root, "type");
+            cJSON* body_item = cJSON_GetObjectItem(root, "body");
+            
+            if (type_item && body_item) {
+                const char* msg_type = type_item->valuestring;
+                char* body_str = cJSON_PrintUnformatted(body_item);
+                
+                if (stream->callback && body_str) {
+                    stream->callback(msg_type, body_str, stream->user_data);
+                }
+                if (body_str) free(body_str);
+            }
+            cJSON_Delete(root);
+        }
+    }
+    
+    return MISSKEY_OK;
+}
+
+void misskey_stream_set_callback(MisskeyStream* stream, MisskeyStreamCallback callback, void* user_data) {
+    if (!stream) return;
+    stream->callback = callback;
+    stream->user_data = user_data;
+}
+
+MisskeyError misskey_stream_subscribe_note(MisskeyStream* stream, const char* note_id) {
+    if (!stream || !stream->curl || !note_id) return MISSKEY_ERROR_INVALID_PARAM;
+    
+    char msg[512];
+    snprintf(msg, sizeof(msg),
+        "{\"type\":\"subNote\",\"body\":{\"id\":\"%s\"}}",
+        note_id);
+    
+    size_t sent;
+    CURLcode res = curl_ws_send(stream->curl, msg, strlen(msg), &sent, 0, CURLWS_TEXT);
+    if (res != CURLE_OK) return MISSKEY_ERROR_NETWORK;
+    return MISSKEY_OK;
+}
+
+MisskeyError misskey_stream_unsubscribe_note(MisskeyStream* stream, const char* note_id) {
+    if (!stream || !stream->curl || !note_id) return MISSKEY_ERROR_INVALID_PARAM;
+    
+    char msg[512];
+    snprintf(msg, sizeof(msg),
+        "{\"type\":\"unsubNote\",\"body\":{\"id\":\"%s\"}}",
+        note_id);
+    
+    size_t sent;
+    CURLcode res = curl_ws_send(stream->curl, msg, strlen(msg), &sent, 0, CURLWS_TEXT);
+    if (res != CURLE_OK) return MISSKEY_ERROR_NETWORK;
+    return MISSKEY_OK;
 }

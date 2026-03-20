@@ -296,4 +296,29 @@ MisskeyError misskey_clips_add_note_raw(MisskeyClient* client, const char* clip_
 MisskeyError misskey_clips_remove_note_raw(MisskeyClient* client, const char* clip_id, const char* note_id, char** response_out);
 MisskeyError misskey_clips_notes_raw(MisskeyClient* client, const char* clip_id, int limit, char** response_out);
 
+typedef enum {
+    MISSKEY_STREAM_CHANNEL_MAIN = 0,
+    MISSKEY_STREAM_CHANNEL_HOME_TIMELINE,
+    MISSKEY_STREAM_CHANNEL_LOCAL_TIMELINE,
+    MISSKEY_STREAM_CHANNEL_HYBRID_TIMELINE,
+    MISSKEY_STREAM_CHANNEL_GLOBAL_TIMELINE
+} MisskeyStreamChannel;
+
+typedef void (*MisskeyStreamCallback)(const char* type, const char* body, void* user_data);
+
+typedef struct MisskeyStream MisskeyStream;
+
+MisskeyStream* misskey_stream_new(const char* host, const char* token);
+void misskey_stream_free(MisskeyStream* stream);
+
+MisskeyError misskey_stream_connect(MisskeyStream* stream, MisskeyStreamChannel channel, const char* channel_id);
+MisskeyError misskey_stream_disconnect(MisskeyStream* stream, const char* channel_id);
+MisskeyError misskey_stream_poll(MisskeyStream* stream, int timeout_ms);
+MisskeyError misskey_stream_send(MisskeyStream* stream, const char* channel_id, const char* type, const char* body);
+
+void misskey_stream_set_callback(MisskeyStream* stream, MisskeyStreamCallback callback, void* user_data);
+
+MisskeyError misskey_stream_subscribe_note(MisskeyStream* stream, const char* note_id);
+MisskeyError misskey_stream_unsubscribe_note(MisskeyStream* stream, const char* note_id);
+
 #endif
