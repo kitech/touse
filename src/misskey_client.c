@@ -50,6 +50,21 @@ static void free_allocator(const MisskeyAllocator* alloc, void* ptr) {
 
 static void timeline_options_to_json(cJSON* root, MisskeyTimelineOptions* opts);
 
+MisskeyError misskey_notes_create_full_raw(MisskeyClient* client, 
+                                          const char* text,
+                                          const char* reply_id, 
+                                          const char* renote_id,
+                                          const char** file_ids,
+                                          int file_ids_count,
+                                          int visibility,
+                                          const char* cw,
+                                          int local_only,
+                                          const char* channel_id,
+                                          int autoSensitive,
+                                          const char* media_ids,
+                                          int draft,
+                                          char** response_out);
+
 typedef struct {
     char* data;
     size_t size;
@@ -488,19 +503,75 @@ MisskeyError misskey_notes_delete_raw(MisskeyClient* client, const char* note_id
 MisskeyError misskey_notes_create_raw(MisskeyClient* client, const char* text,
                                    const char* reply_id, const char* renote_id,
                                    char** response_out) {
-    if (!text) return MISSKEY_ERROR_INVALID_PARAM;
+    return misskey_notes_create_full_raw(client, text, reply_id, renote_id, NULL, 0, 0, NULL, 0, NULL, 0, NULL, 0, response_out);
+}
+
+typedef struct {
+    const char* text;
+    const char* reply_id;
+    const char* renote_id;
+    const char** file_ids;
+    int file_ids_count;
+    const char* channel_id;
+    const char* cw;
+    int visibility;
+    int local_only;
+    const char* poll_choices;
+    int poll_multiple;
+    int poll_expires_at;
+} MisskeyCreateNoteOptions;
+
+MisskeyError misskey_notes_create_full_raw(MisskeyClient* client, 
+                                          const char* text,
+                                          const char* reply_id, 
+                                          const char* renote_id,
+                                          const char** file_ids,
+                                          int file_ids_count,
+                                          int visibility,
+                                          const char* cw,
+                                          int local_only,
+                                          const char* channel_id,
+                                          int autoSensitive,
+                                          const char* media_ids,
+                                          int draft,
+                                          char** response_out) {
+    if (!text && !renote_id && file_ids_count == 0) return MISSKEY_ERROR_INVALID_PARAM;
     
     cJSON* root = cJSON_CreateObject();
     cJSON_AddStringToObject(root, "i", client->token);
-    cJSON_AddStringToObject(root, "text", text);
     
+    if (text) cJSON_AddStringToObject(root, "text", text);
     if (reply_id) cJSON_AddStringToObject(root, "replyId", reply_id);
     if (renote_id) cJSON_AddStringToObject(root, "renoteId", renote_id);
+    if (cw) cJSON_AddStringToObject(root, "cw", cw);
+    if (channel_id) cJSON_AddStringToObject(root, "channelId", channel_id);
+    
+    if (visibility > 0) {
+        const char* vis_str = "public";
+        switch (visibility) {
+            case 1: vis_str = "home"; break;
+            case 2: vis_str = "followers"; break;
+            case 3: vis_str = "specified"; break;
+        }
+        cJSON_AddStringToObject(root, "visibility", vis_str);
+    }
+    
+    if (local_only) cJSON_AddBoolToObject(root, "localOnly", 1);
+    if (autoSensitive) cJSON_AddBoolToObject(root, "autoSensitive", 1);
+    if (draft) cJSON_AddBoolToObject(root, "draft", 1);
+    
+    if (file_ids && file_ids_count > 0) {
+        cJSON* file_ids_array = cJSON_CreateArray();
+        for (int i = 0; i < file_ids_count; i++) {
+            cJSON_AddItemToArray(file_ids_array, cJSON_CreateString(file_ids[i]));
+        }
+        cJSON_AddItemToObject(root, "fileIds", file_ids_array);
+    }
     
     char* json_str = cJSON_PrintUnformatted(root);
     MisskeyError err = misskey_request(client, "notes/create", json_str, response_out);
     
-    cJSON_free(json_str);  // cJSON uses standard malloc
+    cJSON_free(json_str);
     cJSON_Delete(root);
     return err;
 }
@@ -1245,6 +1316,21 @@ static void parse_note(cJSON* obj, MisskeyNote* note) {
             strncpy(note->renote_text, renote_text->valuestring, sizeof(note->renote_text) - 1);
     }
     
+    cJSON* files = cJSON_GetObjectItem(obj, "files");
+    if (files && files->type == cJSON_Array) {
+        int file_count = cJSON_GetArraySize(files);
+        note->files_count = file_count;
+        note->has_files = file_count > 0;
+        for (int i = 0; i < file_count && i < 16; i++) {
+            cJSON* file = cJSON_GetArrayItem(files, i);
+            if (file) {
+                cJSON* file_id = cJSON_GetObjectItem(file, "id");
+                if (file_id && file_id->type == cJSON_String)
+                    strncpy(note->file_ids[i], file_id->valuestring, sizeof(note->file_ids[i]) - 1);
+            }
+        }
+    }
+    
     cJSON* user = cJSON_GetObjectItem(obj, "user");
     if (user) parse_user(user, &note->user);
 }
@@ -1585,6 +1671,42 @@ MisskeyError misskey_notes_create(MisskeyClient* client, const char* text, const
     
     char* resp = NULL;
     MisskeyError err = misskey_notes_create_raw(client, text, reply_id, renote_id, &resp);
+    if (err != MISSKEY_OK) return err;
+    
+    cJSON* root = cJSON_Parse(resp);
+    if (!root) {
+        misskey_free_string(client, resp);
+        return MISSKEY_ERROR_JSON;
+    }
+    
+    cJSON* created_note = cJSON_GetObjectItem(root, "createdNote");
+    if (created_note) {
+        parse_note(created_note, note_out);
+    }
+    
+    cJSON_Delete(root);
+    misskey_free_string(client, resp);
+    return MISSKEY_OK;
+}
+
+MisskeyError misskey_notes_create_full(MisskeyClient* client, 
+                                     const char* text,
+                                     const char* reply_id,
+                                     const char* renote_id,
+                                     const char** file_ids,
+                                     int file_ids_count,
+                                     int visibility,
+                                     const char* cw,
+                                     int local_only,
+                                     const char* channel_id,
+                                     int auto_sensitive,
+                                     int draft,
+                                     MisskeyNote* note_out) {
+    if (!client || !note_out) return MISSKEY_ERROR_INVALID_PARAM;
+    misskey_note_init(note_out);
+    
+    char* resp = NULL;
+    MisskeyError err = misskey_notes_create_full_raw(client, text, reply_id, renote_id, file_ids, file_ids_count, visibility, cw, local_only, channel_id, auto_sensitive, NULL, draft, &resp);
     if (err != MISSKEY_OK) return err;
     
     cJSON* root = cJSON_Parse(resp);

@@ -79,6 +79,9 @@ typedef struct MisskeyNote {
     char renote_text[4096];
     int is_renote;
     int is_reply;
+    int has_files;
+    int files_count;
+    char file_ids[16][32];
     MisskeyUser user;
 } MisskeyNote;
 
@@ -211,6 +214,7 @@ MisskeyError misskey_notes_local_timeline_full(MisskeyClient* client, MisskeyTim
 MisskeyError misskey_notes_global_timeline(MisskeyClient* client, int limit, MisskeyNote** notes_out, int* count_out);
 MisskeyError misskey_notes_global_timeline_full(MisskeyClient* client, MisskeyTimelineOptions* opts, MisskeyNote** notes_out, int* count_out);
 MisskeyError misskey_notes_create(MisskeyClient* client, const char* text, const char* reply_id, const char* renote_id, MisskeyNote* note_out);
+MisskeyError misskey_notes_create_full(MisskeyClient* client, const char* text, const char* reply_id, const char* renote_id, const char** file_ids, int file_ids_count, int visibility, const char* cw, int local_only, const char* channel_id, int auto_sensitive, int draft, MisskeyNote* note_out);
 MisskeyError misskey_notes_show(MisskeyClient* client, const char* note_id, MisskeyNote* note_out);
 MisskeyError misskey_notes_delete(MisskeyClient* client, const char* note_id, char note_id_out[32]);
 MisskeyError misskey_notes(MisskeyClient* client, const char* text, const char* reply_id, const char* renote_id, const char* channel_id, int limit, int offset, const char* user_id, int local_only, int reply, int renote, int with_files, const char* since_id, const char* until_id, MisskeyNote** notes_out, int* count_out);
@@ -268,6 +272,7 @@ MisskeyError misskey_notes_raw(MisskeyClient* client, const char* text, const ch
 MisskeyError misskey_notes_show_raw(MisskeyClient* client, const char* note_id, char** response_out);
 MisskeyError misskey_notes_delete_raw(MisskeyClient* client, const char* note_id, char** response_out);
 MisskeyError misskey_notes_create_raw(MisskeyClient* client, const char* text, const char* reply_id, const char* renote_id, char** response_out);
+MisskeyError misskey_notes_create_full_raw(MisskeyClient* client, const char* text, const char* reply_id, const char* renote_id, const char** file_ids, int file_ids_count, int visibility, const char* cw, int local_only, const char* channel_id, int autoSensitive, const char* media_ids, int draft, char** response_out);
 MisskeyError misskey_i_notifications_raw(MisskeyClient* client, int limit, char** response_out);
 MisskeyError misskey_drive_raw(MisskeyClient* client, char** response_out);
 MisskeyError misskey_drive_files_raw(MisskeyClient* client, int limit, int folder_id, char** response_out);

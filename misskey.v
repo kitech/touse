@@ -33,6 +33,9 @@ mut:
 	until_date int
 }
 
+fn C.misskey_notes_create_full_raw(client &C.MisskeyClient, text charptr, reply_id charptr, renote_id charptr, file_ids voidptr, file_ids_count int, visibility int, cw charptr, local_only int, channel_id charptr, auto_sensitive int, media_ids charptr, draft int, response &charptr) int
+fn C.misskey_notes_create_full(client &C.MisskeyClient, text charptr, reply_id charptr, renote_id charptr, file_ids voidptr, file_ids_count int, visibility int, cw charptr, local_only int, channel_id charptr, auto_sensitive int, draft int, note_out &C.MisskeyNote) int
+
 fn C.misskey_notes_local_timeline_full_raw(client &C.MisskeyClient, opts voidptr, response &charptr) int
 fn C.misskey_notes_global_timeline_full_raw(client &C.MisskeyClient, opts voidptr, response &charptr) int
 
@@ -114,6 +117,9 @@ mut:
 	renote_text [4096]u8
 	is_renote int
 	is_reply int
+	has_files int
+	files_count int
+	file_ids [16][32]u8
 	user C.MisskeyUser
 }
 
@@ -371,6 +377,56 @@ pub fn (c &Client) notes_create_raw(text string, reply_id string, renote_id stri
 	ret := C.misskey_notes_create_raw(c.c_client, &char(text.str), reply_cstr, renote_cstr, &response)
 	if ret != 0 {
 		return error('notes_create failed: ${MisskeyError(ret).detailed(c)}')
+	}
+	result := unsafe { cstring_to_vstring(response) }
+	C.misskey_free_string(c.c_client, response)
+	return result
+}
+
+pub struct CreateNoteOptions {
+pub:
+	text         string
+	reply_id     string
+	renote_id    string
+	file_ids     []string
+	visibility   int
+	cw           string
+	local_only   bool
+	channel_id   string
+	auto_sensitive bool
+	draft        bool
+}
+
+pub fn (c &Client) notes_create_full_raw(opts CreateNoteOptions) !string {
+	reply_cstr := if opts.reply_id.len > 0 { &char(opts.reply_id.str) } else { voidptr(0) }
+	renote_cstr := if opts.renote_id.len > 0 { &char(opts.renote_id.str) } else { voidptr(0) }
+	cw_cstr := if opts.cw.len > 0 { &char(opts.cw.str) } else { voidptr(0) }
+	channel_cstr := if opts.channel_id.len > 0 { &char(opts.channel_id.str) } else { voidptr(0) }
+	
+	mut file_ids_ptr := &char(unsafe { nil })
+	if opts.file_ids.len > 0 {
+		file_ids_ptr = &char(opts.file_ids[0].str)
+	}
+	
+	mut response := &char(0)
+	ret := C.misskey_notes_create_full_raw(
+		c.c_client,
+		&char(opts.text.str),
+		reply_cstr,
+		renote_cstr,
+		file_ids_ptr,
+		opts.file_ids.len,
+		opts.visibility,
+		cw_cstr,
+		if opts.local_only { 1 } else { 0 },
+		channel_cstr,
+		if opts.auto_sensitive { 1 } else { 0 },
+		voidptr(0),
+		if opts.draft { 1 } else { 0 },
+		&response
+	)
+	if ret != 0 {
+		return error('notes_create_full failed: ${MisskeyError(ret).detailed(c)}')
 	}
 	result := unsafe { cstring_to_vstring(response) }
 	C.misskey_free_string(c.c_client, response)
@@ -743,6 +799,8 @@ pub:
 	renote_text string
 	is_renote bool
 	is_reply bool
+	has_files bool
+	files_count int
 	user User
 }
 
@@ -869,6 +927,8 @@ fn to_note(cnote &C.MisskeyNote) Note {
 		renote_text: unsafe { cstring_to_vstring(&char(cnote.renote_text)) }
 		is_renote: cnote.is_renote != 0
 		is_reply: cnote.is_reply != 0
+		has_files: cnote.has_files != 0
+		files_count: cnote.files_count
 		user: to_user(&cnote.user)
 	}
 }
@@ -1055,6 +1115,40 @@ pub fn (c &Client) notes_create(text string, reply_id string, renote_id string) 
 	ret := C.misskey_notes_create(c.c_client, &char(text.str), reply_cstr, renote_cstr, cnote)
 	if ret != 0 {
 		return error('notes_create failed: ${MisskeyError(ret).detailed(c)}')
+	}
+	return to_note(cnote)
+}
+
+pub fn (c &Client) notes_create_full(opts CreateNoteOptions) !Note {
+	reply_cstr := if opts.reply_id.len > 0 { &char(opts.reply_id.str) } else { voidptr(0) }
+	renote_cstr := if opts.renote_id.len > 0 { &char(opts.renote_id.str) } else { voidptr(0) }
+	cw_cstr := if opts.cw.len > 0 { &char(opts.cw.str) } else { voidptr(0) }
+	channel_cstr := if opts.channel_id.len > 0 { &char(opts.channel_id.str) } else { voidptr(0) }
+	
+	mut file_ids_ptr := &char(unsafe { nil })
+	if opts.file_ids.len > 0 {
+		file_ids_ptr = &char(opts.file_ids[0].str)
+	}
+	
+	mut cnote := &C.MisskeyNote{}
+	C.misskey_note_init(cnote)
+	ret := C.misskey_notes_create_full(
+		c.c_client,
+		&char(opts.text.str),
+		reply_cstr,
+		renote_cstr,
+		file_ids_ptr,
+		opts.file_ids.len,
+		opts.visibility,
+		cw_cstr,
+		if opts.local_only { 1 } else { 0 },
+		channel_cstr,
+		if opts.auto_sensitive { 1 } else { 0 },
+		if opts.draft { 1 } else { 0 },
+		cnote
+	)
+	if ret != 0 {
+		return error('notes_create_full failed: ${MisskeyError(ret).detailed(c)}')
 	}
 	return to_note(cnote)
 }
