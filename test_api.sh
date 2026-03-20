@@ -61,7 +61,7 @@ echo "  笔记 API"
 echo "=========================================="
 test_api "获取时间线" "notes/timeline" '{"limit":3}'
 test_api "发布笔记" "notes/create" '{"text":"Test note from shell"}'
-test_api "翻译" "notes/translate" '{"text":"Hello","targetLang":"ja"}'
+test_api "翻译" "notes/translate" '{"noteId":"test_note","targetLang":"ja"}'
 
 echo ""
 echo "=========================================="

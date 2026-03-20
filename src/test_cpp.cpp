@@ -137,7 +137,7 @@ int main(int argc, char* argv[]) {
         
         std::cout << "\n=== translate ===\n";
         try {
-            auto result = client.translate("Hello", std::nullopt, "ja");
+            auto result = client.translate("test_note_id", "ja");
             print_json_pretty(result);
         } catch (const MisskeyApi::Exception& e) {
             std::cerr << "Error: " << e.what() << "\n";

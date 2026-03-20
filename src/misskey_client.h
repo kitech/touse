@@ -24,6 +24,7 @@ typedef enum {
 } MisskeyError;
 
 const char* misskey_error_str(MisskeyError err);
+void misskey_client_get_last_error(MisskeyClient* client, long* http_code, char** error_detail);
 
 MisskeyClient* misskey_client_new(const char* host);
 MisskeyClient* misskey_client_new_with_allocator(const char* host, const MisskeyAllocator* allocator);
@@ -107,9 +108,8 @@ MisskeyError misskey_drive_folders_update(MisskeyClient* client, const char* fol
                                            const char* name, const char* parent_id,
                                            char** response_out);
 
-MisskeyError misskey_translate(MisskeyClient* client, const char* text,
-                                const char* source_lang, const char* target_lang,
-                                char** response_out);
+MisskeyError misskey_translate(MisskeyClient* client, const char* note_id,
+                                const char* target_lang, char** response_out);
 
 MisskeyError misskey_clips_list(MisskeyClient* client, char** response_out);
 MisskeyError misskey_clips_show(MisskeyClient* client, const char* clip_id,

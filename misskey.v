@@ -46,7 +46,7 @@ fn C.misskey_clips_add_note(client &C.MisskeyClient, clip_id charptr, note_id ch
 fn C.misskey_clips_remove_note(client &C.MisskeyClient, clip_id charptr, note_id charptr, response &charptr) int
 fn C.misskey_clips_notes(client &C.MisskeyClient, clip_id charptr, limit int, response &charptr) int
 
-fn C.misskey_translate(client &C.MisskeyClient, text charptr, source_lang charptr, target_lang charptr, response &charptr) int
+fn C.misskey_translate(client &C.MisskeyClient, note_id charptr, target_lang charptr, response &charptr) int
 fn C.misskey_request_set_debug(client &C.MisskeyClient, enable int)
 fn C.misskey_free_string(client &C.MisskeyClient, str charptr)
 fn C.misskey_error_str(err int) charptr
@@ -54,6 +54,7 @@ fn C.misskey_error_str(err int) charptr
 fn C.misskey_client_new_with_allocator(host charptr, allocator voidptr) &C.MisskeyClient
 fn C.misskey_client_get_allocator(client &C.MisskeyClient) voidptr
 fn C.misskey_request_print_curl(client &C.MisskeyClient, endpoint charptr, body charptr)
+fn C.misskey_client_get_last_error(client &C.MisskeyClient, http_code &int, error_detail &&char)
 
 // Error codes
 pub enum MisskeyError {
@@ -98,6 +99,19 @@ pub fn (mut c Client) set_timeout(sec int) {
 
 pub fn (mut c Client) set_debug(enable bool) {
 	C.misskey_request_set_debug(c.c_client, if enable { 1 } else { 0 })
+}
+
+pub fn (c &Client) get_last_error() string {
+	mut http_code := 0
+	mut error_detail := &char(0)
+	C.misskey_client_get_last_error(c.c_client, &http_code, &error_detail)
+	if http_code > 0 {
+		return 'HTTP ${http_code}'
+	}
+	if !isnil(error_detail) {
+		return unsafe { cstring_to_vstring(error_detail) }
+	}
+	return ''
 }
 
 fn (c &Client) do_request(endpoint string, body string) !string {
@@ -332,11 +346,10 @@ pub fn (mut c Client) drive_folders_update(folder_id string, name string, parent
 	return result
 }
 
-pub fn (mut c Client) translate(text string, source_lang string, target_lang string) !string {
-	src_cstr := if source_lang.len > 0 { &char(source_lang.str) } else { voidptr(0) }
+pub fn (mut c Client) translate(note_id string, target_lang string) !string {
 	tgt_cstr := if target_lang.len > 0 { &char(target_lang.str) } else { voidptr(0) }
 	mut response := &char(0)
-	ret := C.misskey_translate(c.c_client, &char(text.str), src_cstr, tgt_cstr, &response)
+	ret := C.misskey_translate(c.c_client, &char(note_id.str), tgt_cstr, &response)
 	if ret != 0 {
 		return error('translate failed: ${MisskeyError(ret)}')
 	}

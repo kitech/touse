@@ -73,6 +73,8 @@ struct MisskeyClient {
     CURL* curl;
     MisskeyAllocator allocator;
     int debug_curl;
+    long last_http_code;
+    char* last_error_detail;
 };
 
 const char* misskey_error_str(MisskeyError err) {
@@ -119,6 +121,9 @@ MisskeyClient* misskey_client_new_with_allocator(const char* host, const Misskey
 
 void misskey_client_free(MisskeyClient* client) {
     if (!client) return;
+    if (client->last_error_detail) {
+        free_allocator(&client->allocator, client->last_error_detail);
+    }
     if (client->curl) curl_easy_cleanup(client->curl);
     free_allocator(&client->allocator, client);
 }
@@ -142,6 +147,12 @@ MisskeyError misskey_request(MisskeyClient* client, const char* endpoint,
                               const char* request_body, char** response_out) {
     if (!client || !endpoint || !request_body || !response_out) {
         return MISSKEY_ERROR_INVALID_PARAM;
+    }
+    
+    client->last_http_code = 0;
+    if (client->last_error_detail) {
+        free_allocator(&client->allocator, client->last_error_detail);
+        client->last_error_detail = NULL;
     }
     
     if (client->debug_curl) {
@@ -205,19 +216,44 @@ MisskeyError misskey_request(MisskeyClient* client, const char* endpoint,
     
     if (res != CURLE_OK) {
         free_allocator(&client->allocator, wd.data);
+        client->last_http_code = 0;
+        const char* err_str = curl_easy_strerror(res);
+        if (err_str) {
+            size_t err_len = strlen(err_str) + 1;
+            client->last_error_detail = alloc_allocator(&client->allocator, err_len);
+            if (client->last_error_detail) {
+                memcpy(client->last_error_detail, err_str, err_len);
+            }
+        }
         return MISSKEY_ERROR_NETWORK;
     }
     
     long http_code = 0;
     curl_easy_getinfo(client->curl, CURLINFO_RESPONSE_CODE, &http_code);
+    client->last_http_code = http_code;
     
     if (http_code >= 400) {
+        wd.data[wd.size] = '\0';
+        if (wd.size > 0) {
+            size_t err_len = wd.size + 1;
+            client->last_error_detail = alloc_allocator(&client->allocator, err_len);
+            if (client->last_error_detail) {
+                memcpy(client->last_error_detail, wd.data, err_len);
+            }
+        }
         free_allocator(&client->allocator, wd.data);
+        wd.data = NULL;
         return MISSKEY_ERROR_HTTP;
     }
     
     *response_out = wd.data;
     return MISSKEY_OK;
+}
+
+void misskey_client_get_last_error(MisskeyClient* client, long* http_code, char** error_detail) {
+    if (!client) return;
+    if (http_code) *http_code = client->last_http_code;
+    if (error_detail) *error_detail = client->last_error_detail;
 }
 
 void misskey_request_set_debug(MisskeyClient* client, int enable) {
@@ -662,17 +698,14 @@ MisskeyError misskey_drive_folders_update(MisskeyClient* client, const char* fol
     return err;
 }
 
-MisskeyError misskey_translate(MisskeyClient* client, const char* text,
-                                const char* source_lang, const char* target_lang,
-                                char** response_out) {
-    if (!text) return MISSKEY_ERROR_INVALID_PARAM;
+MisskeyError misskey_translate(MisskeyClient* client, const char* note_id,
+                                const char* target_lang, char** response_out) {
+    if (!note_id || !target_lang) return MISSKEY_ERROR_INVALID_PARAM;
     
     cJSON* root = cJSON_CreateObject();
     cJSON_AddStringToObject(root, "i", client->token);
-    cJSON_AddStringToObject(root, "text", text);
-    
-    if (source_lang) cJSON_AddStringToObject(root, "sourceLang", source_lang);
-    if (target_lang) cJSON_AddStringToObject(root, "targetLang", target_lang);
+    cJSON_AddStringToObject(root, "noteId", note_id);
+    cJSON_AddStringToObject(root, "targetLang", target_lang);
     
     char* json_str = cJSON_PrintUnformatted(root);
     MisskeyError err = misskey_request(client, "notes/translate", json_str, response_out);

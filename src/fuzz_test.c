@@ -205,7 +205,7 @@ void test_malformed_urls() {
     printf("drive_files_upload_from_url(invalid_url) = %d\n", err);
     if (resp) { misskey_free_string(client, resp); resp = NULL; }
     
-    err = misskey_translate(client, "test", "invalid_lang", "ja", &resp);
+    err = misskey_translate(client, "test_note_id", "ja", &resp);
     printf("translate(invalid_lang) = %d\n", err);
     if (resp) { misskey_free_string(client, resp); resp = NULL; }
     

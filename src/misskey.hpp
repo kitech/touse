@@ -167,6 +167,21 @@ public:
         misskey_request_set_debug(client_, enable ? 1 : 0);
     }
 
+    std::string get_last_error() {
+        long http_code = 0;
+        char* error_detail = nullptr;
+        misskey_client_get_last_error(client_, &http_code, &error_detail);
+        std::string result;
+        if (http_code > 0) {
+            result = "HTTP " + std::to_string(http_code);
+        }
+        if (error_detail && error_detail[0]) {
+            if (!result.empty()) result += " - ";
+            result += error_detail;
+        }
+        return result;
+    }
+    
     std::string meta(bool detail = false) {
         char* resp = nullptr;
         int err = misskey_meta(client_, &resp);
@@ -410,12 +425,10 @@ public:
         return result;
     }
 
-    std::string translate(const std::string& text,
-                        const std::optional<std::string>& source_lang = std::nullopt,
-                        const std::string& target_lang = "en") {
+    std::string translate(const std::string& note_id,
+                        const std::string& target_lang) {
         char* resp = nullptr;
-        int err = misskey_translate(client_, text.c_str(),
-            source_lang ? source_lang->c_str() : nullptr,
+        int err = misskey_translate(client_, note_id.c_str(),
             target_lang.c_str(),
             &resp);
         check_error(err, "translate");

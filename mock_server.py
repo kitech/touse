@@ -370,11 +370,11 @@ def api_translate():
     if not check_auth():
         return jsonify({"error": "Authentication failed"}), 401
     data = request.get_json() or {}
-    text = data.get('text', '')
+    note_id = data.get('noteId', '')
     target_lang = data.get('targetLang', 'en')
     return jsonify({
-        "text": f"[Translated to {target_lang}]: {text}",
-        "sourceLang": "auto",
+        "text": f"[Translated to {target_lang}]: Note {note_id}",
+        "sourceLang": "en",
         "targetLang": target_lang,
     })
 
