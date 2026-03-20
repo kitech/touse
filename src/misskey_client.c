@@ -48,18 +48,27 @@ static void free_allocator(const MisskeyAllocator* alloc, void* ptr) {
     alloc->free_fn(ptr);
 }
 
+static void timeline_options_to_json(cJSON* root, MisskeyTimelineOptions* opts);
+
 typedef struct {
     char* data;
     size_t size;
-    MisskeyAllocator alloc;
+    size_t capacity;
 } WriteData;
 
 static size_t write_callback(void* contents, size_t size, size_t nmemb, void* userp) {
     size_t realsize = size * nmemb;
     WriteData* wd = (WriteData*)userp;
-    char* ptr = realloc_allocator(&wd->alloc, wd->data, wd->size + realsize + 1);
-    if (!ptr) return 0;
-    wd->data = ptr;
+    
+    size_t needed = wd->size + realsize + 1;
+    if (needed > wd->capacity) {
+        size_t new_cap = needed * 2;
+        char* new_data = realloc(wd->data, new_cap);
+        if (!new_data) return 0;
+        wd->data = new_data;
+        wd->capacity = new_cap;
+    }
+    
     memcpy(wd->data + wd->size, contents, realsize);
     wd->size += realsize;
     wd->data[wd->size] = 0;
@@ -195,6 +204,7 @@ MisskeyError misskey_request(MisskeyClient* client, const char* endpoint,
         return MISSKEY_ERROR_INVALID_PARAM;
     }
     
+    
     client->last_http_code = 0;
     if (client->last_error_detail) {
         free_allocator(&client->allocator, client->last_error_detail);
@@ -208,9 +218,9 @@ MisskeyError misskey_request(MisskeyClient* client, const char* endpoint,
     *response_out = NULL;
     
     WriteData wd = {
-        .data = alloc_allocator(&client->allocator, 1),
+        .data = malloc(1),
         .size = 0,
-        .alloc = client->allocator
+        .capacity = 1
     };
     if (!wd.data) {
         return MISSKEY_ERROR_ALLOC;
@@ -229,7 +239,7 @@ MisskeyError misskey_request(MisskeyClient* client, const char* endpoint,
     struct curl_slist* headers = NULL;
     headers = curl_slist_append(headers, "Content-Type: application/json");
     if (!headers) {
-        free_allocator(&client->allocator, wd.data);
+        free(wd.data);
         return MISSKEY_ERROR_ALLOC;
     }
     
@@ -238,7 +248,7 @@ MisskeyError misskey_request(MisskeyClient* client, const char* endpoint,
         snprintf(auth_header, sizeof(auth_header), "Authorization: Bearer %s", client->token);
         headers = curl_slist_append(headers, auth_header);
         if (!headers) {
-            free_allocator(&client->allocator, wd.data);
+            free(wd.data);
             return MISSKEY_ERROR_ALLOC;
         }
     }
@@ -261,7 +271,7 @@ MisskeyError misskey_request(MisskeyClient* client, const char* endpoint,
     curl_slist_free_all(headers);
     
     if (res != CURLE_OK) {
-        free_allocator(&client->allocator, wd.data);
+        free(wd.data);
         client->last_http_code = 0;
         const char* err_str = curl_easy_strerror(res);
         if (err_str) {
@@ -291,7 +301,7 @@ MisskeyError misskey_request(MisskeyClient* client, const char* endpoint,
         if (client->last_error_detail) {
             memcpy(client->last_error_detail, err_buf, err_len);
         }
-        free_allocator(&client->allocator, wd.data);
+        free(wd.data);
         wd.data = NULL;
         return MISSKEY_ERROR_HTTP;
     }
@@ -334,18 +344,79 @@ MisskeyError misskey_meta_raw(MisskeyClient* client, char** response_out) {
 }
 
 MisskeyError misskey_notes_timeline_raw(MisskeyClient* client, int limit,
-                                     int local, char** response_out) {
+                                     int include_local_renotes, char** response_out) {
     cJSON* root = cJSON_CreateObject();
     cJSON_AddStringToObject(root, "i", client->token);
     cJSON_AddNumberToObject(root, "limit", limit);
-    if (local) {
-        cJSON_AddStringToObject(root, "channel", "local");
+    if (include_local_renotes) {
+        cJSON_AddBoolToObject(root, "includeLocalRenotes", 1);
     }
     
     char* json_str = cJSON_PrintUnformatted(root);
     MisskeyError err = misskey_request(client, "notes/timeline", json_str, response_out);
     
-    free(json_str);  // cJSON uses standard malloc
+    cJSON_free(json_str);
+    cJSON_Delete(root);
+    return err;
+}
+
+static void timeline_options_to_json(cJSON* root, MisskeyTimelineOptions* opts) {
+    if (opts->limit > 0) cJSON_AddNumberToObject(root, "limit", opts->limit);
+    if (opts->with_files) cJSON_AddBoolToObject(root, "withFiles", 1);
+    if (!opts->with_renotes) cJSON_AddBoolToObject(root, "withRenotes", 0);
+    if (opts->with_replies) cJSON_AddBoolToObject(root, "withReplies", 1);
+    if (opts->allow_partial) cJSON_AddBoolToObject(root, "allowPartial", 1);
+    if (opts->since_id) cJSON_AddStringToObject(root, "sinceId", opts->since_id);
+    if (opts->until_id) cJSON_AddStringToObject(root, "untilId", opts->until_id);
+    if (opts->since_date > 0) cJSON_AddNumberToObject(root, "sinceDate", opts->since_date);
+    if (opts->until_date > 0) cJSON_AddNumberToObject(root, "untilDate", opts->until_date);
+}
+
+MisskeyError misskey_notes_timeline_full_raw(MisskeyClient* client, MisskeyTimelineOptions* opts, char** response_out) {
+    cJSON* root = cJSON_CreateObject();
+    cJSON_AddStringToObject(root, "i", client->token);
+    timeline_options_to_json(root, opts);
+    
+    char* json_str = cJSON_PrintUnformatted(root);
+    MisskeyError err = misskey_request(client, "notes/timeline", json_str, response_out);
+    
+    cJSON_free(json_str);
+    cJSON_Delete(root);
+    return err;
+}
+
+MisskeyError misskey_notes_local_timeline_raw(MisskeyClient* client, int limit, char** response_out) {
+    MisskeyTimelineOptions opts = { .limit = limit, .with_renotes = 1 };
+    return misskey_notes_local_timeline_full_raw(client, &opts, response_out);
+}
+
+MisskeyError misskey_notes_local_timeline_full_raw(MisskeyClient* client, MisskeyTimelineOptions* opts, char** response_out) {
+    cJSON* root = cJSON_CreateObject();
+    cJSON_AddStringToObject(root, "i", client->token);
+    timeline_options_to_json(root, opts);
+    
+    char* json_str = cJSON_PrintUnformatted(root);
+    MisskeyError err = misskey_request(client, "notes/local-timeline", json_str, response_out);
+    
+    cJSON_free(json_str);
+    cJSON_Delete(root);
+    return err;
+}
+
+MisskeyError misskey_notes_global_timeline_raw(MisskeyClient* client, int limit, char** response_out) {
+    MisskeyTimelineOptions opts = { .limit = limit, .with_renotes = 1 };
+    return misskey_notes_global_timeline_full_raw(client, &opts, response_out);
+}
+
+MisskeyError misskey_notes_global_timeline_full_raw(MisskeyClient* client, MisskeyTimelineOptions* opts, char** response_out) {
+    cJSON* root = cJSON_CreateObject();
+    cJSON_AddStringToObject(root, "i", client->token);
+    timeline_options_to_json(root, opts);
+    
+    char* json_str = cJSON_PrintUnformatted(root);
+    MisskeyError err = misskey_request(client, "notes/global-timeline", json_str, response_out);
+    
+    cJSON_free(json_str);
     cJSON_Delete(root);
     return err;
 }
@@ -377,7 +448,7 @@ MisskeyError misskey_notes_raw(MisskeyClient* client, const char* text,
     char* json_str = cJSON_PrintUnformatted(root);
     MisskeyError err = misskey_request(client, "notes", json_str, response_out);
     
-    free(json_str);
+    cJSON_free(json_str);
     cJSON_Delete(root);
     return err;
 }
@@ -393,7 +464,7 @@ MisskeyError misskey_notes_show_raw(MisskeyClient* client, const char* note_id,
     char* json_str = cJSON_PrintUnformatted(root);
     MisskeyError err = misskey_request(client, "notes/show", json_str, response_out);
     
-    free(json_str);
+    cJSON_free(json_str);
     cJSON_Delete(root);
     return err;
 }
@@ -409,7 +480,7 @@ MisskeyError misskey_notes_delete_raw(MisskeyClient* client, const char* note_id
     char* json_str = cJSON_PrintUnformatted(root);
     MisskeyError err = misskey_request(client, "notes/delete", json_str, response_out);
     
-    free(json_str);
+    cJSON_free(json_str);
     cJSON_Delete(root);
     return err;
 }
@@ -429,7 +500,7 @@ MisskeyError misskey_notes_create_raw(MisskeyClient* client, const char* text,
     char* json_str = cJSON_PrintUnformatted(root);
     MisskeyError err = misskey_request(client, "notes/create", json_str, response_out);
     
-    free(json_str);  // cJSON uses standard malloc
+    cJSON_free(json_str);  // cJSON uses standard malloc
     cJSON_Delete(root);
     return err;
 }
@@ -443,14 +514,14 @@ MisskeyError misskey_i_notifications_raw(MisskeyClient* client, int limit,
     char* json_str = cJSON_PrintUnformatted(root);
     MisskeyError err = misskey_request(client, "i/notifications", json_str, response_out);
     
-    free(json_str);  // cJSON uses standard malloc
+    cJSON_free(json_str);  // cJSON uses standard malloc
     cJSON_Delete(root);
     return err;
 }
 
 void misskey_free_string(MisskeyClient* client, char* str) {
     if (!client || !str) return;
-    free_allocator(&client->allocator, str);
+    free(str);
 }
 
 MisskeyError misskey_drive_raw(MisskeyClient* client, char** response_out) {
@@ -460,7 +531,7 @@ MisskeyError misskey_drive_raw(MisskeyClient* client, char** response_out) {
     char* json_str = cJSON_PrintUnformatted(root);
     MisskeyError err = misskey_request(client, "drive", json_str, response_out);
     
-    free(json_str);
+    cJSON_free(json_str);
     cJSON_Delete(root);
     return err;
 }
@@ -477,7 +548,7 @@ MisskeyError misskey_drive_files_raw(MisskeyClient* client, int limit, int folde
     char* json_str = cJSON_PrintUnformatted(root);
     MisskeyError err = misskey_request(client, "drive/files", json_str, response_out);
     
-    free(json_str);
+    cJSON_free(json_str);
     cJSON_Delete(root);
     return err;
 }
@@ -512,9 +583,9 @@ MisskeyError misskey_drive_files_create_raw(MisskeyClient* client, const char* f
     snprintf(url, sizeof(url), "https://%s/api/drive/files/create", client->host);
     
     WriteData wd = {
-        .data = alloc_allocator(&client->allocator, 1),
+        .data = malloc(1),
         .size = 0,
-        .alloc = client->allocator
+        .capacity = 1
     };
     if (!wd.data) {
         free(file_data);
@@ -531,7 +602,7 @@ MisskeyError misskey_drive_files_create_raw(MisskeyClient* client, const char* f
     curl_mime* mime = curl_mime_init(client->curl);
     if (!mime) {
         free(file_data);
-        free_allocator(&client->allocator, wd.data);
+        free(wd.data);
         curl_slist_free_all(headers);
         return MISSKEY_ERROR_ALLOC;
     }
@@ -572,7 +643,7 @@ MisskeyError misskey_drive_files_create_raw(MisskeyClient* client, const char* f
     curl_slist_free_all(headers);
     
     if (res != CURLE_OK) {
-        free_allocator(&client->allocator, wd.data);
+        free(wd.data);
         return MISSKEY_ERROR_NETWORK;
     }
     
@@ -580,7 +651,7 @@ MisskeyError misskey_drive_files_create_raw(MisskeyClient* client, const char* f
     curl_easy_getinfo(client->curl, CURLINFO_RESPONSE_CODE, &http_code);
     
     if (http_code >= 400) {
-        free_allocator(&client->allocator, wd.data);
+        free(wd.data);
         return MISSKEY_ERROR_HTTP;
     }
     
@@ -599,7 +670,7 @@ MisskeyError misskey_drive_files_delete_raw(MisskeyClient* client, const char* f
     char* json_str = cJSON_PrintUnformatted(root);
     MisskeyError err = misskey_request(client, "drive/files/delete", json_str, response_out);
     
-    free(json_str);
+    cJSON_free(json_str);
     cJSON_Delete(root);
     return err;
 }
@@ -619,7 +690,7 @@ MisskeyError misskey_drive_files_update_raw(MisskeyClient* client, const char* f
     char* json_str = cJSON_PrintUnformatted(root);
     MisskeyError err = misskey_request(client, "drive/files/update", json_str, response_out);
     
-    free(json_str);
+    cJSON_free(json_str);
     cJSON_Delete(root);
     return err;
 }
@@ -635,7 +706,7 @@ MisskeyError misskey_drive_files_find_raw(MisskeyClient* client, const char* has
     char* json_str = cJSON_PrintUnformatted(root);
     MisskeyError err = misskey_request(client, "drive/files/find", json_str, response_out);
     
-    free(json_str);
+    cJSON_free(json_str);
     cJSON_Delete(root);
     return err;
 }
@@ -652,7 +723,7 @@ MisskeyError misskey_drive_files_show_raw(MisskeyClient* client, const char* fil
     char* json_str = cJSON_PrintUnformatted(root);
     MisskeyError err = misskey_request(client, "drive/files/show", json_str, response_out);
     
-    free(json_str);
+    cJSON_free(json_str);
     cJSON_Delete(root);
     return err;
 }
@@ -672,7 +743,7 @@ MisskeyError misskey_drive_files_upload_from_url_raw(MisskeyClient* client, cons
     char* json_str = cJSON_PrintUnformatted(root);
     MisskeyError err = misskey_request(client, "drive/files/upload-from-url", json_str, response_out);
     
-    free(json_str);
+    cJSON_free(json_str);
     cJSON_Delete(root);
     return err;
 }
@@ -689,7 +760,7 @@ MisskeyError misskey_drive_folders_raw(MisskeyClient* client, int limit, const c
     char* json_str = cJSON_PrintUnformatted(root);
     MisskeyError err = misskey_request(client, "drive/folders", json_str, response_out);
     
-    free(json_str);
+    cJSON_free(json_str);
     cJSON_Delete(root);
     return err;
 }
@@ -708,7 +779,7 @@ MisskeyError misskey_drive_folders_create_raw(MisskeyClient* client, const char*
     char* json_str = cJSON_PrintUnformatted(root);
     MisskeyError err = misskey_request(client, "drive/folders/create", json_str, response_out);
     
-    free(json_str);
+    cJSON_free(json_str);
     cJSON_Delete(root);
     return err;
 }
@@ -724,7 +795,7 @@ MisskeyError misskey_drive_folders_delete_raw(MisskeyClient* client, const char*
     char* json_str = cJSON_PrintUnformatted(root);
     MisskeyError err = misskey_request(client, "drive/folders/delete", json_str, response_out);
     
-    free(json_str);
+    cJSON_free(json_str);
     cJSON_Delete(root);
     return err;
 }
@@ -743,7 +814,7 @@ MisskeyError misskey_drive_folders_update_raw(MisskeyClient* client, const char*
     char* json_str = cJSON_PrintUnformatted(root);
     MisskeyError err = misskey_request(client, "drive/folders/update", json_str, response_out);
     
-    free(json_str);
+    cJSON_free(json_str);
     cJSON_Delete(root);
     return err;
 }
@@ -760,7 +831,7 @@ MisskeyError misskey_translate_raw(MisskeyClient* client, const char* note_id,
     char* json_str = cJSON_PrintUnformatted(root);
     MisskeyError err = misskey_request(client, "notes/translate", json_str, response_out);
     
-    free(json_str);
+    cJSON_free(json_str);
     cJSON_Delete(root);
     return err;
 }
@@ -772,7 +843,7 @@ MisskeyError misskey_clips_list_raw(MisskeyClient* client, char** response_out) 
     char* json_str = cJSON_PrintUnformatted(root);
     MisskeyError err = misskey_request(client, "clips/list", json_str, response_out);
     
-    free(json_str);
+    cJSON_free(json_str);
     cJSON_Delete(root);
     return err;
 }
@@ -788,7 +859,7 @@ MisskeyError misskey_clips_show_raw(MisskeyClient* client, const char* clip_id,
     char* json_str = cJSON_PrintUnformatted(root);
     MisskeyError err = misskey_request(client, "clips/show", json_str, response_out);
     
-    free(json_str);
+    cJSON_free(json_str);
     cJSON_Delete(root);
     return err;
 }
@@ -807,7 +878,7 @@ MisskeyError misskey_clips_create_raw(MisskeyClient* client, const char* name,
     char* json_str = cJSON_PrintUnformatted(root);
     MisskeyError err = misskey_request(client, "clips/create", json_str, response_out);
     
-    free(json_str);
+    cJSON_free(json_str);
     cJSON_Delete(root);
     return err;
 }
@@ -827,7 +898,7 @@ MisskeyError misskey_clips_update_raw(MisskeyClient* client, const char* clip_id
     char* json_str = cJSON_PrintUnformatted(root);
     MisskeyError err = misskey_request(client, "clips/update", json_str, response_out);
     
-    free(json_str);
+    cJSON_free(json_str);
     cJSON_Delete(root);
     return err;
 }
@@ -843,7 +914,7 @@ MisskeyError misskey_clips_delete_raw(MisskeyClient* client, const char* clip_id
     char* json_str = cJSON_PrintUnformatted(root);
     MisskeyError err = misskey_request(client, "clips/delete", json_str, response_out);
     
-    free(json_str);
+    cJSON_free(json_str);
     cJSON_Delete(root);
     return err;
 }
@@ -861,7 +932,7 @@ MisskeyError misskey_clips_add_note(MisskeyClient* client, const char* clip_id,
     char* resp = NULL;
     MisskeyError err = misskey_request(client, "clips/add-note", json_str, &resp);
     
-    free(json_str);
+    cJSON_free(json_str);
     cJSON_Delete(root);
     if (resp) misskey_free_string(client, resp);
     return err;
@@ -879,7 +950,7 @@ MisskeyError misskey_clips_add_note_raw(MisskeyClient* client, const char* clip_
     char* json_str = cJSON_PrintUnformatted(root);
     MisskeyError err = misskey_request(client, "clips/add-note", json_str, response_out);
     
-    free(json_str);
+    cJSON_free(json_str);
     cJSON_Delete(root);
     return err;
 }
@@ -897,7 +968,7 @@ MisskeyError misskey_clips_remove_note(MisskeyClient* client, const char* clip_i
     char* resp = NULL;
     MisskeyError err = misskey_request(client, "clips/remove-note", json_str, &resp);
     
-    free(json_str);
+    cJSON_free(json_str);
     cJSON_Delete(root);
     if (resp) misskey_free_string(client, resp);
     return err;
@@ -915,7 +986,7 @@ MisskeyError misskey_clips_remove_note_raw(MisskeyClient* client, const char* cl
     char* json_str = cJSON_PrintUnformatted(root);
     MisskeyError err = misskey_request(client, "clips/remove-note", json_str, response_out);
     
-    free(json_str);
+    cJSON_free(json_str);
     cJSON_Delete(root);
     return err;
 }
@@ -932,7 +1003,7 @@ MisskeyError misskey_clips_notes_raw(MisskeyClient* client, const char* clip_id,
     char* json_str = cJSON_PrintUnformatted(root);
     MisskeyError err = misskey_request(client, "clips/notes", json_str, response_out);
     
-    free(json_str);
+    cJSON_free(json_str);
     cJSON_Delete(root);
     return err;
 }
@@ -1133,10 +1204,14 @@ static void parse_note(cJSON* obj, MisskeyNote* note) {
         strncpy(note->app_id, item->valuestring, sizeof(note->app_id) - 1);
     if ((item = cJSON_GetObjectItem(obj, "userId")) && item->type == cJSON_String)
         strncpy(note->user_id, item->valuestring, sizeof(note->user_id) - 1);
-    if ((item = cJSON_GetObjectItem(obj, "replyId")) && item->type == cJSON_String)
+    if ((item = cJSON_GetObjectItem(obj, "replyId")) && item->type == cJSON_String) {
         strncpy(note->reply_id, item->valuestring, sizeof(note->reply_id) - 1);
-    if ((item = cJSON_GetObjectItem(obj, "renoteId")) && item->type == cJSON_String)
+        note->is_reply = 1;
+    }
+    if ((item = cJSON_GetObjectItem(obj, "renoteId")) && item->type == cJSON_String) {
         strncpy(note->renote_id, item->valuestring, sizeof(note->renote_id) - 1);
+        note->is_renote = 1;
+    }
     if ((item = cJSON_GetObjectItem(obj, "channelId")) && item->type == cJSON_String)
         strncpy(note->channel_id, item->valuestring, sizeof(note->channel_id) - 1);
     if ((item = cJSON_GetObjectItem(obj, "uri")) && item->type == cJSON_String)
@@ -1159,8 +1234,15 @@ static void parse_note(cJSON* obj, MisskeyNote* note) {
         char* emojis = cJSON_Print(item);
         if (emojis) {
             strncpy(note->reaction_emojis, emojis, sizeof(note->reaction_emojis) - 1);
-            free(emojis);
+            cJSON_free(emojis);
         }
+    }
+    
+    cJSON* renote = cJSON_GetObjectItem(obj, "renote");
+    if (renote) {
+        cJSON* renote_text = cJSON_GetObjectItem(renote, "text");
+        if (renote_text && renote_text->type == cJSON_String)
+            strncpy(note->renote_text, renote_text->valuestring, sizeof(note->renote_text) - 1);
     }
     
     cJSON* user = cJSON_GetObjectItem(obj, "user");
@@ -1294,6 +1376,174 @@ MisskeyError misskey_notes_timeline(MisskeyClient* client, int limit, int local,
     
     char* resp = NULL;
     MisskeyError err = misskey_notes_timeline_raw(client, limit, local, &resp);
+    if (err != MISSKEY_OK) return err;
+    
+    cJSON* root = cJSON_Parse(resp);
+    if (!root || root->type != cJSON_Array) {
+        misskey_free_string(client, resp);
+        return MISSKEY_ERROR_JSON;
+    }
+    
+    int count = cJSON_GetArraySize(root);
+    if (count == 0) {
+        cJSON_Delete(root);
+        misskey_free_string(client, resp);
+        return MISSKEY_OK;
+    }
+    
+    MisskeyNote* notes = alloc_allocator(&client->allocator, count * sizeof(MisskeyNote));
+    if (!notes) {
+        cJSON_Delete(root);
+        misskey_free_string(client, resp);
+        return MISSKEY_ERROR_ALLOC;
+    }
+    
+    for (int i = 0; i < count; i++) {
+        cJSON* item = cJSON_GetArrayItem(root, i);
+        parse_note(item, &notes[i]);
+    }
+    
+    *notes_out = notes;
+    *count_out = count;
+    
+    cJSON_Delete(root);
+    misskey_free_string(client, resp);
+    return MISSKEY_OK;
+}
+
+MisskeyError misskey_notes_local_timeline(MisskeyClient* client, int limit, MisskeyNote** notes_out, int* count_out) {
+    if (!client || !notes_out || !count_out) return MISSKEY_ERROR_INVALID_PARAM;
+    *notes_out = NULL;
+    *count_out = 0;
+    
+    char* resp = NULL;
+    MisskeyError err = misskey_notes_local_timeline_raw(client, limit, &resp);
+    if (err != MISSKEY_OK) return err;
+    
+    cJSON* root = cJSON_Parse(resp);
+    if (!root || root->type != cJSON_Array) {
+        misskey_free_string(client, resp);
+        return MISSKEY_ERROR_JSON;
+    }
+    
+    int count = cJSON_GetArraySize(root);
+    if (count == 0) {
+        cJSON_Delete(root);
+        misskey_free_string(client, resp);
+        return MISSKEY_OK;
+    }
+    
+    MisskeyNote* notes = alloc_allocator(&client->allocator, count * sizeof(MisskeyNote));
+    if (!notes) {
+        cJSON_Delete(root);
+        misskey_free_string(client, resp);
+        return MISSKEY_ERROR_ALLOC;
+    }
+    
+    for (int i = 0; i < count; i++) {
+        cJSON* item = cJSON_GetArrayItem(root, i);
+        parse_note(item, &notes[i]);
+    }
+    
+    *notes_out = notes;
+    *count_out = count;
+    
+    cJSON_Delete(root);
+    misskey_free_string(client, resp);
+    return MISSKEY_OK;
+}
+
+MisskeyError misskey_notes_local_timeline_full(MisskeyClient* client, MisskeyTimelineOptions* opts, MisskeyNote** notes_out, int* count_out) {
+    if (!client || !notes_out || !count_out) return MISSKEY_ERROR_INVALID_PARAM;
+    *notes_out = NULL;
+    *count_out = 0;
+    
+    char* resp = NULL;
+    MisskeyError err = misskey_notes_local_timeline_full_raw(client, opts, &resp);
+    if (err != MISSKEY_OK) return err;
+    
+    cJSON* root = cJSON_Parse(resp);
+    if (!root || root->type != cJSON_Array) {
+        misskey_free_string(client, resp);
+        return MISSKEY_ERROR_JSON;
+    }
+    
+    int count = cJSON_GetArraySize(root);
+    if (count == 0) {
+        cJSON_Delete(root);
+        misskey_free_string(client, resp);
+        return MISSKEY_OK;
+    }
+    
+    MisskeyNote* notes = alloc_allocator(&client->allocator, count * sizeof(MisskeyNote));
+    if (!notes) {
+        cJSON_Delete(root);
+        misskey_free_string(client, resp);
+        return MISSKEY_ERROR_ALLOC;
+    }
+    
+    for (int i = 0; i < count; i++) {
+        cJSON* item = cJSON_GetArrayItem(root, i);
+        parse_note(item, &notes[i]);
+    }
+    
+    *notes_out = notes;
+    *count_out = count;
+    
+    cJSON_Delete(root);
+    misskey_free_string(client, resp);
+    return MISSKEY_OK;
+}
+
+MisskeyError misskey_notes_global_timeline(MisskeyClient* client, int limit, MisskeyNote** notes_out, int* count_out) {
+    if (!client || !notes_out || !count_out) return MISSKEY_ERROR_INVALID_PARAM;
+    *notes_out = NULL;
+    *count_out = 0;
+    
+    char* resp = NULL;
+    MisskeyError err = misskey_notes_global_timeline_raw(client, limit, &resp);
+    if (err != MISSKEY_OK) return err;
+    
+    cJSON* root = cJSON_Parse(resp);
+    if (!root || root->type != cJSON_Array) {
+        misskey_free_string(client, resp);
+        return MISSKEY_ERROR_JSON;
+    }
+    
+    int count = cJSON_GetArraySize(root);
+    if (count == 0) {
+        cJSON_Delete(root);
+        misskey_free_string(client, resp);
+        return MISSKEY_OK;
+    }
+    
+    MisskeyNote* notes = alloc_allocator(&client->allocator, count * sizeof(MisskeyNote));
+    if (!notes) {
+        cJSON_Delete(root);
+        misskey_free_string(client, resp);
+        return MISSKEY_ERROR_ALLOC;
+    }
+    
+    for (int i = 0; i < count; i++) {
+        cJSON* item = cJSON_GetArrayItem(root, i);
+        parse_note(item, &notes[i]);
+    }
+    
+    *notes_out = notes;
+    *count_out = count;
+    
+    cJSON_Delete(root);
+    misskey_free_string(client, resp);
+    return MISSKEY_OK;
+}
+
+MisskeyError misskey_notes_global_timeline_full(MisskeyClient* client, MisskeyTimelineOptions* opts, MisskeyNote** notes_out, int* count_out) {
+    if (!client || !notes_out || !count_out) return MISSKEY_ERROR_INVALID_PARAM;
+    *notes_out = NULL;
+    *count_out = 0;
+    
+    char* resp = NULL;
+    MisskeyError err = misskey_notes_global_timeline_full_raw(client, opts, &resp);
     if (err != MISSKEY_OK) return err;
     
     cJSON* root = cJSON_Parse(resp);

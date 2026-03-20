@@ -341,11 +341,25 @@ public:
         return Meta(m);
     }
 
-    std::vector<Note> notes_timeline(int limit = 10, bool local = false) {
+    std::vector<Note> notes_timeline(int limit = 10, bool include_local_renotes = false) {
         MisskeyNote* notes = nullptr;
         int count = 0;
-        int err = misskey_notes_timeline(client_, limit, local ? 1 : 0, &notes, &count);
+        int err = misskey_notes_timeline(client_, limit, include_local_renotes ? 1 : 0, &notes, &count);
         check_error(err, "notes_timeline");
+        
+        std::vector<Note> result;
+        for (int i = 0; i < count; i++) {
+            result.push_back(Note(notes[i]));
+        }
+        misskey_free_notes(client_, notes, count);
+        return result;
+    }
+
+    std::vector<Note> notes_local_timeline(int limit = 10) {
+        MisskeyNote* notes = nullptr;
+        int count = 0;
+        int err = misskey_notes_local_timeline(client_, limit, &notes, &count);
+        check_error(err, "notes_local_timeline");
         
         std::vector<Note> result;
         for (int i = 0; i < count; i++) {

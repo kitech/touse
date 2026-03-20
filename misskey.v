@@ -3,7 +3,7 @@ module misskey
 import json // includes cJSON
 
 #flag -I@DIR/src
-#flag @DIR/misskey_client.o
+#flag @DIR/src/misskey_client.o
 #flag -lcurl
 
 #include "misskey_client.h"
@@ -16,7 +16,26 @@ fn C.misskey_client_set_token(client &C.MisskeyClient, token charptr)
 fn C.misskey_client_set_timeout(client &C.MisskeyClient, timeout_secs int)
 fn C.misskey_request(client &C.MisskeyClient, endpoint charptr, body charptr, response &charptr) int
 fn C.misskey_meta_raw(client &C.MisskeyClient, response &charptr) int
-fn C.misskey_notes_timeline_raw(client &C.MisskeyClient, limit int, local int, response &charptr) int
+fn C.misskey_notes_timeline_raw(client &C.MisskeyClient, limit int, include_local_renotes int, response &charptr) int
+fn C.misskey_notes_local_timeline_raw(client &C.MisskeyClient, limit int, response &charptr) int
+fn C.misskey_notes_global_timeline_raw(client &C.MisskeyClient, limit int, response &charptr) int
+
+struct C.MisskeyTimelineOptions {
+mut:
+	limit int
+	with_files int
+	with_renotes int
+	with_replies int
+	allow_partial int
+	since_id charptr
+	until_id charptr
+	since_date int
+	until_date int
+}
+
+fn C.misskey_notes_local_timeline_full_raw(client &C.MisskeyClient, opts voidptr, response &charptr) int
+fn C.misskey_notes_global_timeline_full_raw(client &C.MisskeyClient, opts voidptr, response &charptr) int
+
 fn C.misskey_notes_create_raw(client &C.MisskeyClient, text charptr, reply_id charptr, renote_id charptr, response &charptr) int
 fn C.misskey_i_notifications_raw(client &C.MisskeyClient, limit int, response &charptr) int
 fn C.misskey_drive_raw(client &C.MisskeyClient, response &charptr) int
@@ -92,6 +111,9 @@ mut:
 	replies_count int
 	renote_count int
 	reaction_emojis [512]u8
+	renote_text [4096]u8
+	is_renote int
+	is_reply int
 	user C.MisskeyUser
 }
 
@@ -182,7 +204,11 @@ fn C.misskey_clip_init(c &C.MisskeyClip)
 fn C.misskey_meta_init(m &C.MisskeyMeta)
 
 fn C.misskey_meta(client &C.MisskeyClient, meta &C.MisskeyMeta) int
-fn C.misskey_notes_timeline(client &C.MisskeyClient, limit int, local int, notes_out &&C.MisskeyNote, count_out &int) int
+fn C.misskey_notes_timeline(client &C.MisskeyClient, limit int, include_local_renotes int, notes_out &&C.MisskeyNote, count_out &int) int
+fn C.misskey_notes_local_timeline(client &C.MisskeyClient, limit int, notes_out &&C.MisskeyNote, count_out &int) int
+fn C.misskey_notes_local_timeline_full(client &C.MisskeyClient, opts voidptr, notes_out &&C.MisskeyNote, count_out &int) int
+fn C.misskey_notes_global_timeline(client &C.MisskeyClient, limit int, notes_out &&C.MisskeyNote, count_out &int) int
+fn C.misskey_notes_global_timeline_full(client &C.MisskeyClient, opts voidptr, notes_out &&C.MisskeyNote, count_out &int) int
 fn C.misskey_notes_create(client &C.MisskeyClient, text charptr, reply_id charptr, renote_id charptr, note_out &C.MisskeyNote) int
 fn C.misskey_notes_show(client &C.MisskeyClient, note_id charptr, note_out &C.MisskeyNote) int
 fn C.misskey_notes_delete(client &C.MisskeyClient, note_id charptr, note_id_out &byte) int
@@ -304,12 +330,34 @@ pub fn (c &Client) meta_raw() !string {
 	return c.do_request('meta', '{"detail":false}')
 }
 
-pub fn (c &Client) notes_timeline_raw(limit int, local bool) !string {
-	local_val := if local { 1 } else { 0 }
+pub fn (c &Client) notes_timeline_raw(limit int, include_local_renotes bool) !string {
+	local_val := if include_local_renotes { 1 } else { 0 }
 	mut response := &char(0)
 	ret := C.misskey_notes_timeline_raw(c.c_client, limit, local_val, &response)
 	if ret != 0 {
 		return error('notes_timeline failed: ${MisskeyError(ret).detailed(c)}')
+	}
+	result := unsafe { cstring_to_vstring(response) }
+	C.misskey_free_string(c.c_client, response)
+	return result
+}
+
+pub fn (c &Client) notes_local_timeline_raw(limit int) !string {
+	mut response := &char(0)
+	ret := C.misskey_notes_local_timeline_raw(c.c_client, limit, &response)
+	if ret != 0 {
+		return error('notes_local_timeline failed: ${MisskeyError(ret).detailed(c)}')
+	}
+	result := unsafe { cstring_to_vstring(response) }
+	C.misskey_free_string(c.c_client, response)
+	return result
+}
+
+pub fn (c &Client) notes_global_timeline_raw(limit int) !string {
+	mut response := &char(0)
+	ret := C.misskey_notes_global_timeline_raw(c.c_client, limit, &response)
+	if ret != 0 {
+		return error('notes_global_timeline failed: ${MisskeyError(ret).detailed(c)}')
 	}
 	result := unsafe { cstring_to_vstring(response) }
 	C.misskey_free_string(c.c_client, response)
@@ -692,6 +740,9 @@ pub:
 	reactions_count int
 	replies_count int
 	renote_count int
+	renote_text string
+	is_renote bool
+	is_reply bool
 	user User
 }
 
@@ -751,6 +802,19 @@ pub:
 	target_lang string
 }
 
+pub struct TimelineOptions {
+pub:
+	limit           int
+	with_files      bool
+	with_renotes    bool
+	with_replies   bool
+	allow_partial   bool
+	since_id        string
+	until_id        string
+	since_date      int
+	until_date      int
+}
+
 @[heap]
 pub struct Clip {
 pub:
@@ -802,6 +866,9 @@ fn to_note(cnote &C.MisskeyNote) Note {
 		reactions_count: cnote.reactions_count
 		replies_count: cnote.replies_count
 		renote_count: cnote.renote_count
+		renote_text: unsafe { cstring_to_vstring(&char(cnote.renote_text)) }
+		is_renote: cnote.is_renote != 0
+		is_reply: cnote.is_reply != 0
 		user: to_user(&cnote.user)
 	}
 }
@@ -883,13 +950,93 @@ pub fn (c &Client) meta() !Meta {
 	return result
 }
 
-pub fn (c &Client) notes_timeline(limit int, local bool) ![]Note {
-	local_val := if local { 1 } else { 0 }
+pub fn (c &Client) notes_timeline(limit int, include_local_renotes bool) ![]Note {
+	local_val := if include_local_renotes { 1 } else { 0 }
 	mut notes_ptr := &C.MisskeyNote(unsafe { nil })
 	mut count := 0
 	ret := C.misskey_notes_timeline(c.c_client, limit, local_val, &notes_ptr, &count)
 	if ret != 0 {
 		return error('notes_timeline failed: ${MisskeyError(ret).detailed(c)}')
+	}
+	
+	mut result := []Note{len: count}
+	for i := 0; i < count; i++ {
+		result[i] = to_note(unsafe { &notes_ptr[i] })
+	}
+	C.misskey_free_notes(c.c_client, notes_ptr, count)
+	return result
+}
+
+pub fn (c &Client) notes_local_timeline(limit int) ![]Note {
+	mut notes_ptr := &C.MisskeyNote(unsafe { nil })
+	mut count := 0
+	ret := C.misskey_notes_local_timeline(c.c_client, limit, &notes_ptr, &count)
+	if ret != 0 {
+		return error('notes_local_timeline failed: ${MisskeyError(ret).detailed(c)}')
+	}
+	
+	mut result := []Note{len: count}
+	for i := 0; i < count; i++ {
+		result[i] = to_note(unsafe { &notes_ptr[i] })
+	}
+	C.misskey_free_notes(c.c_client, notes_ptr, count)
+	return result
+}
+
+fn (c &Client) timeline_opts_to_c(opts TimelineOptions) C.MisskeyTimelineOptions {
+	return C.MisskeyTimelineOptions{
+		limit: if opts.limit > 0 { opts.limit } else { 20 }
+		with_files: if opts.with_files { 1 } else { 0 }
+		with_renotes: if opts.with_renotes { 1 } else { 0 }
+		with_replies: if opts.with_replies { 1 } else { 0 }
+		allow_partial: if opts.allow_partial { 1 } else { 0 }
+		since_id: if opts.since_id.len > 0 { &char(opts.since_id.str) } else { voidptr(0) }
+		until_id: if opts.until_id.len > 0 { &char(opts.until_id.str) } else { voidptr(0) }
+		since_date: opts.since_date
+		until_date: opts.until_date
+	}
+}
+
+pub fn (c &Client) notes_local_timeline_full(opts TimelineOptions) ![]Note {
+	mut notes_ptr := &C.MisskeyNote(unsafe { nil })
+	mut count := 0
+	c_opts := c.timeline_opts_to_c(opts)
+	ret := C.misskey_notes_local_timeline_full(c.c_client, &c_opts, &notes_ptr, &count)
+	if ret != 0 {
+		return error('notes_local_timeline_full failed: ${MisskeyError(ret).detailed(c)}')
+	}
+	
+	mut result := []Note{len: count}
+	for i := 0; i < count; i++ {
+		result[i] = to_note(unsafe { &notes_ptr[i] })
+	}
+	C.misskey_free_notes(c.c_client, notes_ptr, count)
+	return result
+}
+
+pub fn (c &Client) notes_global_timeline(limit int) ![]Note {
+	mut notes_ptr := &C.MisskeyNote(unsafe { nil })
+	mut count := 0
+	ret := C.misskey_notes_global_timeline(c.c_client, limit, &notes_ptr, &count)
+	if ret != 0 {
+		return error('notes_global_timeline failed: ${MisskeyError(ret).detailed(c)}')
+	}
+	
+	mut result := []Note{len: count}
+	for i := 0; i < count; i++ {
+		result[i] = to_note(unsafe { &notes_ptr[i] })
+	}
+	C.misskey_free_notes(c.c_client, notes_ptr, count)
+	return result
+}
+
+pub fn (c &Client) notes_global_timeline_full(opts TimelineOptions) ![]Note {
+	mut notes_ptr := &C.MisskeyNote(unsafe { nil })
+	mut count := 0
+	c_opts := c.timeline_opts_to_c(opts)
+	ret := C.misskey_notes_global_timeline_full(c.c_client, &c_opts, &notes_ptr, &count)
+	if ret != 0 {
+		return error('notes_global_timeline_full failed: ${MisskeyError(ret).detailed(c)}')
 	}
 	
 	mut result := []Note{len: count}

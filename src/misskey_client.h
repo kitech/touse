@@ -76,8 +76,23 @@ typedef struct MisskeyNote {
     int replies_count;
     int renote_count;
     char reaction_emojis[512];
+    char renote_text[4096];
+    int is_renote;
+    int is_reply;
     MisskeyUser user;
 } MisskeyNote;
+
+typedef struct MisskeyTimelineOptions {
+    int limit;
+    int with_files;
+    int with_renotes;
+    int with_replies;
+    int allow_partial;
+    const char* since_id;
+    const char* until_id;
+    long since_date;
+    long until_date;
+} MisskeyTimelineOptions;
 
 typedef struct MisskeyNotification {
     char id[32];
@@ -190,7 +205,11 @@ void misskey_free_drive_folders(MisskeyClient* client, MisskeyDriveFolder* folde
 void misskey_free_clips(MisskeyClient* client, MisskeyClip* clips, int count);
 
 MisskeyError misskey_meta(MisskeyClient* client, MisskeyMeta* meta);
-MisskeyError misskey_notes_timeline(MisskeyClient* client, int limit, int local, MisskeyNote** notes_out, int* count_out);
+MisskeyError misskey_notes_timeline(MisskeyClient* client, int limit, int include_local_renotes, MisskeyNote** notes_out, int* count_out);
+MisskeyError misskey_notes_local_timeline(MisskeyClient* client, int limit, MisskeyNote** notes_out, int* count_out);
+MisskeyError misskey_notes_local_timeline_full(MisskeyClient* client, MisskeyTimelineOptions* opts, MisskeyNote** notes_out, int* count_out);
+MisskeyError misskey_notes_global_timeline(MisskeyClient* client, int limit, MisskeyNote** notes_out, int* count_out);
+MisskeyError misskey_notes_global_timeline_full(MisskeyClient* client, MisskeyTimelineOptions* opts, MisskeyNote** notes_out, int* count_out);
 MisskeyError misskey_notes_create(MisskeyClient* client, const char* text, const char* reply_id, const char* renote_id, MisskeyNote* note_out);
 MisskeyError misskey_notes_show(MisskeyClient* client, const char* note_id, MisskeyNote* note_out);
 MisskeyError misskey_notes_delete(MisskeyClient* client, const char* note_id, char note_id_out[32]);
@@ -239,7 +258,12 @@ MisskeyError misskey_drive_files_download(MisskeyClient* client, const char* fil
                                           long* http_code_out, long* content_length_out);
 
 MisskeyError misskey_meta_raw(MisskeyClient* client, char** response_out);
-MisskeyError misskey_notes_timeline_raw(MisskeyClient* client, int limit, int local, char** response_out);
+MisskeyError misskey_notes_timeline_raw(MisskeyClient* client, int limit, int include_local_renotes, char** response_out);
+MisskeyError misskey_notes_timeline_full_raw(MisskeyClient* client, MisskeyTimelineOptions* opts, char** response_out);
+MisskeyError misskey_notes_local_timeline_raw(MisskeyClient* client, int limit, char** response_out);
+MisskeyError misskey_notes_local_timeline_full_raw(MisskeyClient* client, MisskeyTimelineOptions* opts, char** response_out);
+MisskeyError misskey_notes_global_timeline_raw(MisskeyClient* client, int limit, char** response_out);
+MisskeyError misskey_notes_global_timeline_full_raw(MisskeyClient* client, MisskeyTimelineOptions* opts, char** response_out);
 MisskeyError misskey_notes_raw(MisskeyClient* client, const char* text, const char* reply_id, const char* renote_id, const char* channel_id, int limit, int offset, const char* user_id, int local_only, int reply, int renote, int with_files, const char* since_id, const char* until_id, char** response_out);
 MisskeyError misskey_notes_show_raw(MisskeyClient* client, const char* note_id, char** response_out);
 MisskeyError misskey_notes_delete_raw(MisskeyClient* client, const char* note_id, char** response_out);

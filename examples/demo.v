@@ -47,13 +47,55 @@ fn main() {
 	println('  URI: ${meta.uri}')
 	
 	// notes_timeline (struct API)
-	println('\n=== notes/timeline (local, limit=3) ===')
+	println('\n=== notes/timeline (include_local_renotes, limit=3) ===')
 	notes := client.notes_timeline(3, true) or {
 		println('Error: ${err}')
 		return
 	}
 	println('  Got ${notes.len} notes')
 	for i, note in notes {
+		text := if note.text.len > 50 { note.text[..50] + '...' } else { note.text }
+		println('  [$i] ${text}')
+	}
+	
+	// notes_local_timeline (struct API) - only local posts
+	println('\n=== notes/local-timeline (limit=3) ===')
+	local_notes := client.notes_local_timeline(3) or {
+		println('Error: ${err}')
+		return
+	}
+	println('  Got ${local_notes.len} local notes')
+	for i, note in local_notes {
+		text := if note.text.len > 50 { note.text[..50] + '...' } else { note.text }
+		println('  [$i] ${text} (renote=${note.is_renote})')
+	}
+	
+	// notes_local_timeline_full with options
+	println('\n=== notes/local-timeline full (with_files, limit=3) ===')
+	full_opts := misskey.TimelineOptions{
+		limit: 3
+		with_files: true
+		with_replies: false
+		with_renotes: true
+	}
+	full_notes := client.notes_local_timeline_full(full_opts) or {
+		println('Error: ${err}')
+		return
+	}
+	println('  Got ${full_notes.len} notes')
+	for i, note in full_notes {
+		text := if note.text.len > 50 { note.text[..50] + '...' } else { note.text }
+		println('  [$i] ${text}')
+	}
+	
+	// notes_global_timeline (struct API)
+	println('\n=== notes/global-timeline (limit=3) ===')
+	global_notes := client.notes_global_timeline(3) or {
+		println('Error: ${err}')
+		return
+	}
+	println('  Got ${global_notes.len} global notes')
+	for i, note in global_notes {
 		text := if note.text.len > 50 { note.text[..50] + '...' } else { note.text }
 		println('  [$i] ${text}')
 	}
