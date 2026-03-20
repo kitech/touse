@@ -39,95 +39,6 @@ MisskeyError misskey_request(MisskeyClient* client, const char* endpoint,
 void misskey_request_set_debug(MisskeyClient* client, int enable);
 void misskey_request_print_curl(MisskeyClient* client, const char* endpoint,
                                 const char* request_body);
-MisskeyError misskey_meta(MisskeyClient* client, char** response_out);
-MisskeyError misskey_notes_timeline(MisskeyClient* client, int limit,
-                                     int local, char** response_out);
-MisskeyError misskey_notes(MisskeyClient* client, const char* text,
-                           const char* reply_id, const char* renote_id,
-                           const char* channel_id, int limit, int offset,
-                           const char* user_id, int local_only,
-                           int reply, int renote, int with_files,
-                           const char* since_id, const char* until_id,
-                           char** response_out);
-MisskeyError misskey_notes_show(MisskeyClient* client, const char* note_id,
-                                char** response_out);
-MisskeyError misskey_notes_delete(MisskeyClient* client, const char* note_id,
-                                  char** response_out);
-MisskeyError misskey_notes_create(MisskeyClient* client, const char* text,
-                                    const char* reply_id, const char* renote_id,
-                                    char** response_out);
-MisskeyError misskey_i_notifications(MisskeyClient* client, int limit,
-                                        char** response_out);
-
-MisskeyError misskey_drive(MisskeyClient* client, char** response_out);
-
-MisskeyError misskey_drive_files(MisskeyClient* client, int limit, int folder_id,
-                                  char** response_out);
-MisskeyError misskey_drive_files_create(MisskeyClient* client, const char* file_path,
-                                         const char* folder_id, const char* name,
-                                         char** response_out);
-MisskeyError misskey_drive_files_delete(MisskeyClient* client, const char* file_id,
-                                         char** response_out);
-MisskeyError misskey_drive_files_update(MisskeyClient* client, const char* file_id,
-                                         const char* folder_id, const char* name,
-                                         char** response_out);
-MisskeyError misskey_drive_files_find(MisskeyClient* client, const char* hash,
-                                        char** response_out);
-MisskeyError misskey_drive_files_show(MisskeyClient* client, const char* file_id,
-                                       const char* url, char** response_out);
-MisskeyError misskey_drive_files_upload_from_url(MisskeyClient* client, const char* url,
-                                                   const char* folder_id, int is_sensitive,
-                                                   const char* comment, char** response_out);
-
-typedef size_t (*misskey_write_callback)(void* contents, size_t size, size_t nmemb, void* userp);
-typedef struct {
-    void* data;
-    size_t size;
-    size_t capacity;
-} MisskeyBuffer;
-
-typedef struct {
-    const char* url;
-    const char* output_path;
-    misskey_write_callback write_cb;
-    void* write_userdata;
-    long resume_from;
-    int follow_redirects;
-} MisskeyDownloadOptions;
-
-MisskeyError misskey_drive_files_download(MisskeyClient* client, const char* file_id,
-                                          const MisskeyDownloadOptions* options,
-                                          long* http_code_out, long* content_length_out);
-MisskeyError misskey_drive_folders(MisskeyClient* client, int limit, const char* folder_id,
-                                   char** response_out);
-MisskeyError misskey_drive_folders_create(MisskeyClient* client, const char* name,
-                                           const char* parent_id, char** response_out);
-MisskeyError misskey_drive_folders_delete(MisskeyClient* client, const char* folder_id,
-                                           char** response_out);
-MisskeyError misskey_drive_folders_update(MisskeyClient* client, const char* folder_id,
-                                           const char* name, const char* parent_id,
-                                           char** response_out);
-
-MisskeyError misskey_translate(MisskeyClient* client, const char* note_id,
-                                const char* target_lang, char** response_out);
-
-MisskeyError misskey_clips_list(MisskeyClient* client, char** response_out);
-MisskeyError misskey_clips_show(MisskeyClient* client, const char* clip_id,
-                                char** response_out);
-MisskeyError misskey_clips_create(MisskeyClient* client, const char* name,
-                                 const char* description, int is_public,
-                                 char** response_out);
-MisskeyError misskey_clips_update(MisskeyClient* client, const char* clip_id,
-                                  const char* name, const char* description,
-                                  int is_public, char** response_out);
-MisskeyError misskey_clips_delete(MisskeyClient* client, const char* clip_id,
-                                  char** response_out);
-MisskeyError misskey_clips_add_note(MisskeyClient* client, const char* clip_id,
-                                   const char* note_id, char** response_out);
-MisskeyError misskey_clips_remove_note(MisskeyClient* client, const char* clip_id,
-                                      const char* note_id, char** response_out);
-MisskeyError misskey_clips_notes(MisskeyClient* client, const char* clip_id,
-                                 int limit, char** response_out);
 
 void misskey_free_string(MisskeyClient* client, char* str);
 
@@ -271,37 +182,88 @@ void misskey_translate_result_init(MisskeyTranslateResult* r);
 void misskey_clip_init(MisskeyClip* c);
 void misskey_meta_init(MisskeyMeta* m);
 
-MisskeyError misskey_meta_struct(MisskeyClient* client, MisskeyMeta* meta);
-MisskeyError misskey_notes_timeline_struct(MisskeyClient* client, int limit, int local, MisskeyNote** notes_out, int* count_out);
-MisskeyError misskey_notes_create_struct(MisskeyClient* client, const char* text, const char* reply_id, const char* renote_id, MisskeyNote* note_out);
-MisskeyError misskey_notes_show_struct(MisskeyClient* client, const char* note_id, MisskeyNote* note_out);
-MisskeyError misskey_notes_delete_struct(MisskeyClient* client, const char* note_id, char note_id_out[32]);
-MisskeyError misskey_notes_struct(MisskeyClient* client, const char* text, const char* reply_id, const char* renote_id, const char* channel_id, int limit, int offset, const char* user_id, int local_only, int reply, int renote, int with_files, const char* since_id, const char* until_id, MisskeyNote** notes_out, int* count_out);
-MisskeyError misskey_i_notifications_struct(MisskeyClient* client, int limit, MisskeyNotification** notifications_out, int* count_out);
-MisskeyError misskey_drive_struct(MisskeyClient* client, MisskeyDriveInfo* info);
-MisskeyError misskey_drive_files_struct(MisskeyClient* client, int limit, const char* folder_id, MisskeyDriveFile** files_out, int* count_out);
-MisskeyError misskey_drive_files_create_struct(MisskeyClient* client, const char* file_path, const char* folder_id, const char* name, MisskeyDriveFile* file_out);
-MisskeyError misskey_drive_files_delete_struct(MisskeyClient* client, const char* file_id, char file_id_out[32]);
-MisskeyError misskey_drive_files_update_struct(MisskeyClient* client, const char* file_id, const char* folder_id, const char* name, MisskeyDriveFile* file_out);
-MisskeyError misskey_drive_files_find_struct(MisskeyClient* client, const char* hash, MisskeyDriveFile** files_out, int* count_out);
-MisskeyError misskey_drive_files_show_struct(MisskeyClient* client, const char* file_id, const char* url, MisskeyDriveFile* file_out);
-MisskeyError misskey_drive_files_upload_from_url_struct(MisskeyClient* client, const char* url, const char* folder_id, int is_sensitive, const char* comment, MisskeyDriveFile* file_out);
-MisskeyError misskey_drive_folders_struct(MisskeyClient* client, int limit, const char* folder_id, MisskeyDriveFolder** folders_out, int* count_out);
-MisskeyError misskey_drive_folders_create_struct(MisskeyClient* client, const char* name, const char* parent_id, MisskeyDriveFolder* folder_out);
-MisskeyError misskey_drive_folders_delete_struct(MisskeyClient* client, const char* folder_id, char folder_id_out[32]);
-MisskeyError misskey_drive_folders_update_struct(MisskeyClient* client, const char* folder_id, const char* name, const char* parent_id, MisskeyDriveFolder* folder_out);
-MisskeyError misskey_translate_struct(MisskeyClient* client, const char* note_id, const char* target_lang, MisskeyTranslateResult* result_out);
-MisskeyError misskey_clips_list_struct(MisskeyClient* client, MisskeyClip** clips_out, int* count_out);
-MisskeyError misskey_clips_show_struct(MisskeyClient* client, const char* clip_id, MisskeyClip* clip_out);
-MisskeyError misskey_clips_create_struct(MisskeyClient* client, const char* name, const char* description, int is_public, MisskeyClip* clip_out);
-MisskeyError misskey_clips_update_struct(MisskeyClient* client, const char* clip_id, const char* name, const char* description, int is_public, MisskeyClip* clip_out);
-MisskeyError misskey_clips_delete_struct(MisskeyClient* client, const char* clip_id, char clip_id_out[32]);
-MisskeyError misskey_clips_notes_struct(MisskeyClient* client, const char* clip_id, int limit, MisskeyNote** notes_out, int* count_out);
-
 void misskey_free_notes(MisskeyClient* client, MisskeyNote* notes, int count);
 void misskey_free_notifications(MisskeyClient* client, MisskeyNotification* notifications, int count);
 void misskey_free_drive_files(MisskeyClient* client, MisskeyDriveFile* files, int count);
 void misskey_free_drive_folders(MisskeyClient* client, MisskeyDriveFolder* folders, int count);
 void misskey_free_clips(MisskeyClient* client, MisskeyClip* clips, int count);
+
+MisskeyError misskey_meta(MisskeyClient* client, MisskeyMeta* meta);
+MisskeyError misskey_notes_timeline(MisskeyClient* client, int limit, int local, MisskeyNote** notes_out, int* count_out);
+MisskeyError misskey_notes_create(MisskeyClient* client, const char* text, const char* reply_id, const char* renote_id, MisskeyNote* note_out);
+MisskeyError misskey_notes_show(MisskeyClient* client, const char* note_id, MisskeyNote* note_out);
+MisskeyError misskey_notes_delete(MisskeyClient* client, const char* note_id, char note_id_out[32]);
+MisskeyError misskey_notes(MisskeyClient* client, const char* text, const char* reply_id, const char* renote_id, const char* channel_id, int limit, int offset, const char* user_id, int local_only, int reply, int renote, int with_files, const char* since_id, const char* until_id, MisskeyNote** notes_out, int* count_out);
+MisskeyError misskey_i_notifications(MisskeyClient* client, int limit, MisskeyNotification** notifications_out, int* count_out);
+MisskeyError misskey_drive(MisskeyClient* client, MisskeyDriveInfo* info);
+MisskeyError misskey_drive_files(MisskeyClient* client, int limit, const char* folder_id, MisskeyDriveFile** files_out, int* count_out);
+MisskeyError misskey_drive_files_create(MisskeyClient* client, const char* file_path, const char* folder_id, const char* name, MisskeyDriveFile* file_out);
+MisskeyError misskey_drive_files_delete(MisskeyClient* client, const char* file_id, char file_id_out[32]);
+MisskeyError misskey_drive_files_update(MisskeyClient* client, const char* file_id, const char* folder_id, const char* name, MisskeyDriveFile* file_out);
+MisskeyError misskey_drive_files_find(MisskeyClient* client, const char* hash, MisskeyDriveFile** files_out, int* count_out);
+MisskeyError misskey_drive_files_show(MisskeyClient* client, const char* file_id, const char* url, MisskeyDriveFile* file_out);
+MisskeyError misskey_drive_files_upload_from_url(MisskeyClient* client, const char* url, const char* folder_id, int is_sensitive, const char* comment, MisskeyDriveFile* file_out);
+MisskeyError misskey_drive_folders(MisskeyClient* client, int limit, const char* folder_id, MisskeyDriveFolder** folders_out, int* count_out);
+MisskeyError misskey_drive_folders_create(MisskeyClient* client, const char* name, const char* parent_id, MisskeyDriveFolder* folder_out);
+MisskeyError misskey_drive_folders_delete(MisskeyClient* client, const char* folder_id, char folder_id_out[32]);
+MisskeyError misskey_drive_folders_update(MisskeyClient* client, const char* folder_id, const char* name, const char* parent_id, MisskeyDriveFolder* folder_out);
+MisskeyError misskey_translate(MisskeyClient* client, const char* note_id, const char* target_lang, MisskeyTranslateResult* result_out);
+MisskeyError misskey_clips_list(MisskeyClient* client, MisskeyClip** clips_out, int* count_out);
+MisskeyError misskey_clips_show(MisskeyClient* client, const char* clip_id, MisskeyClip* clip_out);
+MisskeyError misskey_clips_create(MisskeyClient* client, const char* name, const char* description, int is_public, MisskeyClip* clip_out);
+MisskeyError misskey_clips_update(MisskeyClient* client, const char* clip_id, const char* name, const char* description, int is_public, MisskeyClip* clip_out);
+MisskeyError misskey_clips_delete(MisskeyClient* client, const char* clip_id, char clip_id_out[32]);
+MisskeyError misskey_clips_add_note(MisskeyClient* client, const char* clip_id, const char* note_id);
+MisskeyError misskey_clips_remove_note(MisskeyClient* client, const char* clip_id, const char* note_id);
+MisskeyError misskey_clips_notes(MisskeyClient* client, const char* clip_id, int limit, MisskeyNote** notes_out, int* count_out);
+
+typedef size_t (*misskey_write_callback)(void* contents, size_t size, size_t nmemb, void* userp);
+typedef struct {
+    void* data;
+    size_t size;
+    size_t capacity;
+} MisskeyBuffer;
+
+typedef struct {
+    const char* url;
+    const char* output_path;
+    misskey_write_callback write_cb;
+    void* write_userdata;
+    long resume_from;
+    int follow_redirects;
+} MisskeyDownloadOptions;
+
+MisskeyError misskey_drive_files_download(MisskeyClient* client, const char* file_id,
+                                          const MisskeyDownloadOptions* options,
+                                          long* http_code_out, long* content_length_out);
+
+MisskeyError misskey_meta_raw(MisskeyClient* client, char** response_out);
+MisskeyError misskey_notes_timeline_raw(MisskeyClient* client, int limit, int local, char** response_out);
+MisskeyError misskey_notes_raw(MisskeyClient* client, const char* text, const char* reply_id, const char* renote_id, const char* channel_id, int limit, int offset, const char* user_id, int local_only, int reply, int renote, int with_files, const char* since_id, const char* until_id, char** response_out);
+MisskeyError misskey_notes_show_raw(MisskeyClient* client, const char* note_id, char** response_out);
+MisskeyError misskey_notes_delete_raw(MisskeyClient* client, const char* note_id, char** response_out);
+MisskeyError misskey_notes_create_raw(MisskeyClient* client, const char* text, const char* reply_id, const char* renote_id, char** response_out);
+MisskeyError misskey_i_notifications_raw(MisskeyClient* client, int limit, char** response_out);
+MisskeyError misskey_drive_raw(MisskeyClient* client, char** response_out);
+MisskeyError misskey_drive_files_raw(MisskeyClient* client, int limit, int folder_id, char** response_out);
+MisskeyError misskey_drive_files_create_raw(MisskeyClient* client, const char* file_path, const char* folder_id, const char* name, char** response_out);
+MisskeyError misskey_drive_files_delete_raw(MisskeyClient* client, const char* file_id, char** response_out);
+MisskeyError misskey_drive_files_update_raw(MisskeyClient* client, const char* file_id, const char* folder_id, const char* name, char** response_out);
+MisskeyError misskey_drive_files_find_raw(MisskeyClient* client, const char* hash, char** response_out);
+MisskeyError misskey_drive_files_show_raw(MisskeyClient* client, const char* file_id, const char* url, char** response_out);
+MisskeyError misskey_drive_files_upload_from_url_raw(MisskeyClient* client, const char* url, const char* folder_id, int is_sensitive, const char* comment, char** response_out);
+MisskeyError misskey_drive_folders_raw(MisskeyClient* client, int limit, const char* folder_id, char** response_out);
+MisskeyError misskey_drive_folders_create_raw(MisskeyClient* client, const char* name, const char* parent_id, char** response_out);
+MisskeyError misskey_drive_folders_delete_raw(MisskeyClient* client, const char* folder_id, char** response_out);
+MisskeyError misskey_drive_folders_update_raw(MisskeyClient* client, const char* folder_id, const char* name, const char* parent_id, char** response_out);
+MisskeyError misskey_translate_raw(MisskeyClient* client, const char* note_id, const char* target_lang, char** response_out);
+MisskeyError misskey_clips_list_raw(MisskeyClient* client, char** response_out);
+MisskeyError misskey_clips_show_raw(MisskeyClient* client, const char* clip_id, char** response_out);
+MisskeyError misskey_clips_create_raw(MisskeyClient* client, const char* name, const char* description, int is_public, char** response_out);
+MisskeyError misskey_clips_update_raw(MisskeyClient* client, const char* clip_id, const char* name, const char* description, int is_public, char** response_out);
+MisskeyError misskey_clips_delete_raw(MisskeyClient* client, const char* clip_id, char** response_out);
+MisskeyError misskey_clips_add_note_raw(MisskeyClient* client, const char* clip_id, const char* note_id, char** response_out);
+MisskeyError misskey_clips_remove_note_raw(MisskeyClient* client, const char* clip_id, const char* note_id, char** response_out);
+MisskeyError misskey_clips_notes_raw(MisskeyClient* client, const char* clip_id, int limit, char** response_out);
 
 #endif

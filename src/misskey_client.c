@@ -279,11 +279,11 @@ void misskey_request_print_curl(MisskeyClient* client, const char* endpoint,
     printf("##################################\n");
 }
 
-MisskeyError misskey_meta(MisskeyClient* client, char** response_out) {
+MisskeyError misskey_meta_raw(MisskeyClient* client, char** response_out) {
     return misskey_request(client, "meta", "{\"detail\":false}", response_out);
 }
 
-MisskeyError misskey_notes_timeline(MisskeyClient* client, int limit,
+MisskeyError misskey_notes_timeline_raw(MisskeyClient* client, int limit,
                                      int local, char** response_out) {
     cJSON* root = cJSON_CreateObject();
     cJSON_AddStringToObject(root, "i", client->token);
@@ -300,7 +300,7 @@ MisskeyError misskey_notes_timeline(MisskeyClient* client, int limit,
     return err;
 }
 
-MisskeyError misskey_notes(MisskeyClient* client, const char* text,
+MisskeyError misskey_notes_raw(MisskeyClient* client, const char* text,
                            const char* reply_id, const char* renote_id,
                            const char* channel_id, int limit, int offset,
                            const char* user_id, int local_only,
@@ -332,7 +332,7 @@ MisskeyError misskey_notes(MisskeyClient* client, const char* text,
     return err;
 }
 
-MisskeyError misskey_notes_show(MisskeyClient* client, const char* note_id,
+MisskeyError misskey_notes_show_raw(MisskeyClient* client, const char* note_id,
                                 char** response_out) {
     if (!note_id) return MISSKEY_ERROR_INVALID_PARAM;
     
@@ -348,7 +348,7 @@ MisskeyError misskey_notes_show(MisskeyClient* client, const char* note_id,
     return err;
 }
 
-MisskeyError misskey_notes_delete(MisskeyClient* client, const char* note_id,
+MisskeyError misskey_notes_delete_raw(MisskeyClient* client, const char* note_id,
                                   char** response_out) {
     if (!note_id) return MISSKEY_ERROR_INVALID_PARAM;
     
@@ -364,7 +364,7 @@ MisskeyError misskey_notes_delete(MisskeyClient* client, const char* note_id,
     return err;
 }
 
-MisskeyError misskey_notes_create(MisskeyClient* client, const char* text,
+MisskeyError misskey_notes_create_raw(MisskeyClient* client, const char* text,
                                    const char* reply_id, const char* renote_id,
                                    char** response_out) {
     if (!text) return MISSKEY_ERROR_INVALID_PARAM;
@@ -384,7 +384,7 @@ MisskeyError misskey_notes_create(MisskeyClient* client, const char* text,
     return err;
 }
 
-MisskeyError misskey_i_notifications(MisskeyClient* client, int limit,
+MisskeyError misskey_i_notifications_raw(MisskeyClient* client, int limit,
                                       char** response_out) {
     cJSON* root = cJSON_CreateObject();
     cJSON_AddStringToObject(root, "i", client->token);
@@ -403,7 +403,7 @@ void misskey_free_string(MisskeyClient* client, char* str) {
     free_allocator(&client->allocator, str);
 }
 
-MisskeyError misskey_drive(MisskeyClient* client, char** response_out) {
+MisskeyError misskey_drive_raw(MisskeyClient* client, char** response_out) {
     cJSON* root = cJSON_CreateObject();
     cJSON_AddStringToObject(root, "i", client->token);
     
@@ -415,7 +415,7 @@ MisskeyError misskey_drive(MisskeyClient* client, char** response_out) {
     return err;
 }
 
-MisskeyError misskey_drive_files(MisskeyClient* client, int limit, int folder_id,
+MisskeyError misskey_drive_files_raw(MisskeyClient* client, int limit, int folder_id,
                                   char** response_out) {
     cJSON* root = cJSON_CreateObject();
     cJSON_AddStringToObject(root, "i", client->token);
@@ -432,7 +432,7 @@ MisskeyError misskey_drive_files(MisskeyClient* client, int limit, int folder_id
     return err;
 }
 
-MisskeyError misskey_drive_files_create(MisskeyClient* client, const char* file_path,
+MisskeyError misskey_drive_files_create_raw(MisskeyClient* client, const char* file_path,
                                          const char* folder_id, const char* name,
                                          char** response_out) {
     if (!file_path) return MISSKEY_ERROR_INVALID_PARAM;
@@ -538,7 +538,7 @@ MisskeyError misskey_drive_files_create(MisskeyClient* client, const char* file_
     return MISSKEY_OK;
 }
 
-MisskeyError misskey_drive_files_delete(MisskeyClient* client, const char* file_id,
+MisskeyError misskey_drive_files_delete_raw(MisskeyClient* client, const char* file_id,
                                          char** response_out) {
     if (!file_id) return MISSKEY_ERROR_INVALID_PARAM;
     
@@ -554,7 +554,7 @@ MisskeyError misskey_drive_files_delete(MisskeyClient* client, const char* file_
     return err;
 }
 
-MisskeyError misskey_drive_files_update(MisskeyClient* client, const char* file_id,
+MisskeyError misskey_drive_files_update_raw(MisskeyClient* client, const char* file_id,
                                          const char* folder_id, const char* name,
                                          char** response_out) {
     if (!file_id) return MISSKEY_ERROR_INVALID_PARAM;
@@ -574,7 +574,7 @@ MisskeyError misskey_drive_files_update(MisskeyClient* client, const char* file_
     return err;
 }
 
-MisskeyError misskey_drive_files_find(MisskeyClient* client, const char* hash,
+MisskeyError misskey_drive_files_find_raw(MisskeyClient* client, const char* hash,
                                        char** response_out) {
     if (!hash) return MISSKEY_ERROR_INVALID_PARAM;
     
@@ -590,7 +590,7 @@ MisskeyError misskey_drive_files_find(MisskeyClient* client, const char* hash,
     return err;
 }
 
-MisskeyError misskey_drive_files_show(MisskeyClient* client, const char* file_id,
+MisskeyError misskey_drive_files_show_raw(MisskeyClient* client, const char* file_id,
                                       const char* url, char** response_out) {
     if (!file_id && !url) return MISSKEY_ERROR_INVALID_PARAM;
     
@@ -607,7 +607,7 @@ MisskeyError misskey_drive_files_show(MisskeyClient* client, const char* file_id
     return err;
 }
 
-MisskeyError misskey_drive_files_upload_from_url(MisskeyClient* client, const char* url,
+MisskeyError misskey_drive_files_upload_from_url_raw(MisskeyClient* client, const char* url,
                                                   const char* folder_id, int is_sensitive,
                                                   const char* comment, char** response_out) {
     if (!url) return MISSKEY_ERROR_INVALID_PARAM;
@@ -627,7 +627,7 @@ MisskeyError misskey_drive_files_upload_from_url(MisskeyClient* client, const ch
     return err;
 }
 
-MisskeyError misskey_drive_folders(MisskeyClient* client, int limit, const char* folder_id,
+MisskeyError misskey_drive_folders_raw(MisskeyClient* client, int limit, const char* folder_id,
                                    char** response_out) {
     cJSON* root = cJSON_CreateObject();
     cJSON_AddStringToObject(root, "i", client->token);
@@ -644,7 +644,7 @@ MisskeyError misskey_drive_folders(MisskeyClient* client, int limit, const char*
     return err;
 }
 
-MisskeyError misskey_drive_folders_create(MisskeyClient* client, const char* name,
+MisskeyError misskey_drive_folders_create_raw(MisskeyClient* client, const char* name,
                                            const char* parent_id, char** response_out) {
     if (!name) return MISSKEY_ERROR_INVALID_PARAM;
     
@@ -663,7 +663,7 @@ MisskeyError misskey_drive_folders_create(MisskeyClient* client, const char* nam
     return err;
 }
 
-MisskeyError misskey_drive_folders_delete(MisskeyClient* client, const char* folder_id,
+MisskeyError misskey_drive_folders_delete_raw(MisskeyClient* client, const char* folder_id,
                                            char** response_out) {
     if (!folder_id) return MISSKEY_ERROR_INVALID_PARAM;
     
@@ -679,7 +679,7 @@ MisskeyError misskey_drive_folders_delete(MisskeyClient* client, const char* fol
     return err;
 }
 
-MisskeyError misskey_drive_folders_update(MisskeyClient* client, const char* folder_id,
+MisskeyError misskey_drive_folders_update_raw(MisskeyClient* client, const char* folder_id,
                                            const char* name, const char* parent_id,
                                            char** response_out) {
     if (!folder_id) return MISSKEY_ERROR_INVALID_PARAM;
@@ -698,7 +698,7 @@ MisskeyError misskey_drive_folders_update(MisskeyClient* client, const char* fol
     return err;
 }
 
-MisskeyError misskey_translate(MisskeyClient* client, const char* note_id,
+MisskeyError misskey_translate_raw(MisskeyClient* client, const char* note_id,
                                 const char* target_lang, char** response_out) {
     if (!note_id || !target_lang) return MISSKEY_ERROR_INVALID_PARAM;
     
@@ -715,7 +715,7 @@ MisskeyError misskey_translate(MisskeyClient* client, const char* note_id,
     return err;
 }
 
-MisskeyError misskey_clips_list(MisskeyClient* client, char** response_out) {
+MisskeyError misskey_clips_list_raw(MisskeyClient* client, char** response_out) {
     cJSON* root = cJSON_CreateObject();
     cJSON_AddStringToObject(root, "i", client->token);
     
@@ -727,7 +727,7 @@ MisskeyError misskey_clips_list(MisskeyClient* client, char** response_out) {
     return err;
 }
 
-MisskeyError misskey_clips_show(MisskeyClient* client, const char* clip_id,
+MisskeyError misskey_clips_show_raw(MisskeyClient* client, const char* clip_id,
                                 char** response_out) {
     if (!clip_id) return MISSKEY_ERROR_INVALID_PARAM;
     
@@ -743,7 +743,7 @@ MisskeyError misskey_clips_show(MisskeyClient* client, const char* clip_id,
     return err;
 }
 
-MisskeyError misskey_clips_create(MisskeyClient* client, const char* name,
+MisskeyError misskey_clips_create_raw(MisskeyClient* client, const char* name,
                                  const char* description, int is_public,
                                  char** response_out) {
     if (!name) return MISSKEY_ERROR_INVALID_PARAM;
@@ -762,7 +762,7 @@ MisskeyError misskey_clips_create(MisskeyClient* client, const char* name,
     return err;
 }
 
-MisskeyError misskey_clips_update(MisskeyClient* client, const char* clip_id,
+MisskeyError misskey_clips_update_raw(MisskeyClient* client, const char* clip_id,
                                   const char* name, const char* description,
                                   int is_public, char** response_out) {
     if (!clip_id) return MISSKEY_ERROR_INVALID_PARAM;
@@ -782,7 +782,7 @@ MisskeyError misskey_clips_update(MisskeyClient* client, const char* clip_id,
     return err;
 }
 
-MisskeyError misskey_clips_delete(MisskeyClient* client, const char* clip_id,
+MisskeyError misskey_clips_delete_raw(MisskeyClient* client, const char* clip_id,
                                   char** response_out) {
     if (!clip_id) return MISSKEY_ERROR_INVALID_PARAM;
     
@@ -799,6 +799,25 @@ MisskeyError misskey_clips_delete(MisskeyClient* client, const char* clip_id,
 }
 
 MisskeyError misskey_clips_add_note(MisskeyClient* client, const char* clip_id,
+                                   const char* note_id) {
+    if (!clip_id || !note_id) return MISSKEY_ERROR_INVALID_PARAM;
+    
+    cJSON* root = cJSON_CreateObject();
+    cJSON_AddStringToObject(root, "i", client->token);
+    cJSON_AddStringToObject(root, "clipId", clip_id);
+    cJSON_AddStringToObject(root, "noteId", note_id);
+    
+    char* json_str = cJSON_PrintUnformatted(root);
+    char* resp = NULL;
+    MisskeyError err = misskey_request(client, "clips/add-note", json_str, &resp);
+    
+    free(json_str);
+    cJSON_Delete(root);
+    if (resp) misskey_free_string(client, resp);
+    return err;
+}
+
+MisskeyError misskey_clips_add_note_raw(MisskeyClient* client, const char* clip_id,
                                    const char* note_id, char** response_out) {
     if (!clip_id || !note_id) return MISSKEY_ERROR_INVALID_PARAM;
     
@@ -816,6 +835,25 @@ MisskeyError misskey_clips_add_note(MisskeyClient* client, const char* clip_id,
 }
 
 MisskeyError misskey_clips_remove_note(MisskeyClient* client, const char* clip_id,
+                                      const char* note_id) {
+    if (!clip_id || !note_id) return MISSKEY_ERROR_INVALID_PARAM;
+    
+    cJSON* root = cJSON_CreateObject();
+    cJSON_AddStringToObject(root, "i", client->token);
+    cJSON_AddStringToObject(root, "clipId", clip_id);
+    cJSON_AddStringToObject(root, "noteId", note_id);
+    
+    char* json_str = cJSON_PrintUnformatted(root);
+    char* resp = NULL;
+    MisskeyError err = misskey_request(client, "clips/remove-note", json_str, &resp);
+    
+    free(json_str);
+    cJSON_Delete(root);
+    if (resp) misskey_free_string(client, resp);
+    return err;
+}
+
+MisskeyError misskey_clips_remove_note_raw(MisskeyClient* client, const char* clip_id,
                                       const char* note_id, char** response_out) {
     if (!clip_id || !note_id) return MISSKEY_ERROR_INVALID_PARAM;
     
@@ -832,7 +870,7 @@ MisskeyError misskey_clips_remove_note(MisskeyClient* client, const char* clip_i
     return err;
 }
 
-MisskeyError misskey_clips_notes(MisskeyClient* client, const char* clip_id,
+MisskeyError misskey_clips_notes_raw(MisskeyClient* client, const char* clip_id,
                                  int limit, char** response_out) {
     if (!clip_id) return MISSKEY_ERROR_INVALID_PARAM;
     
@@ -898,7 +936,7 @@ MisskeyError misskey_drive_files_download(MisskeyClient* client, const char* fil
         if (!file_id) return MISSKEY_ERROR_INVALID_PARAM;
         
         char* file_info = NULL;
-        MisskeyError err = misskey_drive_files_show(client, file_id, NULL, &file_info);
+        MisskeyError err = misskey_drive_files_show_raw(client, file_id, NULL, &file_info);
         if (err != MISSKEY_OK) return err;
         
         cJSON* json = cJSON_Parse(file_info);
@@ -1124,12 +1162,12 @@ void misskey_meta_init(MisskeyMeta* m) {
     memset(m, 0, sizeof(MisskeyMeta));
 }
 
-MisskeyError misskey_meta_struct(MisskeyClient* client, MisskeyMeta* meta) {
+MisskeyError misskey_meta(MisskeyClient* client, MisskeyMeta* meta) {
     if (!client || !meta) return MISSKEY_ERROR_INVALID_PARAM;
     misskey_meta_init(meta);
     
     char* resp = NULL;
-    MisskeyError err = misskey_meta(client, &resp);
+    MisskeyError err = misskey_meta_raw(client, &resp);
     if (err != MISSKEY_OK) return err;
     
     cJSON* root = cJSON_Parse(resp);
@@ -1199,13 +1237,13 @@ MisskeyError misskey_meta_struct(MisskeyClient* client, MisskeyMeta* meta) {
     return MISSKEY_OK;
 }
 
-MisskeyError misskey_notes_timeline_struct(MisskeyClient* client, int limit, int local, MisskeyNote** notes_out, int* count_out) {
+MisskeyError misskey_notes_timeline(MisskeyClient* client, int limit, int local, MisskeyNote** notes_out, int* count_out) {
     if (!client || !notes_out || !count_out) return MISSKEY_ERROR_INVALID_PARAM;
     *notes_out = NULL;
     *count_out = 0;
     
     char* resp = NULL;
-    MisskeyError err = misskey_notes_timeline(client, limit, local, &resp);
+    MisskeyError err = misskey_notes_timeline_raw(client, limit, local, &resp);
     if (err != MISSKEY_OK) return err;
     
     cJSON* root = cJSON_Parse(resp);
@@ -1241,12 +1279,12 @@ MisskeyError misskey_notes_timeline_struct(MisskeyClient* client, int limit, int
     return MISSKEY_OK;
 }
 
-MisskeyError misskey_notes_create_struct(MisskeyClient* client, const char* text, const char* reply_id, const char* renote_id, MisskeyNote* note_out) {
+MisskeyError misskey_notes_create(MisskeyClient* client, const char* text, const char* reply_id, const char* renote_id, MisskeyNote* note_out) {
     if (!client || !note_out) return MISSKEY_ERROR_INVALID_PARAM;
     misskey_note_init(note_out);
     
     char* resp = NULL;
-    MisskeyError err = misskey_notes_create(client, text, reply_id, renote_id, &resp);
+    MisskeyError err = misskey_notes_create_raw(client, text, reply_id, renote_id, &resp);
     if (err != MISSKEY_OK) return err;
     
     cJSON* root = cJSON_Parse(resp);
@@ -1265,12 +1303,12 @@ MisskeyError misskey_notes_create_struct(MisskeyClient* client, const char* text
     return MISSKEY_OK;
 }
 
-MisskeyError misskey_notes_show_struct(MisskeyClient* client, const char* note_id, MisskeyNote* note_out) {
+MisskeyError misskey_notes_show(MisskeyClient* client, const char* note_id, MisskeyNote* note_out) {
     if (!client || !note_id || !note_out) return MISSKEY_ERROR_INVALID_PARAM;
     misskey_note_init(note_out);
     
     char* resp = NULL;
-    MisskeyError err = misskey_notes_show(client, note_id, &resp);
+    MisskeyError err = misskey_notes_show_raw(client, note_id, &resp);
     if (err != MISSKEY_OK) return err;
     
     cJSON* root = cJSON_Parse(resp);
@@ -1286,12 +1324,12 @@ MisskeyError misskey_notes_show_struct(MisskeyClient* client, const char* note_i
     return MISSKEY_OK;
 }
 
-MisskeyError misskey_notes_delete_struct(MisskeyClient* client, const char* note_id, char note_id_out[32]) {
+MisskeyError misskey_notes_delete(MisskeyClient* client, const char* note_id, char note_id_out[32]) {
     if (!client || !note_id || !note_id_out) return MISSKEY_ERROR_INVALID_PARAM;
     note_id_out[0] = '\0';
     
     char* resp = NULL;
-    MisskeyError err = misskey_notes_delete(client, note_id, &resp);
+    MisskeyError err = misskey_notes_delete_raw(client, note_id, &resp);
     if (err != MISSKEY_OK) return err;
     
     strncpy(note_id_out, note_id, 31);
@@ -1300,13 +1338,13 @@ MisskeyError misskey_notes_delete_struct(MisskeyClient* client, const char* note
     return MISSKEY_OK;
 }
 
-MisskeyError misskey_notes_struct(MisskeyClient* client, const char* text, const char* reply_id, const char* renote_id, const char* channel_id, int limit, int offset, const char* user_id, int local_only, int reply, int renote, int with_files, const char* since_id, const char* until_id, MisskeyNote** notes_out, int* count_out) {
+MisskeyError misskey_notes(MisskeyClient* client, const char* text, const char* reply_id, const char* renote_id, const char* channel_id, int limit, int offset, const char* user_id, int local_only, int reply, int renote, int with_files, const char* since_id, const char* until_id, MisskeyNote** notes_out, int* count_out) {
     if (!client || !notes_out || !count_out) return MISSKEY_ERROR_INVALID_PARAM;
     *notes_out = NULL;
     *count_out = 0;
     
     char* resp = NULL;
-    MisskeyError err = misskey_notes(client, text, reply_id, renote_id, channel_id, limit, offset, user_id, local_only, reply, renote, with_files, since_id, until_id, &resp);
+    MisskeyError err = misskey_notes_raw(client, text, reply_id, renote_id, channel_id, limit, offset, user_id, local_only, reply, renote, with_files, since_id, until_id, &resp);
     if (err != MISSKEY_OK) return err;
     
     cJSON* root = cJSON_Parse(resp);
@@ -1342,13 +1380,13 @@ MisskeyError misskey_notes_struct(MisskeyClient* client, const char* text, const
     return MISSKEY_OK;
 }
 
-MisskeyError misskey_i_notifications_struct(MisskeyClient* client, int limit, MisskeyNotification** notifications_out, int* count_out) {
+MisskeyError misskey_i_notifications(MisskeyClient* client, int limit, MisskeyNotification** notifications_out, int* count_out) {
     if (!client || !notifications_out || !count_out) return MISSKEY_ERROR_INVALID_PARAM;
     *notifications_out = NULL;
     *count_out = 0;
     
     char* resp = NULL;
-    MisskeyError err = misskey_i_notifications(client, limit, &resp);
+    MisskeyError err = misskey_i_notifications_raw(client, limit, &resp);
     if (err != MISSKEY_OK) return err;
     
     cJSON* root = cJSON_Parse(resp);
@@ -1405,12 +1443,12 @@ MisskeyError misskey_i_notifications_struct(MisskeyClient* client, int limit, Mi
     return MISSKEY_OK;
 }
 
-MisskeyError misskey_drive_struct(MisskeyClient* client, MisskeyDriveInfo* info) {
+MisskeyError misskey_drive(MisskeyClient* client, MisskeyDriveInfo* info) {
     if (!client || !info) return MISSKEY_ERROR_INVALID_PARAM;
     misskey_drive_info_init(info);
     
     char* resp = NULL;
-    MisskeyError err = misskey_drive(client, &resp);
+    MisskeyError err = misskey_drive_raw(client, &resp);
     if (err != MISSKEY_OK) return err;
     
     cJSON* root = cJSON_Parse(resp);
@@ -1492,11 +1530,11 @@ static MisskeyError parse_drive_files(MisskeyClient* client, char* resp, Misskey
     return MISSKEY_OK;
 }
 
-MisskeyError misskey_drive_files_struct(MisskeyClient* client, int limit, const char* folder_id, MisskeyDriveFile** files_out, int* count_out) {
+MisskeyError misskey_drive_files(MisskeyClient* client, int limit, const char* folder_id, MisskeyDriveFile** files_out, int* count_out) {
     if (!client || !files_out || !count_out) return MISSKEY_ERROR_INVALID_PARAM;
     
     char* resp = NULL;
-    MisskeyError err = misskey_drive_files(client, limit, folder_id ? 1 : 0, &resp);
+    MisskeyError err = misskey_drive_files_raw(client, limit, folder_id ? 1 : 0, &resp);
     if (err != MISSKEY_OK) return err;
     
     err = parse_drive_files(client, resp, files_out, count_out);
@@ -1504,12 +1542,12 @@ MisskeyError misskey_drive_files_struct(MisskeyClient* client, int limit, const 
     return err;
 }
 
-MisskeyError misskey_drive_files_create_struct(MisskeyClient* client, const char* file_path, const char* folder_id, const char* name, MisskeyDriveFile* file_out) {
+MisskeyError misskey_drive_files_create(MisskeyClient* client, const char* file_path, const char* folder_id, const char* name, MisskeyDriveFile* file_out) {
     if (!client || !file_out) return MISSKEY_ERROR_INVALID_PARAM;
     misskey_drive_file_init(file_out);
     
     char* resp = NULL;
-    MisskeyError err = misskey_drive_files_create(client, file_path, folder_id, name, &resp);
+    MisskeyError err = misskey_drive_files_create_raw(client, file_path, folder_id, name, &resp);
     if (err != MISSKEY_OK) return err;
     
     cJSON* root = cJSON_Parse(resp);
@@ -1529,12 +1567,12 @@ MisskeyError misskey_drive_files_create_struct(MisskeyClient* client, const char
     return MISSKEY_OK;
 }
 
-MisskeyError misskey_drive_files_delete_struct(MisskeyClient* client, const char* file_id, char file_id_out[32]) {
+MisskeyError misskey_drive_files_delete(MisskeyClient* client, const char* file_id, char file_id_out[32]) {
     if (!client || !file_id || !file_id_out) return MISSKEY_ERROR_INVALID_PARAM;
     file_id_out[0] = '\0';
     
     char* resp = NULL;
-    MisskeyError err = misskey_drive_files_delete(client, file_id, &resp);
+    MisskeyError err = misskey_drive_files_delete_raw(client, file_id, &resp);
     if (err != MISSKEY_OK) return err;
     
     strncpy(file_id_out, file_id, 31);
@@ -1542,12 +1580,12 @@ MisskeyError misskey_drive_files_delete_struct(MisskeyClient* client, const char
     return MISSKEY_OK;
 }
 
-MisskeyError misskey_drive_files_update_struct(MisskeyClient* client, const char* file_id, const char* folder_id, const char* name, MisskeyDriveFile* file_out) {
+MisskeyError misskey_drive_files_update(MisskeyClient* client, const char* file_id, const char* folder_id, const char* name, MisskeyDriveFile* file_out) {
     if (!client || !file_out) return MISSKEY_ERROR_INVALID_PARAM;
     misskey_drive_file_init(file_out);
     
     char* resp = NULL;
-    MisskeyError err = misskey_drive_files_update(client, file_id, folder_id, name, &resp);
+    MisskeyError err = misskey_drive_files_update_raw(client, file_id, folder_id, name, &resp);
     if (err != MISSKEY_OK) return err;
     
     cJSON* root = cJSON_Parse(resp);
@@ -1563,11 +1601,11 @@ MisskeyError misskey_drive_files_update_struct(MisskeyClient* client, const char
     return MISSKEY_OK;
 }
 
-MisskeyError misskey_drive_files_find_struct(MisskeyClient* client, const char* hash, MisskeyDriveFile** files_out, int* count_out) {
+MisskeyError misskey_drive_files_find(MisskeyClient* client, const char* hash, MisskeyDriveFile** files_out, int* count_out) {
     if (!client || !files_out || !count_out) return MISSKEY_ERROR_INVALID_PARAM;
     
     char* resp = NULL;
-    MisskeyError err = misskey_drive_files_find(client, hash, &resp);
+    MisskeyError err = misskey_drive_files_find_raw(client, hash, &resp);
     if (err != MISSKEY_OK) return err;
     
     err = parse_drive_files(client, resp, files_out, count_out);
@@ -1575,12 +1613,12 @@ MisskeyError misskey_drive_files_find_struct(MisskeyClient* client, const char* 
     return err;
 }
 
-MisskeyError misskey_drive_files_show_struct(MisskeyClient* client, const char* file_id, const char* url, MisskeyDriveFile* file_out) {
+MisskeyError misskey_drive_files_show(MisskeyClient* client, const char* file_id, const char* url, MisskeyDriveFile* file_out) {
     if (!client || !file_out) return MISSKEY_ERROR_INVALID_PARAM;
     misskey_drive_file_init(file_out);
     
     char* resp = NULL;
-    MisskeyError err = misskey_drive_files_show(client, file_id, url, &resp);
+    MisskeyError err = misskey_drive_files_show_raw(client, file_id, url, &resp);
     if (err != MISSKEY_OK) return err;
     
     cJSON* root = cJSON_Parse(resp);
@@ -1598,12 +1636,12 @@ MisskeyError misskey_drive_files_show_struct(MisskeyClient* client, const char* 
     return MISSKEY_OK;
 }
 
-MisskeyError misskey_drive_files_upload_from_url_struct(MisskeyClient* client, const char* url, const char* folder_id, int is_sensitive, const char* comment, MisskeyDriveFile* file_out) {
+MisskeyError misskey_drive_files_upload_from_url(MisskeyClient* client, const char* url, const char* folder_id, int is_sensitive, const char* comment, MisskeyDriveFile* file_out) {
     if (!client || !file_out) return MISSKEY_ERROR_INVALID_PARAM;
     misskey_drive_file_init(file_out);
     
     char* resp = NULL;
-    MisskeyError err = misskey_drive_files_upload_from_url(client, url, folder_id, is_sensitive, comment, &resp);
+    MisskeyError err = misskey_drive_files_upload_from_url_raw(client, url, folder_id, is_sensitive, comment, &resp);
     if (err != MISSKEY_OK) return err;
     
     cJSON* root = cJSON_Parse(resp);
@@ -1619,13 +1657,13 @@ MisskeyError misskey_drive_files_upload_from_url_struct(MisskeyClient* client, c
     return MISSKEY_OK;
 }
 
-MisskeyError misskey_drive_folders_struct(MisskeyClient* client, int limit, const char* folder_id, MisskeyDriveFolder** folders_out, int* count_out) {
+MisskeyError misskey_drive_folders(MisskeyClient* client, int limit, const char* folder_id, MisskeyDriveFolder** folders_out, int* count_out) {
     if (!client || !folders_out || !count_out) return MISSKEY_ERROR_INVALID_PARAM;
     *folders_out = NULL;
     *count_out = 0;
     
     char* resp = NULL;
-    MisskeyError err = misskey_drive_folders(client, limit, folder_id, &resp);
+    MisskeyError err = misskey_drive_folders_raw(client, limit, folder_id, &resp);
     if (err != MISSKEY_OK) return err;
     
     cJSON* root = cJSON_Parse(resp);
@@ -1675,12 +1713,12 @@ MisskeyError misskey_drive_folders_struct(MisskeyClient* client, int limit, cons
     return MISSKEY_OK;
 }
 
-MisskeyError misskey_drive_folders_create_struct(MisskeyClient* client, const char* name, const char* parent_id, MisskeyDriveFolder* folder_out) {
+MisskeyError misskey_drive_folders_create(MisskeyClient* client, const char* name, const char* parent_id, MisskeyDriveFolder* folder_out) {
     if (!client || !folder_out) return MISSKEY_ERROR_INVALID_PARAM;
     misskey_drive_folder_init(folder_out);
     
     char* resp = NULL;
-    MisskeyError err = misskey_drive_folders_create(client, name, parent_id, &resp);
+    MisskeyError err = misskey_drive_folders_create_raw(client, name, parent_id, &resp);
     if (err != MISSKEY_OK) return err;
     
     cJSON* root = cJSON_Parse(resp);
@@ -1696,12 +1734,12 @@ MisskeyError misskey_drive_folders_create_struct(MisskeyClient* client, const ch
     return MISSKEY_OK;
 }
 
-MisskeyError misskey_drive_folders_delete_struct(MisskeyClient* client, const char* folder_id, char folder_id_out[32]) {
+MisskeyError misskey_drive_folders_delete(MisskeyClient* client, const char* folder_id, char folder_id_out[32]) {
     if (!client || !folder_id || !folder_id_out) return MISSKEY_ERROR_INVALID_PARAM;
     folder_id_out[0] = '\0';
     
     char* resp = NULL;
-    MisskeyError err = misskey_drive_folders_delete(client, folder_id, &resp);
+    MisskeyError err = misskey_drive_folders_delete_raw(client, folder_id, &resp);
     if (err != MISSKEY_OK) return err;
     
     strncpy(folder_id_out, folder_id, 31);
@@ -1709,12 +1747,12 @@ MisskeyError misskey_drive_folders_delete_struct(MisskeyClient* client, const ch
     return MISSKEY_OK;
 }
 
-MisskeyError misskey_drive_folders_update_struct(MisskeyClient* client, const char* folder_id, const char* name, const char* parent_id, MisskeyDriveFolder* folder_out) {
+MisskeyError misskey_drive_folders_update(MisskeyClient* client, const char* folder_id, const char* name, const char* parent_id, MisskeyDriveFolder* folder_out) {
     if (!client || !folder_out) return MISSKEY_ERROR_INVALID_PARAM;
     misskey_drive_folder_init(folder_out);
     
     char* resp = NULL;
-    MisskeyError err = misskey_drive_folders_update(client, folder_id, name, parent_id, &resp);
+    MisskeyError err = misskey_drive_folders_update_raw(client, folder_id, name, parent_id, &resp);
     if (err != MISSKEY_OK) return err;
     
     cJSON* root = cJSON_Parse(resp);
@@ -1730,12 +1768,12 @@ MisskeyError misskey_drive_folders_update_struct(MisskeyClient* client, const ch
     return MISSKEY_OK;
 }
 
-MisskeyError misskey_translate_struct(MisskeyClient* client, const char* note_id, const char* target_lang, MisskeyTranslateResult* result_out) {
+MisskeyError misskey_translate(MisskeyClient* client, const char* note_id, const char* target_lang, MisskeyTranslateResult* result_out) {
     if (!client || !note_id || !target_lang || !result_out) return MISSKEY_ERROR_INVALID_PARAM;
     misskey_translate_result_init(result_out);
     
     char* resp = NULL;
-    MisskeyError err = misskey_translate(client, note_id, target_lang, &resp);
+    MisskeyError err = misskey_translate_raw(client, note_id, target_lang, &resp);
     if (err != MISSKEY_OK) return err;
     
     cJSON* root = cJSON_Parse(resp);
@@ -1757,13 +1795,13 @@ MisskeyError misskey_translate_struct(MisskeyClient* client, const char* note_id
     return MISSKEY_OK;
 }
 
-MisskeyError misskey_clips_list_struct(MisskeyClient* client, MisskeyClip** clips_out, int* count_out) {
+MisskeyError misskey_clips_list(MisskeyClient* client, MisskeyClip** clips_out, int* count_out) {
     if (!client || !clips_out || !count_out) return MISSKEY_ERROR_INVALID_PARAM;
     *clips_out = NULL;
     *count_out = 0;
     
     char* resp = NULL;
-    MisskeyError err = misskey_clips_list(client, &resp);
+    MisskeyError err = misskey_clips_list_raw(client, &resp);
     if (err != MISSKEY_OK) return err;
     
     cJSON* root = cJSON_Parse(resp);
@@ -1813,12 +1851,12 @@ MisskeyError misskey_clips_list_struct(MisskeyClient* client, MisskeyClip** clip
     return MISSKEY_OK;
 }
 
-MisskeyError misskey_clips_show_struct(MisskeyClient* client, const char* clip_id, MisskeyClip* clip_out) {
+MisskeyError misskey_clips_show(MisskeyClient* client, const char* clip_id, MisskeyClip* clip_out) {
     if (!client || !clip_id || !clip_out) return MISSKEY_ERROR_INVALID_PARAM;
     misskey_clip_init(clip_out);
     
     char* resp = NULL;
-    MisskeyError err = misskey_clips_show(client, clip_id, &resp);
+    MisskeyError err = misskey_clips_show_raw(client, clip_id, &resp);
     if (err != MISSKEY_OK) return err;
     
     cJSON* root = cJSON_Parse(resp);
@@ -1840,12 +1878,12 @@ MisskeyError misskey_clips_show_struct(MisskeyClient* client, const char* clip_i
     return MISSKEY_OK;
 }
 
-MisskeyError misskey_clips_create_struct(MisskeyClient* client, const char* name, const char* description, int is_public, MisskeyClip* clip_out) {
+MisskeyError misskey_clips_create(MisskeyClient* client, const char* name, const char* description, int is_public, MisskeyClip* clip_out) {
     if (!client || !clip_out) return MISSKEY_ERROR_INVALID_PARAM;
     misskey_clip_init(clip_out);
     
     char* resp = NULL;
-    MisskeyError err = misskey_clips_create(client, name, description, is_public, &resp);
+    MisskeyError err = misskey_clips_create_raw(client, name, description, is_public, &resp);
     if (err != MISSKEY_OK) return err;
     
     cJSON* root = cJSON_Parse(resp);
@@ -1864,12 +1902,12 @@ MisskeyError misskey_clips_create_struct(MisskeyClient* client, const char* name
     return MISSKEY_OK;
 }
 
-MisskeyError misskey_clips_update_struct(MisskeyClient* client, const char* clip_id, const char* name, const char* description, int is_public, MisskeyClip* clip_out) {
+MisskeyError misskey_clips_update(MisskeyClient* client, const char* clip_id, const char* name, const char* description, int is_public, MisskeyClip* clip_out) {
     if (!client || !clip_out) return MISSKEY_ERROR_INVALID_PARAM;
     misskey_clip_init(clip_out);
     
     char* resp = NULL;
-    MisskeyError err = misskey_clips_update(client, clip_id, name, description, is_public, &resp);
+    MisskeyError err = misskey_clips_update_raw(client, clip_id, name, description, is_public, &resp);
     if (err != MISSKEY_OK) return err;
     
     cJSON* root = cJSON_Parse(resp);
@@ -1885,12 +1923,12 @@ MisskeyError misskey_clips_update_struct(MisskeyClient* client, const char* clip
     return MISSKEY_OK;
 }
 
-MisskeyError misskey_clips_delete_struct(MisskeyClient* client, const char* clip_id, char clip_id_out[32]) {
+MisskeyError misskey_clips_delete(MisskeyClient* client, const char* clip_id, char clip_id_out[32]) {
     if (!client || !clip_id || !clip_id_out) return MISSKEY_ERROR_INVALID_PARAM;
     clip_id_out[0] = '\0';
     
     char* resp = NULL;
-    MisskeyError err = misskey_clips_delete(client, clip_id, &resp);
+    MisskeyError err = misskey_clips_delete_raw(client, clip_id, &resp);
     if (err != MISSKEY_OK) return err;
     
     strncpy(clip_id_out, clip_id, 31);
@@ -1898,13 +1936,13 @@ MisskeyError misskey_clips_delete_struct(MisskeyClient* client, const char* clip
     return MISSKEY_OK;
 }
 
-MisskeyError misskey_clips_notes_struct(MisskeyClient* client, const char* clip_id, int limit, MisskeyNote** notes_out, int* count_out) {
+MisskeyError misskey_clips_notes(MisskeyClient* client, const char* clip_id, int limit, MisskeyNote** notes_out, int* count_out) {
     if (!client || !notes_out || !count_out) return MISSKEY_ERROR_INVALID_PARAM;
     *notes_out = NULL;
     *count_out = 0;
     
     char* resp = NULL;
-    MisskeyError err = misskey_clips_notes(client, clip_id, limit, &resp);
+    MisskeyError err = misskey_clips_notes_raw(client, clip_id, limit, &resp);
     if (err != MISSKEY_OK) return err;
     
     cJSON* root = cJSON_Parse(resp);

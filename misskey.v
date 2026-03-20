@@ -177,32 +177,32 @@ fn C.misskey_translate_result_init(r &C.MisskeyTranslateResult)
 fn C.misskey_clip_init(c &C.MisskeyClip)
 fn C.misskey_meta_init(m &C.MisskeyMeta)
 
-fn C.misskey_meta_struct(client &C.MisskeyClient, meta &C.MisskeyMeta) int
-fn C.misskey_notes_timeline_struct(client &C.MisskeyClient, limit int, local int, notes_out &&C.MisskeyNote, count_out &int) int
-fn C.misskey_notes_create_struct(client &C.MisskeyClient, text charptr, reply_id charptr, renote_id charptr, note_out &C.MisskeyNote) int
-fn C.misskey_notes_show_struct(client &C.MisskeyClient, note_id charptr, note_out &C.MisskeyNote) int
-fn C.misskey_notes_delete_struct(client &C.MisskeyClient, note_id charptr, note_id_out &byte) int
-fn C.misskey_notes_struct(client &C.MisskeyClient, text charptr, reply_id charptr, renote_id charptr, channel_id charptr, limit int, offset int, user_id charptr, local_only int, reply int, renote int, with_files int, since_id charptr, until_id charptr, notes_out &&C.MisskeyNote, count_out &int) int
-fn C.misskey_i_notifications_struct(client &C.MisskeyClient, limit int, notifications_out &&C.MisskeyNotification, count_out &int) int
-fn C.misskey_drive_struct(client &C.MisskeyClient, info &C.MisskeyDriveInfo) int
-fn C.misskey_drive_files_struct(client &C.MisskeyClient, limit int, folder_id charptr, files_out &&C.MisskeyDriveFile, count_out &int) int
-fn C.misskey_drive_files_create_struct(client &C.MisskeyClient, file_path charptr, folder_id charptr, name charptr, file_out &C.MisskeyDriveFile) int
-fn C.misskey_drive_files_delete_struct(client &C.MisskeyClient, file_id charptr, file_id_out &byte) int
-fn C.misskey_drive_files_update_struct(client &C.MisskeyClient, file_id charptr, folder_id charptr, name charptr, file_out &C.MisskeyDriveFile) int
-fn C.misskey_drive_files_find_struct(client &C.MisskeyClient, hash charptr, files_out &&C.MisskeyDriveFile, count_out &int) int
-fn C.misskey_drive_files_show_struct(client &C.MisskeyClient, file_id charptr, url charptr, file_out &C.MisskeyDriveFile) int
-fn C.misskey_drive_files_upload_from_url_struct(client &C.MisskeyClient, url charptr, folder_id charptr, is_sensitive int, comment charptr, file_out &C.MisskeyDriveFile) int
-fn C.misskey_drive_folders_struct(client &C.MisskeyClient, limit int, folder_id charptr, folders_out &&C.MisskeyDriveFolder, count_out &int) int
-fn C.misskey_drive_folders_create_struct(client &C.MisskeyClient, name charptr, parent_id charptr, folder_out &C.MisskeyDriveFolder) int
-fn C.misskey_drive_folders_delete_struct(client &C.MisskeyClient, folder_id charptr, folder_id_out &byte) int
-fn C.misskey_drive_folders_update_struct(client &C.MisskeyClient, folder_id charptr, name charptr, parent_id charptr, folder_out &C.MisskeyDriveFolder) int
-fn C.misskey_translate_struct(client &C.MisskeyClient, note_id charptr, target_lang charptr, result_out &C.MisskeyTranslateResult) int
-fn C.misskey_clips_list_struct(client &C.MisskeyClient, clips_out &&C.MisskeyClip, count_out &int) int
-fn C.misskey_clips_show_struct(client &C.MisskeyClient, clip_id charptr, clip_out &C.MisskeyClip) int
-fn C.misskey_clips_create_struct(client &C.MisskeyClient, name charptr, description charptr, is_public int, clip_out &C.MisskeyClip) int
-fn C.misskey_clips_update_struct(client &C.MisskeyClient, clip_id charptr, name charptr, description charptr, is_public int, clip_out &C.MisskeyClip) int
-fn C.misskey_clips_delete_struct(client &C.MisskeyClient, clip_id charptr, clip_id_out &byte) int
-fn C.misskey_clips_notes_struct(client &C.MisskeyClient, clip_id charptr, limit int, notes_out &&C.MisskeyNote, count_out &int) int
+fn C.misskey_meta(client &C.MisskeyClient, meta &C.MisskeyMeta) int
+fn C.misskey_notes_timeline(client &C.MisskeyClient, limit int, local int, notes_out &&C.MisskeyNote, count_out &int) int
+fn C.misskey_notes_create(client &C.MisskeyClient, text charptr, reply_id charptr, renote_id charptr, note_out &C.MisskeyNote) int
+fn C.misskey_notes_show(client &C.MisskeyClient, note_id charptr, note_out &C.MisskeyNote) int
+fn C.misskey_notes_delete(client &C.MisskeyClient, note_id charptr, note_id_out &byte) int
+fn C.misskey_notes(client &C.MisskeyClient, text charptr, reply_id charptr, renote_id charptr, channel_id charptr, limit int, offset int, user_id charptr, local_only int, reply int, renote int, with_files int, since_id charptr, until_id charptr, notes_out &&C.MisskeyNote, count_out &int) int
+fn C.misskey_i_notifications(client &C.MisskeyClient, limit int, notifications_out &&C.MisskeyNotification, count_out &int) int
+fn C.misskey_drive(client &C.MisskeyClient, info &C.MisskeyDriveInfo) int
+fn C.misskey_drive_files(client &C.MisskeyClient, limit int, folder_id charptr, files_out &&C.MisskeyDriveFile, count_out &int) int
+fn C.misskey_drive_files_create(client &C.MisskeyClient, file_path charptr, folder_id charptr, name charptr, file_out &C.MisskeyDriveFile) int
+fn C.misskey_drive_files_delete(client &C.MisskeyClient, file_id charptr, file_id_out &byte) int
+fn C.misskey_drive_files_update(client &C.MisskeyClient, file_id charptr, folder_id charptr, name charptr, file_out &C.MisskeyDriveFile) int
+fn C.misskey_drive_files_find(client &C.MisskeyClient, hash charptr, files_out &&C.MisskeyDriveFile, count_out &int) int
+fn C.misskey_drive_files_show(client &C.MisskeyClient, file_id charptr, url charptr, file_out &C.MisskeyDriveFile) int
+fn C.misskey_drive_files_upload_from_url(client &C.MisskeyClient, url charptr, folder_id charptr, is_sensitive int, comment charptr, file_out &C.MisskeyDriveFile) int
+fn C.misskey_drive_folders(client &C.MisskeyClient, limit int, folder_id charptr, folders_out &&C.MisskeyDriveFolder, count_out &int) int
+fn C.misskey_drive_folders_create(client &C.MisskeyClient, name charptr, parent_id charptr, folder_out &C.MisskeyDriveFolder) int
+fn C.misskey_drive_folders_delete(client &C.MisskeyClient, folder_id charptr, folder_id_out &byte) int
+fn C.misskey_drive_folders_update(client &C.MisskeyClient, folder_id charptr, name charptr, parent_id charptr, folder_out &C.MisskeyDriveFolder) int
+fn C.misskey_translate(client &C.MisskeyClient, note_id charptr, target_lang charptr, result_out &C.MisskeyTranslateResult) int
+fn C.misskey_clips_list(client &C.MisskeyClient, clips_out &&C.MisskeyClip, count_out &int) int
+fn C.misskey_clips_show(client &C.MisskeyClient, clip_id charptr, clip_out &C.MisskeyClip) int
+fn C.misskey_clips_create(client &C.MisskeyClient, name charptr, description charptr, is_public int, clip_out &C.MisskeyClip) int
+fn C.misskey_clips_update(client &C.MisskeyClient, clip_id charptr, name charptr, description charptr, is_public int, clip_out &C.MisskeyClip) int
+fn C.misskey_clips_delete(client &C.MisskeyClient, clip_id charptr, clip_id_out &byte) int
+fn C.misskey_clips_notes(client &C.MisskeyClient, clip_id charptr, limit int, notes_out &&C.MisskeyNote, count_out &int) int
 
 fn C.misskey_free_notes(client &C.MisskeyClient, notes &C.MisskeyNote, count int)
 fn C.misskey_free_notifications(client &C.MisskeyClient, notifications &C.MisskeyNotification, count int)
@@ -850,11 +850,11 @@ fn to_meta(cmeta &C.MisskeyMeta) Meta {
 }
 
 // Structured API methods
-pub fn (mut c Client) meta_struct() !Meta {
+pub fn (mut c Client) meta() !Meta {
 	C.misskey_meta_init(voidptr(0))
 	mut cmeta := &C.MisskeyMeta{}
 	C.misskey_meta_init(cmeta)
-	ret := C.misskey_meta_struct(c.c_client, cmeta)
+	ret := C.misskey_meta(c.c_client, cmeta)
 	if ret != 0 {
 		return error('meta failed: ${MisskeyError(ret)}')
 	}
@@ -862,11 +862,11 @@ pub fn (mut c Client) meta_struct() !Meta {
 	return result
 }
 
-pub fn (mut c Client) notes_timeline_struct(limit int, local bool) ![]Note {
+pub fn (mut c Client) notes_timeline(limit int, local bool) ![]Note {
 	local_val := if local { 1 } else { 0 }
 	mut notes_ptr := &C.MisskeyNote(0)
 	mut count := 0
-	ret := C.misskey_notes_timeline_struct(c.c_client, limit, local_val, &notes_ptr, &count)
+	ret := C.misskey_notes_timeline(c.c_client, limit, local_val, &notes_ptr, &count)
 	if ret != 0 {
 		return error('notes_timeline failed: ${MisskeyError(ret)}')
 	}
@@ -879,39 +879,39 @@ pub fn (mut c Client) notes_timeline_struct(limit int, local bool) ![]Note {
 	return result
 }
 
-pub fn (mut c Client) notes_create_struct(text string, reply_id string, renote_id string) !Note {
+pub fn (mut c Client) notes_create(text string, reply_id string, renote_id string) !Note {
 	reply_cstr := if reply_id.len > 0 { &char(reply_id.str) } else { voidptr(0) }
 	renote_cstr := if renote_id.len > 0 { &char(renote_id.str) } else { voidptr(0) }
 	mut cnote := &C.MisskeyNote{}
 	C.misskey_note_init(cnote)
-	ret := C.misskey_notes_create_struct(c.c_client, &char(text.str), reply_cstr, renote_cstr, cnote)
+	ret := C.misskey_notes_create(c.c_client, &char(text.str), reply_cstr, renote_cstr, cnote)
 	if ret != 0 {
 		return error('notes_create failed: ${MisskeyError(ret)}')
 	}
 	return to_note(cnote)
 }
 
-pub fn (mut c Client) notes_show_struct(note_id string) !Note {
+pub fn (mut c Client) notes_show(note_id string) !Note {
 	mut cnote := &C.MisskeyNote{}
 	C.misskey_note_init(cnote)
-	ret := C.misskey_notes_show_struct(c.c_client, &char(note_id.str), cnote)
+	ret := C.misskey_notes_show(c.c_client, &char(note_id.str), cnote)
 	if ret != 0 {
 		return error('notes_show failed: ${MisskeyError(ret)}')
 	}
 	return to_note(cnote)
 }
 
-pub fn (mut c Client) notes_delete_struct(note_id string) ! {
-	ret := C.misskey_notes_delete_struct(c.c_client, &char(note_id.str), voidptr(0))
+pub fn (mut c Client) notes_delete(note_id string) ! {
+	ret := C.misskey_notes_delete(c.c_client, &char(note_id.str), voidptr(0))
 	if ret != 0 {
 		return error('notes_delete failed: ${MisskeyError(ret)}')
 	}
 }
 
-pub fn (mut c Client) i_notifications_struct(limit int) ![]Notification {
+pub fn (mut c Client) i_notifications(limit int) ![]Notification {
 	mut notif_ptr := &C.MisskeyNotification(0)
 	mut count := 0
-	ret := C.misskey_i_notifications_struct(c.c_client, limit, &notif_ptr, &count)
+	ret := C.misskey_i_notifications(c.c_client, limit, &notif_ptr, &count)
 	if ret != 0 {
 		return error('i_notifications failed: ${MisskeyError(ret)}')
 	}
@@ -924,10 +924,10 @@ pub fn (mut c Client) i_notifications_struct(limit int) ![]Notification {
 	return result
 }
 
-pub fn (mut c Client) drive_struct() !DriveInfo {
+pub fn (mut c Client) drive() !DriveInfo {
 	mut cinfo := &C.MisskeyDriveInfo{}
 	C.misskey_drive_info_init(cinfo)
-	ret := C.misskey_drive_struct(c.c_client, cinfo)
+	ret := C.misskey_drive(c.c_client, cinfo)
 	if ret != 0 {
 		return error('drive failed: ${MisskeyError(ret)}')
 	}
@@ -938,11 +938,11 @@ pub fn (mut c Client) drive_struct() !DriveInfo {
 	}
 }
 
-pub fn (mut c Client) drive_files_struct(limit int, folder_id string) ![]DriveFile {
+pub fn (mut c Client) drive_files(limit int, folder_id string) ![]DriveFile {
 	folder_cstr := if folder_id.len > 0 { &char(folder_id.str) } else { voidptr(0) }
 	mut files_ptr := &C.MisskeyDriveFile(0)
 	mut count := 0
-	ret := C.misskey_drive_files_struct(c.c_client, limit, folder_cstr, &files_ptr, &count)
+	ret := C.misskey_drive_files(c.c_client, limit, folder_cstr, &files_ptr, &count)
 	if ret != 0 {
 		return error('drive_files failed: ${MisskeyError(ret)}')
 	}
@@ -955,30 +955,30 @@ pub fn (mut c Client) drive_files_struct(limit int, folder_id string) ![]DriveFi
 	return result
 }
 
-pub fn (mut c Client) drive_files_create_struct(file_path string, folder_id string, name string) !DriveFile {
+pub fn (mut c Client) drive_files_create(file_path string, folder_id string, name string) !DriveFile {
 	folder_cstr := if folder_id.len > 0 { &char(folder_id.str) } else { voidptr(0) }
 	name_cstr := if name.len > 0 { &char(name.str) } else { voidptr(0) }
 	mut cfile := &C.MisskeyDriveFile{}
 	C.misskey_drive_file_init(cfile)
-	ret := C.misskey_drive_files_create_struct(c.c_client, &char(file_path.str), folder_cstr, name_cstr, cfile)
+	ret := C.misskey_drive_files_create(c.c_client, &char(file_path.str), folder_cstr, name_cstr, cfile)
 	if ret != 0 {
 		return error('drive_files_create failed: ${MisskeyError(ret)}')
 	}
 	return to_drive_file(cfile)
 }
 
-pub fn (mut c Client) drive_files_delete_struct(file_id string) ! {
-	ret := C.misskey_drive_files_delete_struct(c.c_client, &char(file_id.str), voidptr(0))
+pub fn (mut c Client) drive_files_delete(file_id string) ! {
+	ret := C.misskey_drive_files_delete(c.c_client, &char(file_id.str), voidptr(0))
 	if ret != 0 {
 		return error('drive_files_delete failed: ${MisskeyError(ret)}')
 	}
 }
 
-pub fn (mut c Client) drive_folders_struct(limit int, folder_id string) ![]DriveFolder {
+pub fn (mut c Client) drive_folders(limit int, folder_id string) ![]DriveFolder {
 	folder_cstr := if folder_id.len > 0 { &char(folder_id.str) } else { voidptr(0) }
 	mut folders_ptr := &C.MisskeyDriveFolder(0)
 	mut count := 0
-	ret := C.misskey_drive_folders_struct(c.c_client, limit, folder_cstr, &folders_ptr, &count)
+	ret := C.misskey_drive_folders(c.c_client, limit, folder_cstr, &folders_ptr, &count)
 	if ret != 0 {
 		return error('drive_folders failed: ${MisskeyError(ret)}')
 	}
@@ -991,10 +991,10 @@ pub fn (mut c Client) drive_folders_struct(limit int, folder_id string) ![]Drive
 	return result
 }
 
-pub fn (mut c Client) translate_struct(note_id string, target_lang string) !TranslateResult {
+pub fn (mut c Client) translate(note_id string, target_lang string) !TranslateResult {
 	mut cresult := &C.MisskeyTranslateResult{}
 	C.misskey_translate_result_init(cresult)
-	ret := C.misskey_translate_struct(c.c_client, &char(note_id.str), &char(target_lang.str), cresult)
+	ret := C.misskey_translate(c.c_client, &char(note_id.str), &char(target_lang.str), cresult)
 	if ret != 0 {
 		return error('translate failed: ${MisskeyError(ret)}')
 	}
@@ -1005,10 +1005,10 @@ pub fn (mut c Client) translate_struct(note_id string, target_lang string) !Tran
 	}
 }
 
-pub fn (mut c Client) clips_list_struct() ![]Clip {
+pub fn (mut c Client) clips_list() ![]Clip {
 	mut clips_ptr := &C.MisskeyClip(0)
 	mut count := 0
-	ret := C.misskey_clips_list_struct(c.c_client, &clips_ptr, &count)
+	ret := C.misskey_clips_list(c.c_client, &clips_ptr, &count)
 	if ret != 0 {
 		return error('clips_list failed: ${MisskeyError(ret)}')
 	}
@@ -1021,19 +1021,19 @@ pub fn (mut c Client) clips_list_struct() ![]Clip {
 	return result
 }
 
-pub fn (mut c Client) clips_create_struct(name string, description string, is_public bool) !Clip {
+pub fn (mut c Client) clips_create(name string, description string, is_public bool) !Clip {
 	desc_cstr := if description.len > 0 { &char(description.str) } else { voidptr(0) }
 	mut cclip := &C.MisskeyClip{}
 	C.misskey_clip_init(cclip)
-	ret := C.misskey_clips_create_struct(c.c_client, &char(name.str), desc_cstr, if is_public { 1 } else { 0 }, cclip)
+	ret := C.misskey_clips_create(c.c_client, &char(name.str), desc_cstr, if is_public { 1 } else { 0 }, cclip)
 	if ret != 0 {
 		return error('clips_create failed: ${MisskeyError(ret)}')
 	}
 	return to_clip(cclip)
 }
 
-pub fn (mut c Client) clips_delete_struct(clip_id string) ! {
-	ret := C.misskey_clips_delete_struct(c.c_client, &char(clip_id.str), voidptr(0))
+pub fn (mut c Client) clips_delete(clip_id string) ! {
+	ret := C.misskey_clips_delete(c.c_client, &char(clip_id.str), voidptr(0))
 	if ret != 0 {
 		return error('clips_delete failed: ${MisskeyError(ret)}')
 	}

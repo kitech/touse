@@ -336,7 +336,7 @@ public:
     Meta meta() {
         MisskeyMeta m;
         misskey_meta_init(&m);
-        int err = misskey_meta_struct(client_, &m);
+        int err = misskey_meta(client_, &m);
         check_error(err, "meta");
         return Meta(m);
     }
@@ -344,7 +344,7 @@ public:
     std::vector<Note> notes_timeline(int limit = 10, bool local = false) {
         MisskeyNote* notes = nullptr;
         int count = 0;
-        int err = misskey_notes_timeline_struct(client_, limit, local ? 1 : 0, &notes, &count);
+        int err = misskey_notes_timeline(client_, limit, local ? 1 : 0, &notes, &count);
         check_error(err, "notes_timeline");
         
         std::vector<Note> result;
@@ -360,7 +360,7 @@ public:
                      const std::optional<std::string>& renote_id = std::nullopt) {
         MisskeyNote note;
         misskey_note_init(&note);
-        int err = misskey_notes_create_struct(client_, text.c_str(),
+        int err = misskey_notes_create(client_, text.c_str(),
             reply_id ? reply_id->c_str() : nullptr,
             renote_id ? renote_id->c_str() : nullptr,
             &note);
@@ -371,14 +371,14 @@ public:
     Note notes_show(const std::string& note_id) {
         MisskeyNote note;
         misskey_note_init(&note);
-        int err = misskey_notes_show_struct(client_, note_id.c_str(), &note);
+        int err = misskey_notes_show(client_, note_id.c_str(), &note);
         check_error(err, "notes_show");
         return Note(note);
     }
 
     void notes_delete(const std::string& note_id) {
         char deleted_id[32] = {0};
-        int err = misskey_notes_delete_struct(client_, note_id.c_str(), deleted_id);
+        int err = misskey_notes_delete(client_, note_id.c_str(), deleted_id);
         check_error(err, "notes_delete");
     }
 
@@ -394,7 +394,7 @@ public:
                            const std::optional<std::string>& until_id = std::nullopt) {
         MisskeyNote* notes = nullptr;
         int count = 0;
-        int err = misskey_notes_struct(client_,
+        int err = misskey_notes(client_,
             text ? text->c_str() : nullptr,
             reply_id ? reply_id->c_str() : nullptr,
             renote_id ? renote_id->c_str() : nullptr,
@@ -418,7 +418,7 @@ public:
     std::vector<Notification> i_notifications(int limit = 10) {
         MisskeyNotification* notifications = nullptr;
         int count = 0;
-        int err = misskey_i_notifications_struct(client_, limit, &notifications, &count);
+        int err = misskey_i_notifications(client_, limit, &notifications, &count);
         check_error(err, "i_notifications");
         
         std::vector<Notification> result;
@@ -432,7 +432,7 @@ public:
     DriveInfo drive() {
         MisskeyDriveInfo info;
         misskey_drive_info_init(&info);
-        int err = misskey_drive_struct(client_, &info);
+        int err = misskey_drive(client_, &info);
         check_error(err, "drive");
         return DriveInfo(info);
     }
@@ -440,7 +440,7 @@ public:
     std::vector<DriveFile> drive_files(int limit = 10, const std::optional<std::string>& folder_id = std::nullopt) {
         MisskeyDriveFile* files = nullptr;
         int count = 0;
-        int err = misskey_drive_files_struct(client_, limit, folder_id ? folder_id->c_str() : nullptr, &files, &count);
+        int err = misskey_drive_files(client_, limit, folder_id ? folder_id->c_str() : nullptr, &files, &count);
         check_error(err, "drive_files");
         
         std::vector<DriveFile> result;
@@ -456,7 +456,7 @@ public:
                                 const std::optional<std::string>& name = std::nullopt) {
         MisskeyDriveFile file;
         misskey_drive_file_init(&file);
-        int err = misskey_drive_files_create_struct(client_, file_path.c_str(),
+        int err = misskey_drive_files_create(client_, file_path.c_str(),
             folder_id ? folder_id->c_str() : nullptr,
             name ? name->c_str() : nullptr,
             &file);
@@ -466,7 +466,7 @@ public:
 
     void drive_files_delete(const std::string& file_id) {
         char deleted_id[32] = {0};
-        int err = misskey_drive_files_delete_struct(client_, file_id.c_str(), deleted_id);
+        int err = misskey_drive_files_delete(client_, file_id.c_str(), deleted_id);
         check_error(err, "drive_files_delete");
     }
 
@@ -475,7 +475,7 @@ public:
                                 const std::optional<std::string>& name = std::nullopt) {
         MisskeyDriveFile file;
         misskey_drive_file_init(&file);
-        int err = misskey_drive_files_update_struct(client_, file_id.c_str(),
+        int err = misskey_drive_files_update(client_, file_id.c_str(),
             folder_id ? folder_id->c_str() : nullptr,
             name ? name->c_str() : nullptr,
             &file);
@@ -486,7 +486,7 @@ public:
     std::vector<DriveFile> drive_files_find(const std::string& hash) {
         MisskeyDriveFile* files = nullptr;
         int count = 0;
-        int err = misskey_drive_files_find_struct(client_, hash.c_str(), &files, &count);
+        int err = misskey_drive_files_find(client_, hash.c_str(), &files, &count);
         check_error(err, "drive_files_find");
         
         std::vector<DriveFile> result;
@@ -501,7 +501,7 @@ public:
                               const std::optional<std::string>& url = std::nullopt) {
         MisskeyDriveFile file;
         misskey_drive_file_init(&file);
-        int err = misskey_drive_files_show_struct(client_,
+        int err = misskey_drive_files_show(client_,
             file_id ? file_id->c_str() : nullptr,
             url ? url->c_str() : nullptr,
             &file);
@@ -515,7 +515,7 @@ public:
                                          const std::optional<std::string>& comment = std::nullopt) {
         MisskeyDriveFile file;
         misskey_drive_file_init(&file);
-        int err = misskey_drive_files_upload_from_url_struct(client_, url.c_str(),
+        int err = misskey_drive_files_upload_from_url(client_, url.c_str(),
             folder_id ? folder_id->c_str() : nullptr,
             is_sensitive ? 1 : 0,
             comment ? comment->c_str() : nullptr,
@@ -543,7 +543,7 @@ public:
                                            const std::optional<std::string>& folder_id = std::nullopt) {
         MisskeyDriveFolder* folders = nullptr;
         int count = 0;
-        int err = misskey_drive_folders_struct(client_, limit,
+        int err = misskey_drive_folders(client_, limit,
             folder_id ? folder_id->c_str() : nullptr,
             &folders, &count);
         check_error(err, "drive_folders");
@@ -560,7 +560,7 @@ public:
                                     const std::optional<std::string>& parent_id = std::nullopt) {
         MisskeyDriveFolder folder;
         misskey_drive_folder_init(&folder);
-        int err = misskey_drive_folders_create_struct(client_, name.c_str(),
+        int err = misskey_drive_folders_create(client_, name.c_str(),
             parent_id ? parent_id->c_str() : nullptr,
             &folder);
         check_error(err, "drive_folders_create");
@@ -569,7 +569,7 @@ public:
 
     void drive_folders_delete(const std::string& folder_id) {
         char deleted_id[32] = {0};
-        int err = misskey_drive_folders_delete_struct(client_, folder_id.c_str(), deleted_id);
+        int err = misskey_drive_folders_delete(client_, folder_id.c_str(), deleted_id);
         check_error(err, "drive_folders_delete");
     }
 
@@ -578,7 +578,7 @@ public:
                                     const std::optional<std::string>& parent_id = std::nullopt) {
         MisskeyDriveFolder folder;
         misskey_drive_folder_init(&folder);
-        int err = misskey_drive_folders_update_struct(client_, folder_id.c_str(),
+        int err = misskey_drive_folders_update(client_, folder_id.c_str(),
             name ? name->c_str() : nullptr,
             parent_id ? parent_id->c_str() : nullptr,
             &folder);
@@ -590,7 +590,7 @@ public:
                             const std::string& target_lang) {
         MisskeyTranslateResult result;
         misskey_translate_result_init(&result);
-        int err = misskey_translate_struct(client_, note_id.c_str(), target_lang.c_str(), &result);
+        int err = misskey_translate(client_, note_id.c_str(), target_lang.c_str(), &result);
         check_error(err, "translate");
         return TranslateResult(result);
     }
@@ -598,7 +598,7 @@ public:
     std::vector<Clip> clips_list() {
         MisskeyClip* clips = nullptr;
         int count = 0;
-        int err = misskey_clips_list_struct(client_, &clips, &count);
+        int err = misskey_clips_list(client_, &clips, &count);
         check_error(err, "clips_list");
         
         std::vector<Clip> result;
@@ -612,7 +612,7 @@ public:
     Clip clips_show(const std::string& clip_id) {
         MisskeyClip clip;
         misskey_clip_init(&clip);
-        int err = misskey_clips_show_struct(client_, clip_id.c_str(), &clip);
+        int err = misskey_clips_show(client_, clip_id.c_str(), &clip);
         check_error(err, "clips_show");
         return Clip(clip);
     }
@@ -622,7 +622,7 @@ public:
                      bool is_public = false) {
         MisskeyClip clip;
         misskey_clip_init(&clip);
-        int err = misskey_clips_create_struct(client_, name.c_str(),
+        int err = misskey_clips_create(client_, name.c_str(),
             description ? description->c_str() : nullptr,
             is_public ? 1 : 0,
             &clip);
@@ -636,7 +636,7 @@ public:
                      bool is_public = false) {
         MisskeyClip clip;
         misskey_clip_init(&clip);
-        int err = misskey_clips_update_struct(client_, clip_id.c_str(),
+        int err = misskey_clips_update(client_, clip_id.c_str(),
             name ? name->c_str() : nullptr,
             description ? description->c_str() : nullptr,
             is_public ? 1 : 0,
@@ -647,14 +647,14 @@ public:
 
     void clips_delete(const std::string& clip_id) {
         char deleted_id[32] = {0};
-        int err = misskey_clips_delete_struct(client_, clip_id.c_str(), deleted_id);
+        int err = misskey_clips_delete(client_, clip_id.c_str(), deleted_id);
         check_error(err, "clips_delete");
     }
 
     std::vector<Note> clips_notes(const std::string& clip_id, int limit = 10) {
         MisskeyNote* notes = nullptr;
         int count = 0;
-        int err = misskey_clips_notes_struct(client_, clip_id.c_str(), limit, &notes, &count);
+        int err = misskey_clips_notes(client_, clip_id.c_str(), limit, &notes, &count);
         check_error(err, "clips_notes");
         
         std::vector<Note> result;
@@ -666,16 +666,12 @@ public:
     }
 
     void clips_add_note(const std::string& clip_id, const std::string& note_id) {
-        char* resp = nullptr;
-        int err = misskey_clips_add_note(client_, clip_id.c_str(), note_id.c_str(), &resp);
-        if (resp) misskey_free_string(client_, resp);
+        int err = misskey_clips_add_note(client_, clip_id.c_str(), note_id.c_str());
         check_error(err, "clips_add_note");
     }
 
     void clips_remove_note(const std::string& clip_id, const std::string& note_id) {
-        char* resp = nullptr;
-        int err = misskey_clips_remove_note(client_, clip_id.c_str(), note_id.c_str(), &resp);
-        if (resp) misskey_free_string(client_, resp);
+        int err = misskey_clips_remove_note(client_, clip_id.c_str(), note_id.c_str());
         check_error(err, "clips_remove_note");
     }
 };
