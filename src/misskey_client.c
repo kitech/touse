@@ -363,10 +363,14 @@ void misskey_request_print_curl(MisskeyClient* client, const char* endpoint,
 }
 
 MisskeyError misskey_meta_raw(MisskeyClient* client, char** response_out) {
+    if (!client || !response_out) return MISSKEY_ERROR_INVALID_PARAM;
     return misskey_request(client, "meta", "{\"detail\":false}", response_out);
 }
 
 MisskeyError misskey_users_show_raw(MisskeyClient* client, const char* user_id, const char* username, const char* host, int detailed, char** response_out) {
+    if (!client || !response_out) return MISSKEY_ERROR_INVALID_PARAM;
+    if (!user_id && !username) return MISSKEY_ERROR_INVALID_PARAM;
+    
     cJSON* root = cJSON_CreateObject();
     cJSON_AddStringToObject(root, "i", client->token);
     

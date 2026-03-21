@@ -26,7 +26,7 @@ fn main() {
 		return
 	}
 	defer {
-		client.free()
+		client.freeit()
 	}
 	
 	if token.len > 0 {
