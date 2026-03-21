@@ -53,6 +53,10 @@ static void free_allocator(const MisskeyAllocator* alloc, void* ptr) {
 }
 
 static void timeline_options_to_json(cJSON* root, MisskeyTimelineOptions* opts);
+static void parse_user(cJSON* obj, MisskeyUser* user);
+
+MisskeyError misskey_users_show_raw(MisskeyClient* client, const char* user_id, const char* username, const char* host, int detailed, char** response_out);
+MisskeyError misskey_users_show(MisskeyClient* client, const char* user_id, const char* username, const char* host, int detailed, MisskeyUser* user_out);
 
 MisskeyError misskey_notes_create_full_raw(MisskeyClient* client, 
                                           const char* text,
@@ -360,6 +364,48 @@ void misskey_request_print_curl(MisskeyClient* client, const char* endpoint,
 
 MisskeyError misskey_meta_raw(MisskeyClient* client, char** response_out) {
     return misskey_request(client, "meta", "{\"detail\":false}", response_out);
+}
+
+MisskeyError misskey_users_show_raw(MisskeyClient* client, const char* user_id, const char* username, const char* host, int detailed, char** response_out) {
+    cJSON* root = cJSON_CreateObject();
+    cJSON_AddStringToObject(root, "i", client->token);
+    
+    if (user_id) cJSON_AddStringToObject(root, "userId", user_id);
+    if (username) cJSON_AddStringToObject(root, "username", username);
+    if (host) cJSON_AddStringToObject(root, "host", host);
+    if (detailed) cJSON_AddBoolToObject(root, "detail", 1);
+    
+    char* json_str = cJSON_PrintUnformatted(root);
+    MisskeyError err = misskey_request(client, "users/show", json_str, response_out);
+    
+    cJSON_free(json_str);
+    cJSON_Delete(root);
+    return err;
+}
+
+MisskeyError misskey_users_show(MisskeyClient* client, const char* user_id, const char* username, const char* host, int detailed, MisskeyUser* user_out) {
+    if (!client || !user_out) return MISSKEY_ERROR_INVALID_PARAM;
+    misskey_user_init(user_out);
+    
+    char* resp = NULL;
+    MisskeyError err = misskey_users_show_raw(client, user_id, username, host, detailed, &resp);
+    if (err != MISSKEY_OK) return err;
+    
+    cJSON* root = cJSON_Parse(resp);
+    if (!root) {
+        misskey_free_string(client, resp);
+        return MISSKEY_ERROR_JSON;
+    }
+    
+    parse_user(root, user_out);
+    
+    if (user_out->host[0] == '\0' && client->host[0] != '\0') {
+        strncpy(user_out->host, client->host, sizeof(user_out->host) - 1);
+    }
+    
+    cJSON_Delete(root);
+    misskey_free_string(client, resp);
+    return MISSKEY_OK;
 }
 
 MisskeyError misskey_notes_timeline_raw(MisskeyClient* client, int limit,
@@ -1256,10 +1302,28 @@ static void parse_user(cJSON* obj, MisskeyUser* user) {
         strncpy(user->avatar_url, item->valuestring, sizeof(user->avatar_url) - 1);
     if ((item = cJSON_GetObjectItem(obj, "avatarBlurhash")) && item->type == cJSON_String)
         strncpy(user->avatar_blurhash, item->valuestring, sizeof(user->avatar_blurhash) - 1);
+    if ((item = cJSON_GetObjectItem(obj, "bannerUrl")) && item->type == cJSON_String)
+        strncpy(user->banner_url, item->valuestring, sizeof(user->banner_url) - 1);
+    if ((item = cJSON_GetObjectItem(obj, "description")) && item->type == cJSON_String)
+        strncpy(user->description, item->valuestring, sizeof(user->description) - 1);
+    if ((item = cJSON_GetObjectItem(obj, "url")) && item->type == cJSON_String)
+        strncpy(user->url, item->valuestring, sizeof(user->url) - 1);
+    if ((item = cJSON_GetObjectItem(obj, "followersCount")) && item->type == cJSON_Number)
+        user->followers_count = item->valueint;
+    if ((item = cJSON_GetObjectItem(obj, "followingCount")) && item->type == cJSON_Number)
+        user->following_count = item->valueint;
+    if ((item = cJSON_GetObjectItem(obj, "notesCount")) && item->type == cJSON_Number)
+        user->notes_count = item->valueint;
     if ((item = cJSON_GetObjectItem(obj, "isBot")) && item->type == cJSON_Number)
         user->is_bot = item->valueint;
     if ((item = cJSON_GetObjectItem(obj, "isCat")) && item->type == cJSON_Number)
         user->is_cat = item->valueint;
+    if ((item = cJSON_GetObjectItem(obj, "isLocked")) && item->type == cJSON_Number)
+        user->is_locked = item->valueint;
+    if ((item = cJSON_GetObjectItem(obj, "isSilenced")) && item->type == cJSON_Number)
+        user->is_silenced = item->valueint;
+    if ((item = cJSON_GetObjectItem(obj, "hasPendingFollowRequest")) && item->type == cJSON_Number)
+        user->has_pending_follow_request = item->valueint;
 }
 
 static void parse_note(cJSON* obj, MisskeyNote* note) {
@@ -1347,6 +1411,16 @@ void misskey_note_init(MisskeyNote* note) {
 void misskey_user_init(MisskeyUser* user) {
     if (!user) return;
     memset(user, 0, sizeof(MisskeyUser));
+}
+
+const char* misskey_user_get_full_username(const MisskeyUser* user, char* buffer, size_t buffer_size) {
+    if (!user || !buffer || buffer_size < 2) return "";
+    
+    int len = snprintf(buffer, buffer_size, "@%s", user->username);
+    if (len > 0 && user->host[0]) {
+        snprintf(buffer + len, buffer_size - len, "@%s", user->host);
+    }
+    return buffer;
 }
 
 void misskey_notification_init(MisskeyNotification* n) {

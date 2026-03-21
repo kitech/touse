@@ -53,9 +53,20 @@ typedef struct MisskeyUser {
     char host[128];
     char avatar_url[512];
     char avatar_blurhash[64];
+    char banner_url[512];
+    char description[1024];
+    char url[512];
+    int followers_count;
+    int following_count;
+    int notes_count;
     int is_bot;
     int is_cat;
+    int is_locked;
+    int is_silenced;
+    int has_pending_follow_request;
 } MisskeyUser;
+
+const char* misskey_user_get_full_username(const MisskeyUser* user, char* buffer, size_t buffer_size);
 
 typedef struct MisskeyNote {
     char id[32];
@@ -208,6 +219,8 @@ void misskey_free_drive_folders(MisskeyClient* client, MisskeyDriveFolder* folde
 void misskey_free_clips(MisskeyClient* client, MisskeyClip* clips, int count);
 
 MisskeyError misskey_meta(MisskeyClient* client, MisskeyMeta* meta);
+MisskeyError misskey_users_show(MisskeyClient* client, const char* user_id, const char* username, const char* host, int detailed, MisskeyUser* user_out);
+MisskeyError misskey_users_show_raw(MisskeyClient* client, const char* user_id, const char* username, const char* host, int detailed, char** response_out);
 MisskeyError misskey_notes_timeline(MisskeyClient* client, int limit, int include_local_renotes, MisskeyNote** notes_out, int* count_out);
 MisskeyError misskey_notes_local_timeline(MisskeyClient* client, int limit, MisskeyNote** notes_out, int* count_out);
 MisskeyError misskey_notes_local_timeline_full(MisskeyClient* client, MisskeyTimelineOptions* opts, MisskeyNote** notes_out, int* count_out);

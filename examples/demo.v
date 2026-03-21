@@ -46,6 +46,24 @@ fn main() {
 	println('  Version: ${meta.version}')
 	println('  URI: ${meta.uri}')
 	
+	// users_show (struct API)
+	println('\n=== users/show (by username) ===')
+	user := client.users_show('', 'syuilo', '', false) or {
+		println('Error: ${err}')
+		return
+	}
+	println('  ID: ${user.id}')
+	println('  Full username: ${user.full_username()}')
+	println('  Name: ${user.name}')
+	println('  Host: ${user.host}')
+	println('  Avatar: ${user.avatar_url}')
+	println('  Banner: ${user.banner_url}')
+	println('  Description: ${if user.description.len > 100 { user.description[..100] + '...' } else { user.description }}')
+	println('  Followers: ${user.followers_count}')
+	println('  Following: ${user.following_count}')
+	println('  Notes: ${user.notes_count}')
+	println('  Bot: ${user.is_bot}, Cat: ${user.is_cat}, Locked: ${user.is_locked}')
+	
 	// notes_timeline (struct API)
 	println('\n=== notes/timeline (include_local_renotes, limit=3) ===')
 	notes := client.notes_timeline(3, true) or {

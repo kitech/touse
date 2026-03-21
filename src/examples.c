@@ -479,6 +479,171 @@ int example_clips_notes(MisskeyClient* client) {
     return 0;
 }
 
+int example_users_show(MisskeyClient* client) {
+    printf("\n=== Get User Profile ===\n");
+    MisskeyUser user;
+    misskey_user_init(&user);
+    MisskeyError err = misskey_users_show(client, NULL, "syuilo", NULL, 1, &user);
+    if (err != MISSKEY_OK) {
+        print_error_details(client, err);
+        return 1;
+    }
+    
+    char full_username[256];
+    misskey_user_get_full_username(&user, full_username, sizeof(full_username));
+    
+    printf("User ID: %s\n", user.id);
+    printf("Full username: %s\n", full_username);
+    printf("Name: %s\n", user.name);
+    printf("Host: %s\n", user.host);
+    printf("Avatar: %s\n", user.avatar_url);
+    printf("Banner: %s\n", user.banner_url);
+    printf("Description: %.100s...\n", user.description);
+    printf("Followers: %d\n", user.followers_count);
+    printf("Following: %d\n", user.following_count);
+    printf("Notes: %d\n", user.notes_count);
+    printf("Bot: %s, Cat: %s, Locked: %s\n",
+           user.is_bot ? "yes" : "no",
+           user.is_cat ? "yes" : "no",
+           user.is_locked ? "yes" : "no");
+    return 0;
+}
+
+int example_local_timeline_full(MisskeyClient* client) {
+    printf("\n=== Get Local Timeline (full options) ===\n");
+    MisskeyTimelineOptions opts = {
+        .limit = 5,
+        .with_files = 0,
+        .with_renotes = 1,
+        .with_replies = 0,
+        .allow_partial = 0,
+        .since_id = NULL,
+        .until_id = NULL,
+        .since_date = 0,
+        .until_date = 0
+    };
+    MisskeyNote* notes = NULL;
+    int note_count = 0;
+    MisskeyError err = misskey_notes_local_timeline_full(client, &opts, &notes, &note_count);
+    if (err != MISSKEY_OK) {
+        print_error_details(client, err);
+        return 1;
+    }
+    printf("Got %d notes:\n", note_count);
+    for (int i = 0; i < note_count; i++) {
+        printf("  [%d] %.50s (renote=%d, reply=%d, files=%d)\n",
+               i + 1, notes[i].text, notes[i].is_renote, notes[i].is_reply, notes[i].files_count);
+    }
+    misskey_free_notes(client, notes, note_count);
+    return 0;
+}
+
+int example_global_timeline(MisskeyClient* client) {
+    printf("\n=== Get Global Timeline ===\n");
+    MisskeyNote* notes = NULL;
+    int note_count = 0;
+    MisskeyError err = misskey_notes_global_timeline(client, 5, &notes, &note_count);
+    if (err != MISSKEY_OK) {
+        print_error_details(client, err);
+        return 1;
+    }
+    printf("Got %d notes:\n", note_count);
+    for (int i = 0; i < note_count; i++) {
+        print_struct_note(&notes[i]);
+    }
+    misskey_free_notes(client, notes, note_count);
+    return 0;
+}
+
+int example_global_timeline_full(MisskeyClient* client) {
+    printf("\n=== Get Global Timeline (full options) ===\n");
+    MisskeyTimelineOptions opts = {
+        .limit = 5,
+        .with_files = 1,
+        .with_renotes = 1,
+        .with_replies = 0,
+        .allow_partial = 0,
+        .since_id = NULL,
+        .until_id = NULL,
+        .since_date = 0,
+        .until_date = 0
+    };
+    MisskeyNote* notes = NULL;
+    int note_count = 0;
+    MisskeyError err = misskey_notes_global_timeline_full(client, &opts, &notes, &note_count);
+    if (err != MISSKEY_OK) {
+        print_error_details(client, err);
+        return 1;
+    }
+    printf("Got %d notes:\n", note_count);
+    for (int i = 0; i < note_count; i++) {
+        printf("  [%d] %.50s (renote=%d, files=%d)\n",
+               i + 1, notes[i].text, notes[i].is_renote, notes[i].files_count);
+    }
+    misskey_free_notes(client, notes, note_count);
+    return 0;
+}
+
+int example_notes_create_full(MisskeyClient* client) {
+    printf("\n=== Create Note (full options) ===\n");
+    MisskeyNote note;
+    misskey_note_init(&note);
+    MisskeyError err = misskey_notes_create_full(client, 
+        "Hello from C client with full options!",
+        NULL, NULL,
+        NULL, 0,
+        0, NULL, 0, NULL, 0, 0,
+        &note);
+    if (err != MISSKEY_OK) {
+        print_error_details(client, err);
+        return 1;
+    }
+    printf("Created note ID: %s\n", note.id);
+    printf("Has files: %d\n", note.has_files);
+    
+    char deleted_id[32];
+    err = misskey_notes_delete(client, note.id, deleted_id);
+    if (err == MISSKEY_OK) {
+        printf("Note deleted: %s\n", deleted_id);
+    }
+    return 0;
+}
+
+static void stream_callback(const char* type, const char* body, void* user_data) {
+    (void)user_data;
+    printf("[STREAM] type=%s, body=%.100s...\n", type, body);
+}
+
+int example_streaming(const char* host, const char* token) {
+    printf("\n=== Streaming API Test ===\n");
+    
+    MisskeyStream* stream = misskey_stream_new(host, token);
+    if (!stream) {
+        printf("Failed to create stream\n");
+        return 1;
+    }
+    
+    misskey_stream_set_callback(stream, stream_callback, NULL);
+    
+    MisskeyError err = misskey_stream_connect(stream, MISSKEY_STREAM_CHANNEL_LOCAL_TIMELINE, "test-channel-1");
+    if (err != MISSKEY_OK) {
+        printf("Failed to connect to stream: %s\n", misskey_error_str(err));
+        misskey_stream_free(stream);
+        return 1;
+    }
+    printf("Connected to local timeline stream\n");
+    
+    printf("Polling for 2 seconds...\n");
+    for (int i = 0; i < 4; i++) {
+        misskey_stream_poll(stream, 500);
+    }
+    
+    misskey_stream_disconnect(stream, "test-channel-1");
+    misskey_stream_free(stream);
+    printf("Stream closed\n");
+    return 0;
+}
+
 int main(int argc, char* argv[]) {
     const char* host = argc > 1 ? argv[1] : "localhost:3000";
     const char* token = argc > 2 ? argv[2] : NULL;
@@ -520,9 +685,14 @@ int main(int argc, char* argv[]) {
     printf("\n--- Starting API calls (structured API) ---\n");
     
     api_call_start("meta");  api_call_end(example_meta(client) == 0);
+    api_call_start("users/show");  api_call_end(example_users_show(client) == 0);
     
     if (token) {
         api_call_start("notes/timeline");  api_call_end(example_timeline(client, 3, 1) == 0);
+        api_call_start("notes/local-timeline/full");  api_call_end(example_local_timeline_full(client) == 0);
+        api_call_start("notes/global-timeline");  api_call_end(example_global_timeline(client) == 0);
+        api_call_start("notes/global-timeline/full");  api_call_end(example_global_timeline_full(client) == 0);
+        api_call_start("notes/create/full");  api_call_end(example_notes_create_full(client) == 0);
         api_call_start("i/notifications");  api_call_end(example_notifications(client, 5) == 0);
         api_call_start("drive/files");  api_call_end(example_drive_files(client, 5) == 0);
         api_call_start("drive/folders");  api_call_end(example_drive_folders(client, 5) == 0);
@@ -533,6 +703,7 @@ int main(int argc, char* argv[]) {
         api_call_start("clips/show");  api_call_end(example_clips_show(client) == 0);
         api_call_start("clips/create");  api_call_end(example_clips_create(client, "Test Clip") == 0);
         api_call_start("clips/notes");  api_call_end(example_clips_notes(client) == 0);
+        api_call_start("streaming");  api_call_end(example_streaming(host, token) == 0);
     }
     
     misskey_client_free(client);

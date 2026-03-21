@@ -16,6 +16,8 @@ fn C.misskey_client_set_token(client &C.MisskeyClient, token charptr)
 fn C.misskey_client_set_timeout(client &C.MisskeyClient, timeout_secs int)
 fn C.misskey_request(client &C.MisskeyClient, endpoint charptr, body charptr, response &charptr) int
 fn C.misskey_meta_raw(client &C.MisskeyClient, response &charptr) int
+fn C.misskey_users_show_raw(client &C.MisskeyClient, user_id charptr, username charptr, host charptr, detailed int, response &charptr) int
+fn C.misskey_users_show(client &C.MisskeyClient, user_id charptr, username charptr, host charptr, detailed int, user_out &C.MisskeyUser) int
 fn C.misskey_notes_timeline_raw(client &C.MisskeyClient, limit int, include_local_renotes int, response &charptr) int
 fn C.misskey_notes_local_timeline_raw(client &C.MisskeyClient, limit int, response &charptr) int
 fn C.misskey_notes_global_timeline_raw(client &C.MisskeyClient, limit int, response &charptr) int
@@ -91,8 +93,17 @@ mut:
 	host [128]u8
 	avatar_url [512]u8
 	avatar_blurhash [64]u8
+	banner_url [512]u8
+	description [1024]u8
+	url [512]u8
+	followers_count int
+	following_count int
+	notes_count int
 	is_bot int
 	is_cat int
+	is_locked int
+	is_silenced int
+	has_pending_follow_request int
 }
 
 struct C.MisskeyNote {
@@ -291,6 +302,8 @@ fn (e MisskeyError) detailed(c &Client) string {
 // Client wrapper
 pub struct Client {
 	c_client &C.MisskeyClient
+mut:
+	host string
 }
 
 pub fn new(host string) !Client {
@@ -298,7 +311,10 @@ pub fn new(host string) !Client {
 	if c_client == unsafe { nil } {
 		return error('failed to create client')
 	}
-	return Client{c_client}
+	return Client{
+		c_client: c_client
+		host: host
+	}
 }
 
 pub fn (c &Client) free_raw() {
@@ -307,6 +323,10 @@ pub fn (c &Client) free_raw() {
 
 pub fn (c &Client) set_token(token string) {
 	C.misskey_client_set_token(c.c_client, &char(token.str))
+}
+
+pub fn (c &Client) host() string {
+	return c.host
 }
 
 pub fn (c &Client) set_timeout(sec int) {
@@ -356,6 +376,20 @@ fn (c &Client) do_request(endpoint string, body string) !string {
 
 pub fn (c &Client) meta_raw() !string {
 	return c.do_request('meta', '{"detail":false}')
+}
+
+pub fn (c &Client) users_show_raw(user_id string, username string, host string, detailed bool) !string {
+	user_id_cstr := if user_id.len > 0 { &char(user_id.str) } else { voidptr(0) }
+	username_cstr := if username.len > 0 { &char(username.str) } else { voidptr(0) }
+	host_cstr := if host.len > 0 { &char(host.str) } else { voidptr(0) }
+	mut response := &char(0)
+	ret := C.misskey_users_show_raw(c.c_client, user_id_cstr, username_cstr, host_cstr, if detailed { 1 } else { 0 }, &response)
+	if ret != 0 {
+		return error('users_show failed: ${MisskeyError(ret).detailed(c)}')
+	}
+	result := unsafe { cstring_to_vstring(response) }
+	C.misskey_free_string(c.c_client, response)
+	return result
 }
 
 pub fn (c &Client) notes_timeline_raw(limit int, include_local_renotes bool) !string {
@@ -799,8 +833,25 @@ pub:
 	username string
 	host string
 	avatar_url string
+	avatar_blurhash string
+	banner_url string
+	description string
+	url string
+	followers_count int
+	following_count int
+	notes_count int
 	is_bot bool
 	is_cat bool
+	is_locked bool
+	is_silenced bool
+	has_pending_follow_request bool
+}
+
+pub fn (u &User) full_username() string {
+	if u.host.len > 0 {
+		return '@${u.username}@${u.host}'
+	}
+	return '@${u.username}'
 }
 
 @[heap]
@@ -927,8 +978,18 @@ fn to_user(cuser &C.MisskeyUser) User {
 		username: unsafe { cstring_to_vstring(&char(cuser.username)) }
 		host: unsafe { cstring_to_vstring(&char(cuser.host)) }
 		avatar_url: unsafe { cstring_to_vstring(&char(cuser.avatar_url)) }
+		avatar_blurhash: unsafe { cstring_to_vstring(&char(cuser.avatar_blurhash)) }
+		banner_url: unsafe { cstring_to_vstring(&char(cuser.banner_url)) }
+		description: unsafe { cstring_to_vstring(&char(cuser.description)) }
+		url: unsafe { cstring_to_vstring(&char(cuser.url)) }
+		followers_count: cuser.followers_count
+		following_count: cuser.following_count
+		notes_count: cuser.notes_count
 		is_bot: cuser.is_bot != 0
 		is_cat: cuser.is_cat != 0
+		is_locked: cuser.is_locked != 0
+		is_silenced: cuser.is_silenced != 0
+		has_pending_follow_request: cuser.has_pending_follow_request != 0
 	}
 }
 
@@ -1030,6 +1091,19 @@ pub fn (c &Client) meta() !Meta {
 	}
 	result := to_meta(cmeta)
 	return result
+}
+
+pub fn (c &Client) users_show(user_id string, username string, host string, detailed bool) !User {
+	user_id_cstr := if user_id.len > 0 { &char(user_id.str) } else { voidptr(0) }
+	username_cstr := if username.len > 0 { &char(username.str) } else { voidptr(0) }
+	host_cstr := if host.len > 0 { &char(host.str) } else { voidptr(0) }
+	mut cuser := &C.MisskeyUser{}
+	C.misskey_user_init(cuser)
+	ret := C.misskey_users_show(c.c_client, user_id_cstr, username_cstr, host_cstr, if detailed { 1 } else { 0 }, cuser)
+	if ret != 0 {
+		return error('users_show failed: ${MisskeyError(ret).detailed(c)}')
+	}
+	return to_user(cuser)
 }
 
 pub fn (c &Client) notes_timeline(limit int, include_local_renotes bool) ![]Note {
