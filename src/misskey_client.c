@@ -107,6 +107,8 @@ struct MisskeyClient {
     int debug_curl;
     long last_http_code;
     char* last_error_detail;
+    MisskeyProxy proxy;
+    int proxy_enabled;
 };
 
 const char* misskey_error_str(MisskeyError err) {
@@ -185,6 +187,8 @@ static MisskeyClient* client_new_internal(const char* host, const MisskeyAllocat
     strncpy(client->host, host ? host : "misskey.io", sizeof(client->host) - 1);
     client->timeout = 30;
     client->curl = curl_easy_init();
+    memset(&client->proxy, 0, sizeof(MisskeyProxy));
+    client->proxy_enabled = 0;
     
     return client;
 }
@@ -219,6 +223,137 @@ void misskey_client_set_timeout(MisskeyClient* client, long timeout_secs) {
 const MisskeyAllocator* misskey_client_get_allocator(const MisskeyClient* client) {
     if (!client) return NULL;
     return &client->allocator;
+}
+
+static MisskeyProxyType parse_proxy_type(const char* url) {
+    if (!url) return MISSKEY_PROXY_NONE;
+    
+    if (strncmp(url, "https://", 8) == 0) return MISSKEY_PROXY_HTTPS;
+    if (strncmp(url, "http://", 7) == 0) return MISSKEY_PROXY_HTTP;
+    if (strncmp(url, "socks5://", 9) == 0) return MISSKEY_PROXY_SOCKS5;
+    if (strncmp(url, "socks4a://", 10) == 0) return MISSKEY_PROXY_SOCKS4A;
+    if (strncmp(url, "socks4://", 9) == 0) return MISSKEY_PROXY_SOCKS4;
+    
+    return MISSKEY_PROXY_HTTP;
+}
+
+static void parse_proxy_url(const char* url, MisskeyProxy* proxy) {
+    if (!url || !proxy) return;
+    
+    memset(proxy, 0, sizeof(MisskeyProxy));
+    
+    CURLU* h = curl_url();
+    if (!h) return;
+    
+    CURLUcode rc = curl_url_set(h, CURLUPART_URL, url, 0);
+    if (rc != CURLUE_OK) {
+        curl_url_cleanup(h);
+        return;
+    }
+    
+    proxy->type = parse_proxy_type(url);
+    
+    char* host = NULL;
+    rc = curl_url_get(h, CURLUPART_HOST, &host, 0);
+    if (rc == CURLUE_OK && host) {
+        strncpy(proxy->host, host, sizeof(proxy->host) - 1);
+        curl_free(host);
+    }
+    
+    char* port_str = NULL;
+    rc = curl_url_get(h, CURLUPART_PORT, &port_str, 0);
+    if (rc == CURLUE_OK && port_str) {
+        proxy->port = atoi(port_str);
+        curl_free(port_str);
+    } else {
+        proxy->port = 8080;
+    }
+    
+    char* user = NULL;
+    rc = curl_url_get(h, CURLUPART_USER, &user, 0);
+    if (rc == CURLUE_OK && user) {
+        strncpy(proxy->username, user, sizeof(proxy->username) - 1);
+        curl_free(user);
+        
+        char* pass = NULL;
+        rc = curl_url_get(h, CURLUPART_PASSWORD, &pass, 0);
+        if (rc == CURLUE_OK && pass) {
+            strncpy(proxy->password, pass, sizeof(proxy->password) - 1);
+            curl_free(pass);
+        }
+    }
+    
+    curl_url_cleanup(h);
+    
+    if (proxy->host[0] == '\0') {
+        proxy->type = MISSKEY_PROXY_NONE;
+    }
+}
+
+MisskeyError misskey_client_set_proxy_url(MisskeyClient* client, const char* proxy_url) {
+    if (!client) return MISSKEY_ERROR_INVALID_PARAM;
+    
+    if (!proxy_url || proxy_url[0] == '\0') {
+        memset(&client->proxy, 0, sizeof(MisskeyProxy));
+        client->proxy_enabled = 0;
+        return MISSKEY_OK;
+    }
+    
+    parse_proxy_url(proxy_url, &client->proxy);
+    client->proxy_enabled = 1;
+    return MISSKEY_OK;
+}
+
+MisskeyError misskey_client_set_proxy(MisskeyClient* client, const MisskeyProxy* proxy) {
+    if (!client) return MISSKEY_ERROR_INVALID_PARAM;
+    
+    if (!proxy || proxy->type == MISSKEY_PROXY_NONE || proxy->host[0] == '\0') {
+        memset(&client->proxy, 0, sizeof(MisskeyProxy));
+        client->proxy_enabled = 0;
+        return MISSKEY_OK;
+    }
+    
+    memcpy(&client->proxy, proxy, sizeof(MisskeyProxy));
+    client->proxy_enabled = 1;
+    return MISSKEY_OK;
+}
+
+void misskey_client_clear_proxy(MisskeyClient* client) {
+    if (!client) return;
+    memset(&client->proxy, 0, sizeof(MisskeyProxy));
+    client->proxy_enabled = 0;
+}
+
+const MisskeyProxy* misskey_client_get_proxy(const MisskeyClient* client) {
+    if (!client) return NULL;
+    return &client->proxy;
+}
+
+static void apply_proxy_to_curl(CURL* curl, const MisskeyProxy* proxy) {
+    if (!curl || !proxy || proxy->type == MISSKEY_PROXY_NONE || proxy->host[0] == '\0') {
+        return;
+    }
+    
+    char proxy_url[512];
+    snprintf(proxy_url, sizeof(proxy_url), "%s:%d", proxy->host, proxy->port);
+    curl_easy_setopt(curl, CURLOPT_PROXY, proxy_url);
+    
+    long proxy_type;
+    switch (proxy->type) {
+        case MISSKEY_PROXY_HTTP: proxy_type = CURLPROXY_HTTP; break;
+        case MISSKEY_PROXY_HTTPS: proxy_type = CURLPROXY_HTTPS; break;
+        case MISSKEY_PROXY_SOCKS4: proxy_type = CURLPROXY_SOCKS4; break;
+        case MISSKEY_PROXY_SOCKS4A: proxy_type = CURLPROXY_SOCKS4A; break;
+        case MISSKEY_PROXY_SOCKS5: proxy_type = CURLPROXY_SOCKS5; break;
+        default: return;
+    }
+    curl_easy_setopt(curl, CURLOPT_PROXYTYPE, proxy_type);
+    
+    if (proxy->username[0] != '\0') {
+        char userpwd[256];
+        snprintf(userpwd, sizeof(userpwd), "%s:%s", proxy->username, proxy->password);
+        curl_easy_setopt(curl, CURLOPT_PROXYUSERPWD, userpwd);
+    }
 }
 
 MisskeyError misskey_request(MisskeyClient* client, const char* endpoint,
@@ -287,6 +422,10 @@ MisskeyError misskey_request(MisskeyClient* client, const char* endpoint,
         curl_easy_setopt(client->curl, CURLOPT_SSL_VERIFYPEER, 1L);
     } else {
         curl_easy_setopt(client->curl, CURLOPT_SSL_VERIFYPEER, 0L);
+    }
+    
+    if (client->proxy_enabled) {
+        apply_proxy_to_curl(client->curl, &client->proxy);
     }
     
     CURLcode res = curl_easy_perform(client->curl);
@@ -1230,6 +1369,10 @@ MisskeyError misskey_drive_files_download(MisskeyClient* client, const char* fil
     
     if (options->resume_from > 0) {
         curl_easy_setopt(curl, CURLOPT_RESUME_FROM_LARGE, (curl_off_t)options->resume_from);
+    }
+    
+    if (client->proxy_enabled) {
+        apply_proxy_to_curl(curl, &client->proxy);
     }
     
     if (fp) {
@@ -2510,6 +2653,8 @@ struct MisskeyStream {
     void* user_data;
     char recv_buffer[32768];
     size_t recv_len;
+    MisskeyProxy proxy;
+    int proxy_enabled;
 };
 
 static const char* misskey_stream_channel_name(MisskeyStreamChannel channel) {
@@ -2524,6 +2669,10 @@ static const char* misskey_stream_channel_name(MisskeyStreamChannel channel) {
 }
 
 MisskeyStream* misskey_stream_new(const char* host, const char* token) {
+    return misskey_stream_new_with_proxy(host, token, NULL);
+}
+
+MisskeyStream* misskey_stream_new_with_proxy(const char* host, const char* token, const MisskeyProxy* proxy) {
     if (!host) return NULL;
     
     MisskeyStream* stream = malloc(sizeof(MisskeyStream));
@@ -2532,6 +2681,11 @@ MisskeyStream* misskey_stream_new(const char* host, const char* token) {
     memset(stream, 0, sizeof(MisskeyStream));
     strncpy(stream->host, host, sizeof(stream->host) - 1);
     if (token) strncpy(stream->token, token, sizeof(stream->token) - 1);
+    
+    if (proxy && proxy->type != MISSKEY_PROXY_NONE && proxy->host[0] != '\0') {
+        memcpy(&stream->proxy, proxy, sizeof(MisskeyProxy));
+        stream->proxy_enabled = 1;
+    }
     
     curl_ensure_init();
     stream->curl = curl_easy_init();
@@ -2545,6 +2699,10 @@ MisskeyStream* misskey_stream_new(const char* host, const char* token) {
     curl_easy_setopt(stream->curl, CURLOPT_URL, url);
     curl_easy_setopt(stream->curl, CURLOPT_CONNECT_ONLY, 2L);
     curl_easy_setopt(stream->curl, CURLOPT_SSL_VERIFYPEER, 1L);
+    
+    if (stream->proxy_enabled) {
+        apply_proxy_to_curl(stream->curl, &stream->proxy);
+    }
     
     return stream;
 }

@@ -7,8 +7,11 @@ import json // includes cJSON
 #flag -lcurl
 
 #include "misskey_client.h"
+#include <string.h>
 
 struct C.MisskeyClient {}
+
+fn C.strncpy(&char, charptr, int) &char
 
 fn C.misskey_client_new(host charptr) &C.MisskeyClient
 fn C.misskey_client_free(client &C.MisskeyClient)
@@ -83,6 +86,20 @@ fn C.misskey_client_new_with_allocator(host charptr, allocator voidptr) &C.Missk
 fn C.misskey_client_get_allocator(client &C.MisskeyClient) voidptr
 fn C.misskey_request_print_curl(client &C.MisskeyClient, endpoint charptr, body charptr)
 fn C.misskey_client_get_last_error(client &C.MisskeyClient, http_code &int, error_detail &charptr)
+
+fn C.misskey_client_set_proxy(client &C.MisskeyClient, proxy &C.MisskeyProxy) int
+fn C.misskey_client_set_proxy_url(client &C.MisskeyClient, proxy_url charptr) int
+fn C.misskey_client_clear_proxy(client &C.MisskeyClient)
+fn C.misskey_client_get_proxy(client &C.MisskeyClient) &C.MisskeyProxy
+
+struct C.MisskeyProxy {
+mut:
+	proxy_type int
+	host [256]u8
+	port int
+	username [128]u8
+	password [128]u8
+}
 
 // C struct declarations for structured API
 struct C.MisskeyUser {
@@ -270,6 +287,7 @@ struct C.MisskeyStream {}
 type StreamCallback = fn (msg_type string, body string, user_data voidptr)
 
 fn C.misskey_stream_new(host charptr, token charptr) &C.MisskeyStream
+fn C.misskey_stream_new_with_proxy(host charptr, token charptr, proxy &C.MisskeyProxy) &C.MisskeyStream
 fn C.misskey_stream_free(stream &C.MisskeyStream)
 fn C.misskey_stream_connect(stream &C.MisskeyStream, channel int, channel_id charptr) int
 fn C.misskey_stream_disconnect(stream &C.MisskeyStream, channel_id charptr) int
@@ -281,14 +299,32 @@ fn C.misskey_stream_unsubscribe_note(stream &C.MisskeyStream, note_id charptr) i
 
 // Error codes
 pub enum MisskeyError {
-	ok            = 0
-	invalid_param = 1
-	network       = 2
-	http          = 3
-	json          = 4
-	auth          = 5
-	alloc         = 6
-	unknown       = 7
+	ok                   = 0
+	invalid_param        = 1
+	network              = 2
+	http                 = 3
+	json                 = 4
+	auth                 = 5
+	alloc                = 6
+	unknown              = 7
+}
+
+pub enum ProxyType {
+	none   = 0
+	http   = 1
+	https  = 2
+	socks4 = 3
+	socks4a = 4
+	socks5 = 5
+}
+
+pub struct Proxy {
+pub:
+	proxy_type ProxyType
+	host      string
+	port      int
+	username  string
+	password  string
 }
 
 fn (e MisskeyError) str() string {
@@ -335,6 +371,39 @@ pub fn (c &Client) set_timeout(sec int) {
 
 pub fn (c &Client) set_debug(enable bool) {
 	C.misskey_request_set_debug(c.c_client, if enable { 1 } else { 0 })
+}
+
+pub fn (c &Client) set_proxy(proxy Proxy) ! {
+	mut c_proxy := C.MisskeyProxy{}
+	c_proxy.proxy_type = int(proxy.proxy_type)
+	
+	if proxy.host.len > 0 {
+		unsafe { C.strncpy(&char(c_proxy.host), proxy.host.str, 255) }
+		c_proxy.port = proxy.port
+	}
+	
+	if proxy.username.len > 0 {
+		unsafe { C.strncpy(&char(c_proxy.username), proxy.username.str, 127) }
+	}
+	if proxy.password.len > 0 {
+		unsafe { C.strncpy(&char(c_proxy.password), proxy.password.str, 127) }
+	}
+	
+	ret := C.misskey_client_set_proxy(c.c_client, &c_proxy)
+	if ret != 0 {
+		return error('set_proxy failed: ${MisskeyError(ret).detailed(c)}')
+	}
+}
+
+pub fn (c &Client) set_proxy_url(url string) ! {
+	ret := C.misskey_client_set_proxy_url(c.c_client, url.str)
+	if ret != 0 {
+		return error('set_proxy_url failed: ${MisskeyError(ret).detailed(c)}')
+	}
+}
+
+pub fn (c &Client) clear_proxy() {
+	C.misskey_client_clear_proxy(c.c_client)
 }
 
 pub fn (c &Client) get_last_error() (int, string) {
@@ -1410,6 +1479,31 @@ pub fn stream_new(host string, token string) !Stream {
 	c_stream := C.misskey_stream_new(host.str, token.str)
 	if c_stream == unsafe { nil } {
 		return error('failed to create stream')
+	}
+	return Stream{
+		c_stream: c_stream
+	}
+}
+
+pub fn stream_new_with_proxy(host string, token string, proxy Proxy) !Stream {
+	mut c_proxy := C.MisskeyProxy{}
+	c_proxy.proxy_type = int(proxy.proxy_type)
+	
+	if proxy.host.len > 0 {
+		unsafe { C.strncpy(&char(c_proxy.host), proxy.host.str, 255) }
+		c_proxy.port = proxy.port
+	}
+	
+	if proxy.username.len > 0 {
+		unsafe { C.strncpy(&char(c_proxy.username), proxy.username.str, 127) }
+	}
+	if proxy.password.len > 0 {
+		unsafe { C.strncpy(&char(c_proxy.password), proxy.password.str, 127) }
+	}
+	
+	c_stream := C.misskey_stream_new_with_proxy(host.str, token.str, &c_proxy)
+	if c_stream == unsafe { nil } {
+		return error('failed to create stream with proxy')
 	}
 	return Stream{
 		c_stream: c_stream

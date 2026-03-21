@@ -23,6 +23,23 @@ typedef enum {
     MISSKEY_ERROR_UNKNOWN
 } MisskeyError;
 
+typedef enum {
+    MISSKEY_PROXY_NONE = 0,
+    MISSKEY_PROXY_HTTP,
+    MISSKEY_PROXY_HTTPS,
+    MISSKEY_PROXY_SOCKS4,
+    MISSKEY_PROXY_SOCKS4A,
+    MISSKEY_PROXY_SOCKS5
+} MisskeyProxyType;
+
+typedef struct MisskeyProxy {
+    MisskeyProxyType type;
+    char host[256];
+    int port;
+    char username[128];
+    char password[128];
+} MisskeyProxy;
+
 const char* misskey_error_str(MisskeyError err);
 const char* misskey_error_str_detail(MisskeyClient* client, MisskeyError err);
 void misskey_client_get_last_error(MisskeyClient* client, long* http_code, char** error_detail);
@@ -34,6 +51,11 @@ void misskey_client_free(MisskeyClient* client);
 void misskey_client_set_token(MisskeyClient* client, const char* token);
 void misskey_client_set_timeout(MisskeyClient* client, long timeout_secs);
 const MisskeyAllocator* misskey_client_get_allocator(const MisskeyClient* client);
+
+MisskeyError misskey_client_set_proxy(MisskeyClient* client, const MisskeyProxy* proxy);
+MisskeyError misskey_client_set_proxy_url(MisskeyClient* client, const char* proxy_url);
+void misskey_client_clear_proxy(MisskeyClient* client);
+const MisskeyProxy* misskey_client_get_proxy(const MisskeyClient* client);
 
 MisskeyError misskey_request(MisskeyClient* client, const char* endpoint,
                              const char* request_body, char** response_out);
@@ -322,6 +344,7 @@ typedef void (*MisskeyStreamCallback)(const char* type, const char* body, void* 
 typedef struct MisskeyStream MisskeyStream;
 
 MisskeyStream* misskey_stream_new(const char* host, const char* token);
+MisskeyStream* misskey_stream_new_with_proxy(const char* host, const char* token, const MisskeyProxy* proxy);
 void misskey_stream_free(MisskeyStream* stream);
 
 MisskeyError misskey_stream_connect(MisskeyStream* stream, MisskeyStreamChannel channel, const char* channel_id);

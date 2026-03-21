@@ -92,6 +92,92 @@
 | `misskey_stream_subscribe_note()` | 订阅帖子 |
 | `misskey_stream_unsubscribe_note()` | 取消订阅帖子 |
 
+### 代理 (Proxy) API
+| 函数 | 说明 |
+|------|------|
+| `misskey_client_set_proxy_url()` | 设置代理（URL格式） |
+| `misskey_client_set_proxy()` | 设置代理（结构体格式） |
+| `misskey_client_clear_proxy()` | 清除代理设置 |
+| `misskey_client_get_proxy()` | 获取当前代理配置 |
+| `misskey_stream_new_with_proxy()` | 创建带代理的 WebSocket 流连接 |
+
+## 代理支持
+
+### 代理类型
+
+| 类型 | URL 前缀 | 说明 |
+|------|---------|------|
+| HTTP | `http://` | 标准 HTTP 代理 |
+| HTTPS | `https://` | HTTPS CONNECT 隧道代理 |
+| SOCKS4 | `socks4://` | SOCKS4 协议 |
+| SOCKS4A | `socks4a://` | SOCKS4 with DNS on proxy |
+| SOCKS5 | `socks5://` | SOCKS5 协议 |
+
+### C 语言使用示例
+
+```c
+// 简单代理
+misskey_client_set_proxy_url(client, "socks5://127.0.0.1:1080");
+
+// 带认证的代理
+misskey_client_set_proxy_url(client, "socks5://user:pass@proxy.com:1080");
+
+// HTTPS 代理
+misskey_client_set_proxy_url(client, "https://proxy.com:8080");
+
+// 使用代理结构体
+MisskeyProxy proxy = {
+    .type = MISSKEY_PROXY_SOCKS5,
+    .host = "proxy.example.com",
+    .port = 1080,
+    .username = "user",
+    .password = "pass"
+};
+misskey_client_set_proxy(client, &proxy);
+
+// 清除代理
+misskey_client_clear_proxy(client);
+
+// WebSocket 流使用代理
+MisskeyStream* stream = misskey_stream_new_with_proxy("misskey.io", "token", &proxy);
+```
+
+### V 语言使用示例
+
+```v
+import misskey
+
+// 简单代理
+client.set_proxy_url("socks5://127.0.0.1:1080")!
+
+// 带认证的代理
+client.set_proxy_url("socks5://user:pass@proxy.com:1080")!
+
+// 使用代理结构体
+proxy := misskey.Proxy{
+    proxy_type: .socks5
+    host: "proxy.example.com"
+    port: 1080
+    username: "user"
+    password: "pass"
+}
+client.set_proxy(proxy)!
+
+// 清除代理
+client.clear_proxy()
+
+// WebSocket 流使用代理
+stream := misskey.stream_new_with_proxy("misskey.io", "token", proxy)!
+```
+
+### 代理认证
+
+支持以下代理协议的认证：
+- HTTP 代理：Basic Auth
+- SOCKS5 代理：Username/Password
+
+认证信息通过 URL 格式 `protocol://user:pass@host:port` 或 `Proxy` 结构体传入。
+
 ## 下载功能设计
 
 ### MisskeyDownloadOptions 结构体
