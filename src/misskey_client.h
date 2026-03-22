@@ -32,6 +32,13 @@ typedef enum {
     MISSKEY_PROXY_SOCKS5
 } MisskeyProxyType;
 
+typedef enum {
+    MISSKEY_VISIBILITY_PUBLIC = 0,
+    MISSKEY_VISIBILITY_HOME = 1,
+    MISSKEY_VISIBILITY_FOLLOWERS = 2,
+    MISSKEY_VISIBILITY_SPECIFIED = 3
+} MisskeyNoteVisibility;
+
 typedef struct MisskeyProxy {
     MisskeyProxyType type;
     char host[256];
@@ -102,7 +109,7 @@ typedef struct MisskeyNote {
     char channel_id[32];
     char uri[256];
     char url[512];
-    int visibility;
+    MisskeyNoteVisibility visibility;
     int local_only;
     int visible_user_ids_count;
     int reactions_count;
@@ -249,7 +256,7 @@ MisskeyError misskey_notes_local_timeline_full(MisskeyClient* client, MisskeyTim
 MisskeyError misskey_notes_global_timeline(MisskeyClient* client, int limit, MisskeyNote** notes_out, int* count_out);
 MisskeyError misskey_notes_global_timeline_full(MisskeyClient* client, MisskeyTimelineOptions* opts, MisskeyNote** notes_out, int* count_out);
 MisskeyError misskey_notes_create(MisskeyClient* client, const char* text, const char* reply_id, const char* renote_id, MisskeyNote* note_out);
-MisskeyError misskey_notes_create_full(MisskeyClient* client, const char* text, const char* reply_id, const char* renote_id, const char** file_ids, int file_ids_count, int visibility, const char* cw, int local_only, const char* channel_id, int auto_sensitive, int draft, MisskeyNote* note_out);
+MisskeyError misskey_notes_create_full(MisskeyClient* client, const char* text, const char* reply_id, const char* renote_id, const char** file_ids, int file_ids_count, MisskeyNoteVisibility visibility, const char* cw, int local_only, const char* channel_id, int auto_sensitive, int draft, MisskeyNote* note_out);
 MisskeyError misskey_notes_show(MisskeyClient* client, const char* note_id, MisskeyNote* note_out);
 MisskeyError misskey_notes_delete(MisskeyClient* client, const char* note_id, char note_id_out[32]);
 MisskeyError misskey_notes(MisskeyClient* client, const char* text, const char* reply_id, const char* renote_id, const char* channel_id, int limit, int offset, const char* user_id, int local_only, int reply, int renote, int with_files, const char* since_id, const char* until_id, MisskeyNote** notes_out, int* count_out);
@@ -307,7 +314,7 @@ MisskeyError misskey_notes_raw(MisskeyClient* client, const char* text, const ch
 MisskeyError misskey_notes_show_raw(MisskeyClient* client, const char* note_id, char** response_out);
 MisskeyError misskey_notes_delete_raw(MisskeyClient* client, const char* note_id, char** response_out);
 MisskeyError misskey_notes_create_raw(MisskeyClient* client, const char* text, const char* reply_id, const char* renote_id, char** response_out);
-MisskeyError misskey_notes_create_full_raw(MisskeyClient* client, const char* text, const char* reply_id, const char* renote_id, const char** file_ids, int file_ids_count, int visibility, const char* cw, int local_only, const char* channel_id, int autoSensitive, const char* media_ids, int draft, char** response_out);
+MisskeyError misskey_notes_create_full_raw(MisskeyClient* client, const char* text, const char* reply_id, const char* renote_id, const char** file_ids, int file_ids_count, MisskeyNoteVisibility visibility, const char* cw, int local_only, const char* channel_id, int autoSensitive, const char* media_ids, int draft, char** response_out);
 MisskeyError misskey_i_notifications_raw(MisskeyClient* client, int limit, char** response_out);
 MisskeyError misskey_drive_raw(MisskeyClient* client, char** response_out);
 MisskeyError misskey_drive_files_raw(MisskeyClient* client, int limit, int folder_id, char** response_out);
