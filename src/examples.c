@@ -644,6 +644,85 @@ int example_streaming(const char* host, const char* token) {
     return 0;
 }
 
+static int example_reactions(MisskeyClient* client) {
+    const char* test_note_id = "test_note_123";
+    
+    printf("\n--- Reactions API ---\n");
+    
+    MisskeyError err;
+    
+    // Create reaction
+    printf("Creating reaction (note_id=%s, reaction=👍)...\n", test_note_id);
+    err = misskey_notes_reactions_create(client, test_note_id, "👍");
+    if (err != MISSKEY_OK) {
+        printf("Failed to create reaction\n");
+        print_error_details(client, err);
+        return 1;
+    }
+    printf("Reaction created successfully\n");
+    
+    // Get reactions
+    printf("Getting reactions for note_id=%s...\n", test_note_id);
+    MisskeyReaction* reactions = NULL;
+    int count = 0;
+    err = misskey_notes_reactions(client, test_note_id, NULL, 10, &reactions, &count);
+    if (err != MISSKEY_OK) {
+        printf("Failed to get reactions\n");
+        print_error_details(client, err);
+        return 1;
+    }
+    printf("Got %d reactions:\n", count);
+    for (int i = 0; i < count; i++) {
+        printf("  [%d] type=%s, user=@%s\n", 
+               i + 1, reactions[i].type, reactions[i].user.username);
+    }
+    misskey_free_reactions(client, reactions, count);
+    
+    // Delete reaction
+    printf("Deleting reaction (note_id=%s)...\n", test_note_id);
+    err = misskey_notes_reactions_delete(client, test_note_id);
+    if (err != MISSKEY_OK) {
+        printf("Failed to delete reaction\n");
+        print_error_details(client, err);
+        return 1;
+    }
+    printf("Reaction deleted successfully\n");
+    
+    return 0;
+}
+
+static int example_reactions_raw(MisskeyClient* client) {
+    const char* test_note_id = "test_note_456";
+    
+    printf("\n--- Reactions API (raw) ---\n");
+    
+    // Create reaction (raw)
+    printf("Creating reaction (raw)...\n");
+    char* resp = NULL;
+    MisskeyError err = misskey_notes_reactions_create_raw(client, test_note_id, "❤️", &resp);
+    if (err != MISSKEY_OK) {
+        printf("Failed to create reaction (raw)\n");
+        print_error_details(client, err);
+        return 1;
+    }
+    printf("Response: %s (empty = success)\n", resp ? resp : "(empty)");
+    if (resp) misskey_free_string(client, resp);
+    
+    // Get reactions (raw)
+    printf("Getting reactions (raw)...\n");
+    err = misskey_notes_reactions_raw(client, test_note_id, NULL, 5, &resp);
+    if (err != MISSKEY_OK) {
+        printf("Failed to get reactions (raw)\n");
+        print_error_details(client, err);
+        return 1;
+    }
+    printf("Response:\n");
+    print_json_parsed(resp);
+    if (resp) misskey_free_string(client, resp);
+    
+    return 0;
+}
+
 int main(int argc, char* argv[]) {
     const char* host = argc > 1 ? argv[1] : "localhost:3000";
     const char* token = argc > 2 ? argv[2] : NULL;
@@ -703,6 +782,8 @@ int main(int argc, char* argv[]) {
         api_call_start("clips/show");  api_call_end(example_clips_show(client) == 0);
         api_call_start("clips/create");  api_call_end(example_clips_create(client, "Test Clip") == 0);
         api_call_start("clips/notes");  api_call_end(example_clips_notes(client) == 0);
+        api_call_start("notes/reactions");  api_call_end(example_reactions(client) == 0);
+        api_call_start("notes/reactions (raw)");  api_call_end(example_reactions_raw(client) == 0);
         api_call_start("streaming");  api_call_end(example_streaming(host, token) == 0);
     }
     

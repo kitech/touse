@@ -64,7 +64,7 @@ MisskeyError misskey_notes_create_full_raw(MisskeyClient* client,
                                           const char* renote_id,
                                           const char** file_ids,
                                           int file_ids_count,
-                                          int visibility,
+                                          MisskeyNoteVisibility visibility,
                                           const char* cw,
                                           int local_only,
                                           const char* channel_id,
@@ -720,7 +720,7 @@ MisskeyError misskey_notes_create_full_raw(MisskeyClient* client,
                                           const char* renote_id,
                                           const char** file_ids,
                                           int file_ids_count,
-                                          int visibility,
+                                          MisskeyNoteVisibility visibility,
                                           const char* cw,
                                           int local_only,
                                           const char* channel_id,
@@ -1270,6 +1270,143 @@ MisskeyError misskey_clips_notes_raw(MisskeyClient* client, const char* clip_id,
     cJSON_free(json_str);
     cJSON_Delete(root);
     return err;
+}
+
+static void parse_reaction(cJSON* obj, MisskeyReaction* r) {
+    cJSON* item;
+    
+    if (!obj || !r) return;
+    memset(r, 0, sizeof(MisskeyReaction));
+    
+    if ((item = cJSON_GetObjectItem(obj, "id")) && cJSON_IsString(item))
+        strncpy(r->id, item->valuestring, 31);
+    
+    if ((item = cJSON_GetObjectItem(obj, "createdAt")) && cJSON_IsString(item))
+        strncpy(r->created_at, item->valuestring, 31);
+    
+    if ((item = cJSON_GetObjectItem(obj, "type")) && cJSON_IsString(item))
+        strncpy(r->type, item->valuestring, 63);
+    
+    if ((item = cJSON_GetObjectItem(obj, "userId")) && cJSON_IsString(item))
+        strncpy(r->user_id, item->valuestring, 31);
+    
+    if ((item = cJSON_GetObjectItem(obj, "user")) && cJSON_IsObject(item))
+        parse_user(item, &r->user);
+}
+
+void misskey_reaction_init(MisskeyReaction* r) {
+    if (!r) return;
+    memset(r, 0, sizeof(MisskeyReaction));
+}
+
+MisskeyError misskey_notes_reactions_create_raw(MisskeyClient* client, const char* note_id,
+                                                const char* reaction, char** response_out) {
+    if (!client || !note_id || !reaction || !response_out)
+        return MISSKEY_ERROR_INVALID_PARAM;
+    
+    cJSON* root = cJSON_CreateObject();
+    cJSON_AddStringToObject(root, "i", client->token);
+    cJSON_AddStringToObject(root, "noteId", note_id);
+    cJSON_AddStringToObject(root, "reaction", reaction);
+    
+    char* json_str = cJSON_PrintUnformatted(root);
+    MisskeyError err = misskey_request(client, "notes/reactions/create", json_str, response_out);
+    
+    cJSON_free(json_str);
+    cJSON_Delete(root);
+    return err;
+}
+
+MisskeyError misskey_notes_reactions_create(MisskeyClient* client, const char* note_id,
+                                           const char* reaction) {
+    if (!client || !note_id || !reaction) return MISSKEY_ERROR_INVALID_PARAM;
+    
+    char* resp = NULL;
+    MisskeyError err = misskey_notes_reactions_create_raw(client, note_id, reaction, &resp);
+    if (resp) misskey_free_string(client, resp);
+    return err;
+}
+
+MisskeyError misskey_notes_reactions_delete_raw(MisskeyClient* client, const char* note_id,
+                                                char** response_out) {
+    if (!client || !note_id || !response_out) return MISSKEY_ERROR_INVALID_PARAM;
+    
+    cJSON* root = cJSON_CreateObject();
+    cJSON_AddStringToObject(root, "i", client->token);
+    cJSON_AddStringToObject(root, "noteId", note_id);
+    
+    char* json_str = cJSON_PrintUnformatted(root);
+    MisskeyError err = misskey_request(client, "notes/reactions/delete", json_str, response_out);
+    
+    cJSON_free(json_str);
+    cJSON_Delete(root);
+    return err;
+}
+
+MisskeyError misskey_notes_reactions_delete(MisskeyClient* client, const char* note_id) {
+    if (!client || !note_id) return MISSKEY_ERROR_INVALID_PARAM;
+    
+    char* resp = NULL;
+    MisskeyError err = misskey_notes_reactions_delete_raw(client, note_id, &resp);
+    if (resp) misskey_free_string(client, resp);
+    return err;
+}
+
+MisskeyError misskey_notes_reactions_raw(MisskeyClient* client, const char* note_id,
+                                        const char* type, int limit, char** response_out) {
+    if (!client || !note_id || !response_out) return MISSKEY_ERROR_INVALID_PARAM;
+    
+    cJSON* root = cJSON_CreateObject();
+    cJSON_AddStringToObject(root, "noteId", note_id);
+    if (type && type[0]) cJSON_AddStringToObject(root, "type", type);
+    cJSON_AddNumberToObject(root, "limit", limit > 0 ? limit : 10);
+    
+    char* json_str = cJSON_PrintUnformatted(root);
+    MisskeyError err = misskey_request(client, "notes/reactions", json_str, response_out);
+    
+    cJSON_free(json_str);
+    cJSON_Delete(root);
+    return err;
+}
+
+MisskeyError misskey_notes_reactions(MisskeyClient* client, const char* note_id,
+                                     const char* type, int limit,
+                                     MisskeyReaction** reactions_out, int* count_out) {
+    if (!client || !note_id || !reactions_out || !count_out)
+        return MISSKEY_ERROR_INVALID_PARAM;
+    
+    char* resp = NULL;
+    MisskeyError err = misskey_notes_reactions_raw(client, note_id, type, limit, &resp);
+    if (err != MISSKEY_OK) return err;
+    
+    cJSON* array = cJSON_Parse(resp);
+    misskey_free_string(client, resp);
+    if (!array || !cJSON_IsArray(array)) {
+        if (array) cJSON_Delete(array);
+        return MISSKEY_ERROR_JSON;
+    }
+    
+    int count = cJSON_GetArraySize(array);
+    *reactions_out = alloc_allocator(&client->allocator, count * sizeof(MisskeyReaction));
+    if (!*reactions_out) {
+        cJSON_Delete(array);
+        return MISSKEY_ERROR_ALLOC;
+    }
+    memset(*reactions_out, 0, count * sizeof(MisskeyReaction));
+    
+    for (int i = 0; i < count; i++) {
+        cJSON* item = cJSON_GetArrayItem(array, i);
+        parse_reaction(item, &(*reactions_out)[i]);
+    }
+    
+    *count_out = count;
+    cJSON_Delete(array);
+    return MISSKEY_OK;
+}
+
+void misskey_free_reactions(MisskeyClient* client, MisskeyReaction* reactions, int count) {
+    (void)count;
+    if (reactions) free_allocator(&client->allocator, reactions);
 }
 
 static size_t write_to_file_cb(void* contents, size_t size, size_t nmemb, void* userp) {
@@ -1920,7 +2057,7 @@ MisskeyError misskey_notes_create_full(MisskeyClient* client,
                                      const char* renote_id,
                                      const char** file_ids,
                                      int file_ids_count,
-                                     int visibility,
+                                     MisskeyNoteVisibility visibility,
                                      const char* cw,
                                      int local_only,
                                      const char* channel_id,

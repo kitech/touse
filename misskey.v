@@ -76,6 +76,14 @@ fn C.misskey_clips_add_note_raw(client &C.MisskeyClient, clip_id charptr, note_i
 fn C.misskey_clips_remove_note_raw(client &C.MisskeyClient, clip_id charptr, note_id charptr, response &charptr) int
 fn C.misskey_clips_notes_raw(client &C.MisskeyClient, clip_id charptr, limit int, response &charptr) int
 
+fn C.misskey_notes_reactions_create_raw(client &C.MisskeyClient, note_id charptr, reaction charptr, response &charptr) int
+fn C.misskey_notes_reactions_delete_raw(client &C.MisskeyClient, note_id charptr, response &charptr) int
+fn C.misskey_notes_reactions_raw(client &C.MisskeyClient, note_id charptr, reaction_type charptr, limit int, response &charptr) int
+fn C.misskey_notes_reactions_create(client &C.MisskeyClient, note_id charptr, reaction charptr) int
+fn C.misskey_notes_reactions_delete(client &C.MisskeyClient, note_id charptr) int
+fn C.misskey_notes_reactions(client &C.MisskeyClient, note_id charptr, reaction_type charptr, limit int, reactions_out &&C.MisskeyReaction, count_out &int) int
+fn C.misskey_free_reactions(client &C.MisskeyClient, reactions &C.MisskeyReaction, count int)
+
 fn C.misskey_translate_raw(client &C.MisskeyClient, note_id charptr, target_lang charptr, response &charptr) int
 fn C.misskey_request_set_debug(client &C.MisskeyClient, enable int)
 fn C.misskey_free_string(client &C.MisskeyClient, str charptr)
@@ -161,6 +169,16 @@ mut:
 	note_id [32]u8
 	reaction [64]u8
 	message [512]u8
+	user C.MisskeyUser
+}
+
+struct C.MisskeyReaction {
+mut:
+	id [32]u8
+	created_at [32]u8
+	type [64]u8
+	user_id [32]u8
+	user_name [128]u8
 	user C.MisskeyUser
 }
 
@@ -979,6 +997,17 @@ pub:
 }
 
 @[heap]
+pub struct Reaction {
+pub:
+	id string
+	created_at string
+	typ string
+	user_id string
+	user_name string
+	user User
+}
+
+@[heap]
 pub struct DriveFile {
 pub:
 	id string
@@ -1114,6 +1143,17 @@ fn to_notification(cnotif &C.MisskeyNotification) Notification {
 		reaction: unsafe { cstring_to_vstring(&char(cnotif.reaction)) }
 		message: unsafe { cstring_to_vstring(&char(cnotif.message)) }
 		user: to_user(&cnotif.user)
+	}
+}
+
+fn to_reaction(creaction &C.MisskeyReaction) Reaction {
+	return Reaction{
+		id: unsafe { cstring_to_vstring(&char(creaction.id)) }
+		created_at: unsafe { cstring_to_vstring(&char(creaction.created_at)) }
+		typ: unsafe { cstring_to_vstring(&char(creaction.type)) }
+		user_id: unsafe { cstring_to_vstring(&char(creaction.user_id)) }
+		user_name: unsafe { cstring_to_vstring(&char(creaction.user_name)) }
+		user: to_user(&creaction.user)
 	}
 }
 
@@ -1372,6 +1412,45 @@ pub fn (c &Client) i_notifications(limit int) ![]Notification {
 		result[i] = to_notification(unsafe { &notif_ptr[i] })
 	}
 	C.misskey_free_notifications(c.c_client, notif_ptr, count)
+	return result
+}
+
+// add_reaction - 添加反应
+// @param note_id 笔记ID
+// @param reaction 反应类型 (如 "👍" 或 ":emoji_name:")
+pub fn (c &Client) add_reaction(note_id string, reaction string) ! {
+	ret := C.misskey_notes_reactions_create(c.c_client, note_id.str, reaction.str)
+	if ret != 0 {
+		return error('add_reaction failed: ${MisskeyError(ret).detailed(c)}')
+	}
+}
+
+// remove_reaction - 删除反应
+pub fn (c &Client) remove_reaction(note_id string) ! {
+	ret := C.misskey_notes_reactions_delete(c.c_client, note_id.str)
+	if ret != 0 {
+		return error('remove_reaction failed: ${MisskeyError(ret).detailed(c)}')
+	}
+}
+
+// get_reactions - 获取反应列表
+// @param note_id 笔记ID
+// @param reaction_type 过滤特定反应类型（可为空）
+// @param limit 返回数量
+pub fn (c &Client) get_reactions(note_id string, reaction_type string, limit int) ![]Reaction {
+	reaction_cstr := if reaction_type.len > 0 { reaction_type.str } else { voidptr(0) }
+	mut reactions_ptr := &C.MisskeyReaction(unsafe { nil })
+	mut count := 0
+	ret := C.misskey_notes_reactions(c.c_client, note_id.str, reaction_cstr, limit, &reactions_ptr, &count)
+	if ret != 0 {
+		return error('get_reactions failed: ${MisskeyError(ret).detailed(c)}')
+	}
+	
+	mut result := []Reaction{len: count}
+	for i := 0; i < count; i++ {
+		result[i] = to_reaction(unsafe { &reactions_ptr[i] })
+	}
+	C.misskey_free_reactions(c.c_client, reactions_ptr, count)
 	return result
 }
 

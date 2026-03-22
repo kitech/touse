@@ -536,6 +536,47 @@ def api_translate():
         "targetLang": target_lang,
     })
 
+@app.route('/api/notes/reactions/create', methods=['POST'])
+def api_reactions_create():
+    if not check_auth():
+        return jsonify({"error": "Authentication failed"}), 401
+    data = request.get_json() or {}
+    note_id = data.get('noteId')
+    reaction = data.get('reaction')
+    if not note_id or not reaction:
+        return jsonify({"error": "noteId and reaction are required"}), 400
+    return '', 204
+
+@app.route('/api/notes/reactions/delete', methods=['POST'])
+def api_reactions_delete():
+    if not check_auth():
+        return jsonify({"error": "Authentication failed"}), 401
+    data = request.get_json() or {}
+    note_id = data.get('noteId')
+    if not note_id:
+        return jsonify({"error": "noteId is required"}), 400
+    return '', 204
+
+@app.route('/api/notes/reactions', methods=['POST'])
+def api_reactions():
+    data = request.get_json() or {}
+    note_id = data.get('noteId')
+    if not note_id:
+        return jsonify({"error": "noteId is required"}), 400
+    reaction_type = data.get('type')
+    limit = min(data.get('limit', 10), 5)
+    reactions = [{
+        "id": gen_id(),
+        "type": reaction_type or random.choice(["👍", "❤️", "😄", "🎉"]),
+        "createdAt": datetime.now().isoformat(),
+        "user": {
+            "id": gen_id(),
+            "name": f"User{i}",
+            "username": f"user{i}",
+        }
+    } for i in range(limit)]
+    return jsonify(reactions)
+
 @app.route('/health', methods=['GET'])
 def health():
     return jsonify({"status": "ok", "token": TOKEN})
@@ -555,6 +596,9 @@ if __name__ == '__main__':
     print("  /api/meta")
     print("  /api/notes/timeline")
     print("  /api/notes/create")
+    print("  /api/notes/reactions/create  (NEW)")
+    print("  /api/notes/reactions/delete  (NEW)")
+    print("  /api/notes/reactions         (NEW)")
     print("  /api/i/notifications")
     print("  /api/drive")
     print("  /api/drive/files")

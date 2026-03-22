@@ -149,6 +149,15 @@ typedef struct MisskeyNotification {
     MisskeyUser user;
 } MisskeyNotification;
 
+typedef struct MisskeyReaction {
+    char id[32];
+    char created_at[32];
+    char type[64];
+    char user_id[32];
+    char user_name[128];
+    MisskeyUser user;
+} MisskeyReaction;
+
 typedef struct MisskeyDriveFile {
     char id[32];
     char created_at[32];
@@ -283,6 +292,11 @@ MisskeyError misskey_clips_add_note(MisskeyClient* client, const char* clip_id, 
 MisskeyError misskey_clips_remove_note(MisskeyClient* client, const char* clip_id, const char* note_id);
 MisskeyError misskey_clips_notes(MisskeyClient* client, const char* clip_id, int limit, MisskeyNote** notes_out, int* count_out);
 
+MisskeyError misskey_notes_reactions_create(MisskeyClient* client, const char* note_id, const char* reaction);
+MisskeyError misskey_notes_reactions_delete(MisskeyClient* client, const char* note_id);
+MisskeyError misskey_notes_reactions(MisskeyClient* client, const char* note_id, const char* type, int limit, MisskeyReaction** reactions_out, int* count_out);
+void misskey_free_reactions(MisskeyClient* client, MisskeyReaction* reactions, int count);
+
 typedef size_t (*misskey_write_callback)(void* contents, size_t size, size_t nmemb, void* userp);
 typedef struct {
     void* data;
@@ -337,6 +351,10 @@ MisskeyError misskey_clips_delete_raw(MisskeyClient* client, const char* clip_id
 MisskeyError misskey_clips_add_note_raw(MisskeyClient* client, const char* clip_id, const char* note_id, char** response_out);
 MisskeyError misskey_clips_remove_note_raw(MisskeyClient* client, const char* clip_id, const char* note_id, char** response_out);
 MisskeyError misskey_clips_notes_raw(MisskeyClient* client, const char* clip_id, int limit, char** response_out);
+
+MisskeyError misskey_notes_reactions_create_raw(MisskeyClient* client, const char* note_id, const char* reaction, char** response_out);
+MisskeyError misskey_notes_reactions_delete_raw(MisskeyClient* client, const char* note_id, char** response_out);
+MisskeyError misskey_notes_reactions_raw(MisskeyClient* client, const char* note_id, const char* type, int limit, char** response_out);
 
 typedef enum {
     MISSKEY_STREAM_CHANNEL_MAIN = 0,
