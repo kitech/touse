@@ -90,12 +90,14 @@ pub fn callfca6[T](sym voidptr, args ...Anyer) T {
 
 	for idx in 0..args.len {
 		if argctys[idx] == ctype_string {
-			argotys[idx] = create_struct_ffitype2('')
+			argotys[idx] = create_struct_ffitype('')
 			argvals[idx] = get_anyer_data(args[idx])
 			continue
 		}
-		if argctys[idx] == ctype_array {
-			create_struct_ffitype2(Arrayin{})
+		else if argctys[idx] == ctype_array {
+			argotys[idx] = create_struct_ffitype(Arrayin{})
+            argvals[idx] = get_anyer_data(args[idx])
+            continue
 		}
 	    argotys[idx] = get_type_obj2(argctys[idx])
 		if args[idx].isptr() {
@@ -119,7 +121,17 @@ pub fn callfca6[T](sym voidptr, args ...Anyer) T {
 
 	tysz, tystr := sizeof(T), typeof(T{}).name
 	// dump('${tysz}, ${tystr}')
-	if tysz>=sret_minsize { retoty = create_struct_ffitype(int(sret_minsize)) }
+	if tysz >= sret_minsize {
+        $if T.unaliased_typ is string {
+            retoty = create_struct_ffitype_nu8(int(tysz))
+        } $else $if T.unaliased_typ is $array {
+            retoty = create_struct_ffitype_nu8(int(tysz))
+        } $else $if T.unaliased_typ is $map {
+            retoty = create_struct_ffitype_nu8(int(tysz))
+        } $else {
+            retoty = create_struct_ffitype_nu8(int(sret_minsize))
+        }
+    }
 
 	cif := Cif{}
 	stv := prep_cif0(&cif, retoty, argotys[..args.len])
@@ -138,7 +150,7 @@ pub fn callfca6[T](sym voidptr, args ...Anyer) T {
 	return T{}
 }
 
-fn create_struct_ffitype(len int) &C.ffi_type {
+fn create_struct_ffitype_nu8(len int) &C.ffi_type {
     tyobj := &C.ffi_type{}
     tyobj.type = u16(ctype_struct)
 	elems := []voidptr{len: len*2+1}
@@ -147,38 +159,42 @@ fn create_struct_ffitype(len int) &C.ffi_type {
 
     return tyobj
 }
-fn create_struct_ffitype2[T](v T) &C.ffi_type {
+fn create_struct_ffitype[T](v T) &C.ffi_type {
 
 	$if T.unaliased_typ is string {
 
-		tyobj := &C.ffi_type{}
-		tyobj.type = u16(ctype_struct)
-		elems := []voidptr{len: 8}
-		elems[0] = type_pointer
-		elems[1] = type_uint32
-		elems[2] = type_uint32
-		tyobj.elements = elems.data
+		// tyobj := &C.ffi_type{}
+		// tyobj.type = u16(ctype_struct)
+		// elems := []voidptr{len: 8}
+		// elems[0] = type_pointer
+		// elems[1] = type_uint32
+		// elems[2] = type_uint32
+		// tyobj.elements = elems.data
 
+        tyobj := create_struct_ffitype_nu8(int(sizeof(v)))
 		return tyobj
 	} $else $if T.unaliased_typ is $array {
-		
+        tyobj := create_struct_ffitype_nu8(int(sizeof(v)))
+        return tyobj
+
 	} $else $if T.unaliased_typ is $struct {
 		tyobj := &C.ffi_type{}
 		tyobj.type = u16(ctype_struct)
 		elems := []voidptr{}
-		
+
 		$for fld in T.fields {
-			dump(fld.name)
-			ty := ffity_oftmpl(v.$fld.name)
+			tyi := ffity_oftmpl(v.$fld.name)
+            tyo := get_type_obj2(tyi)
+            elems << tyo
 		}
 		tyobj.elements = elems.data
 
 		return tyobj
-		
+
 	} $else {
 		assert false, typeof(v).name
 	}
-	
+
 	return nil
 }
 
@@ -242,11 +258,12 @@ pub fn ffity_oftmpl[T](t T) int {
     ispointer := $if T is $pointer { true } $else { false }
     tyidx0 := typeof(t).idx
     tyidx1 := T.unaliased_typ // int value like typeof(0).idx
-	
+
 	$if T.unaliased_typ is int {  return ctype_int
 	} $else $if T.unaliased_typ is bool {	    return ctype_int
 	} $else $if T.unaliased_typ is i8 {	    return ctype_sint8
 	} $else $if T.unaliased_typ is u32 {	    return ctype_uint32
+	} $else $if T.unaliased_typ is $enum {	    return ctype_uint32
 	} $else $if T.unaliased_typ is f32 {      return ctype_float
 	} $else $if T.unaliased_typ is f64 {	    return ctype_double
 	} $else $if T.unaliased_typ is usize {	return ctype_pointer
@@ -281,7 +298,7 @@ pub fn ffity_ofany(arg Anyer) int {
 		}
 		else{}
 	}
-	
+
 	match arg {
 		f32 { fficty = ctype_float }
 		f64 { fficty = ctype_double }
@@ -290,25 +307,27 @@ pub fn ffity_ofany(arg Anyer) int {
 		i64 { fficty = ctype_sint64 }
 		u64 { fficty = ctype_uint64 }
 		u32 { fficty = ctype_sint32 }
-		i16 { fficty = ctype_int }
-		i8 { fficty = ctype_int }
+		i16 { fficty = ctype_sint16 }
+		i8 { fficty = ctype_sint8 }
 		// C 中没有bool类型，是整数类型，所以对C函数应该可能。
 		// 但是对V的bool并不适用。需要V打开开关-d 4bytebool。
 		bool { fficty = ctype_int }
 		voidptr { fficty = ctype_pointer }
 		charptr { fficty = ctype_pointer }
 		byteptr { fficty = ctype_pointer }
-		string { fficty = ctype_pointer }
+		// string { fficty = ctype_pointer }
+		string { fficty = ctype_string }
 		else {
 		    warnit := true
 		    tyname := arg.tyname()
 			if tyname.starts_with('[]') {
-
+                warnit = false
+                fficty = ctype_array
 			} else if tyname.starts_with('map[') {
 
 			} else if tyname.count('.') > 0 { // non builtin struct or ref
 			    if arg.isptr() {
-					warnit=false
+					warnit = false
 					fficty = ctype_pointer
 				}
 			} else if tyname.count('.') == 0 { // builtin struct or ref
