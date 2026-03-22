@@ -495,6 +495,10 @@ pub fn (c &Client) notes_global_timeline_raw(limit int) !string {
 	return result
 }
 
+// notes_create_raw - 创建笔记或转发（返回 JSON）
+// @param text 笔记内容（可为空，用于纯转发）
+// @param reply_id 回复目标ID（可为空）
+// @param renote_id 转发目标ID（可为空，用于带文字转发）
 pub fn (c &Client) notes_create_raw(text string, reply_id string, renote_id string) !string {
 	reply_cstr := if reply_id.len > 0 { reply_id.str } else { voidptr(0) }
 	renote_cstr := if renote_id.len > 0 { renote_id.str } else { voidptr(0) }
@@ -508,20 +512,24 @@ pub fn (c &Client) notes_create_raw(text string, reply_id string, renote_id stri
 	return result
 }
 
+// CreateNoteOptions - 创建笔记的完整选项
+// 所有字符串字段均可为空，表示不设置该选项
 pub struct CreateNoteOptions {
 pub:
-	text         string
-	reply_id     string
-	renote_id    string
-	file_ids     []string
-	visibility   int
-	cw           string
-	local_only   bool
-	channel_id   string
-	auto_sensitive bool
-	draft        bool
+	text           string   // 笔记内容（可为空，用于纯转发）
+	reply_id       string   // 回复目标ID（可为空）
+	renote_id      string   // 转发目标ID（可为空，用于带文字转发）
+	file_ids       []string // 附件ID列表
+	visibility     int      // 可见性 0=public, 1=home, 2=followers, 3=specified
+	cw             string   // 内容警告文字（可为空）
+	local_only     bool     // 是否仅本地可见
+	channel_id     string   // 频道ID（可为空）
+	auto_sensitive bool      // 自动敏感内容标记
+	draft          bool      // 是否保存为草稿
 }
 
+// notes_create_full_raw - 创建笔记或转发（完整选项，返回 JSON）
+// @param opts 笔记选项，参见 CreateNoteOptions
 pub fn (c &Client) notes_create_full_raw(opts CreateNoteOptions) !string {
 	reply_cstr := if opts.reply_id.len > 0 { opts.reply_id.str } else { voidptr(0) }
 	renote_cstr := if opts.renote_id.len > 0 { opts.renote_id.str } else { voidptr(0) }
@@ -1272,6 +1280,10 @@ pub fn (c &Client) notes_global_timeline_full(opts TimelineOptions) ![]Note {
 	return result
 }
 
+// notes_create - 创建笔记或转发
+// @param text 笔记内容（可为空，用于纯转发）
+// @param reply_id 回复目标ID（可为空）
+// @param renote_id 转发目标ID（可为空，用于带文字转发）
 pub fn (c &Client) notes_create(text string, reply_id string, renote_id string) !Note {
 	reply_cstr := if reply_id.len > 0 { reply_id.str } else { voidptr(0) }
 	renote_cstr := if renote_id.len > 0 { renote_id.str } else { voidptr(0) }
@@ -1284,6 +1296,8 @@ pub fn (c &Client) notes_create(text string, reply_id string, renote_id string) 
 	return to_note(cnote)
 }
 
+// notes_create_full - 创建笔记或转发（完整选项）
+// @param opts 笔记选项，参见 CreateNoteOptions
 pub fn (c &Client) notes_create_full(opts CreateNoteOptions) !Note {
 	reply_cstr := if opts.reply_id.len > 0 { opts.reply_id.str } else { voidptr(0) }
 	renote_cstr := if opts.renote_id.len > 0 { opts.renote_id.str } else { voidptr(0) }
