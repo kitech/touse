@@ -89,6 +89,14 @@ pub fn callfca6[T](sym voidptr, args ...Anyer) T {
 	}
 
 	for idx in 0..args.len {
+		if argctys[idx] == ctype_string {
+			argotys[idx] = create_struct_ffitype2('')
+			argvals[idx] = get_anyer_data(args[idx])
+			continue
+		}
+		if argctys[idx] == ctype_array {
+			create_struct_ffitype2(Arrayin{})
+		}
 	    argotys[idx] = get_type_obj2(argctys[idx])
 		if args[idx].isptr() {
 	        assert argotys[idx]==type_pointer
@@ -138,6 +146,40 @@ fn create_struct_ffitype(len int) &C.ffi_type {
 	tyobj.elements = elems.data
 
     return tyobj
+}
+fn create_struct_ffitype2[T](v T) &C.ffi_type {
+
+	$if T.unaliased_typ is string {
+
+		tyobj := &C.ffi_type{}
+		tyobj.type = u16(ctype_struct)
+		elems := []voidptr{len: 8}
+		elems[0] = type_pointer
+		elems[1] = type_uint32
+		elems[2] = type_uint32
+		tyobj.elements = elems.data
+
+		return tyobj
+	} $else $if T.unaliased_typ is $array {
+		
+	} $else $if T.unaliased_typ is $struct {
+		tyobj := &C.ffi_type{}
+		tyobj.type = u16(ctype_struct)
+		elems := []voidptr{}
+		
+		$for fld in T.fields {
+			dump(fld.name)
+			ty := ffity_oftmpl(v.$fld.name)
+		}
+		tyobj.elements = elems.data
+
+		return tyobj
+		
+	} $else {
+		assert false, typeof(v).name
+	}
+	
+	return nil
 }
 
 // usage: slen := ffi.callfca8('strlen', 0, c'abc')
@@ -200,17 +242,17 @@ pub fn ffity_oftmpl[T](t T) int {
     ispointer := $if T is $pointer { true } $else { false }
     tyidx0 := typeof(t).idx
     tyidx1 := T.unaliased_typ // int value like typeof(0).idx
-
-	$if t is int {  return ctype_int
-	} $else $if t is bool {	    return ctype_int
-	} $else $if t is i8 {	    return ctype_sint8
-	} $else $if t is u32 {	    return ctype_uint32
-	} $else $if t is f32 {      return ctype_float
-	} $else $if t is f64 {	    return ctype_double
-	} $else $if t is usize {	return ctype_pointer
-	} $else $if t is i64 {	    return ctype_sint64
-	} $else $if t is u64 {	    return ctype_uint64
-	} $else $if t is $pointer {	return ctype_pointer
+	
+	$if T.unaliased_typ is int {  return ctype_int
+	} $else $if T.unaliased_typ is bool {	    return ctype_int
+	} $else $if T.unaliased_typ is i8 {	    return ctype_sint8
+	} $else $if T.unaliased_typ is u32 {	    return ctype_uint32
+	} $else $if T.unaliased_typ is f32 {      return ctype_float
+	} $else $if T.unaliased_typ is f64 {	    return ctype_double
+	} $else $if T.unaliased_typ is usize {	return ctype_pointer
+	} $else $if T.unaliased_typ is i64 {	    return ctype_sint64
+	} $else $if T.unaliased_typ is u64 {	    return ctype_uint64
+	} $else $if T.unaliased_typ is $pointer {	return ctype_pointer
 	} $else {
 	    $if T is $alias {
 			// return ffity_oftmpl[T.unaliased_typ]() // elegant but not working
@@ -224,10 +266,22 @@ pub fn ffity_oftmpl[T](t T) int {
 	    log.warn("${@FILE_LINE}: unknown ${typeof(t).name}, alias=$isalias, pointer=$ispointer")
 	    return -1
 	}
+
 }
+
+pub const ctype_string = 64
+pub const ctype_array  = 65
+
 pub fn ffity_ofany(arg Anyer) int {
     mut fficty := ctype_int
 
+	match arg{
+		string {
+			return ctype_string
+		}
+		else{}
+	}
+	
 	match arg {
 		f32 { fficty = ctype_float }
 		f64 { fficty = ctype_double }
@@ -277,7 +331,7 @@ pub mut:
 pub fn get_anyer_data(arg Anyer) voidptr {
     ptr := unsafe { &Itfacein(voidptr(&arg)) }
     if arg is string {
-        return arg.str
+      //  return arg.str
     }
     return ptr.ptr
 }
