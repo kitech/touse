@@ -119,6 +119,8 @@ pub fn get_type_obj2(ty int) &Type {
 	match ty {
 		ctype_void { tyobj = type_void }
 		ctype_int { tyobj = type_sint32 }
+		ctype_sint8 { tyobj = type_sint8 }
+		ctype_uint8 { tyobj = type_uint8 }
 		ctype_sint16 { tyobj = type_sint16 }
 		ctype_uint16 { tyobj = type_uint16 }
 		ctype_sint32 { tyobj = type_sint32 }

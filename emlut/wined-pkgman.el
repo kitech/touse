@@ -5,17 +5,19 @@
 ;; 预定义的中文安装源（三个）
 (defvar my-package-sources
   '(("GNU ELPA" . (("gnu" . "https://elpa.gnu.org/packages/")))
+    ("NONGNU" . (("nongnu" . "https://elpa.nongnu.org/nongnu/")))
     ("MELPA" . (("melpa" . "https://melpa.org/packages/")))
     ("Org ELPA" . (("org" . "https://orgmode.org/elpa/")))
-    ("清华源" . (("gnu"   . "https://mirrors.tuna.tsinghua.edu.cn/elpa/gnu/")
-                 ("melpa" . "https://mirrors.tuna.tsinghua.edu.cn/elpa/melpa/")
-                 ("org"   . "https://mirrors.tuna.tsinghua.edu.cn/elpa/org/")))
-    ("中科大源" . (("gnu"   . "http://mirrors.ustc.edu.cn/elpa/gnu/")
-                   ("melpa" . "http://mirrors.ustc.edu.cn/elpa/melpa/")
-                   ("org"   . "http://mirrors.ustc.edu.cn/elpa/org/")))
+    ("中科大源" . (("gnu"   . "https://mirrors.ustc.edu.cn/elpa/gnu/")
+		   ("nongnu"   . "https://mirrors.ustc.edu.cn/elpa/nongnu/")
+                   ("melpa" . "https://mirrors.ustc.edu.cn/elpa/melpa/")
+                   ("org"   . "https://mirrors.ustc.edu.cn/elpa/org/")))
     ("阿里源" . (("gnu"   . "https://mirrors.aliyun.com/elpa/gnu/")
                  ("melpa" . "https://mirrors.aliyun.com/elpa/melpa/")
-                 ("org"   . "https://mirrors.aliyun.com/elpa/org/"))))
+                 ("org"   . "https://mirrors.aliyun.com/elpa/org/")))
+    ("清华源" . (("gnu"   . "https://mirrors.tuna.tsinghua.edu.cn/elpa/gnu/")
+                 ("melpa" . "https://mirrors.tuna.tsinghua.edu.cn/elpa/melpa/")
+                 ("org"   . "https://mirrors.tuna.tsinghua.edu.cn/elpa/org/"))))
   "可选安装源列表，每个元素为 (名称 . (档案名 . URL) 列表)。")
 
 (defvar my-package-buffer "*my-package-manager*"

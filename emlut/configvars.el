@@ -348,7 +348,12 @@
   (add-to-list 'my-lost-pkgs 'yasnippet)
   (message "need install package 'yasnippet")
   )
-
+(if (package-installed-p 'treesit-fold)
+    (use-package treesit-fold
+      :ensure t))
+(if (package-installed-p 'kirigami)
+    (use-package kirigami
+      :ensure t))
 
 ;; (custom-set-variables
 ;;  '(mini-frame-show-parameters

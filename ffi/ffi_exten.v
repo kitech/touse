@@ -99,6 +99,18 @@ pub fn callfca6[T](sym voidptr, args ...Anyer) T {
             argvals[idx] = get_anyer_data(args[idx])
             continue
 		}
+		else if argctys[idx] == ctype_map {
+			argotys[idx] = create_struct_ffitype(Mapin{})
+			// argotys[idx] = create_struct_ffitype({1:1})
+            argvals[idx] = get_anyer_data(args[idx])
+            continue
+		}
+		else if argctys[idx] == ctype_struct { // no struct info here
+			// argotys[idx] = create_struct_ffitype_nu8()
+            // argvals[idx] = get_anyer_data(args[idx])
+            // continue
+            assert false, 'todo'
+		}
 	    argotys[idx] = get_type_obj2(argctys[idx])
 		if args[idx].isptr() {
 	        assert argotys[idx]==type_pointer
@@ -137,7 +149,7 @@ pub fn callfca6[T](sym voidptr, args ...Anyer) T {
 	stv := prep_cif0(&cif, retoty, argotys[..args.len])
 	assert stv == ok
 
-	struct DerefMem {data0 [32]u8} // max 32, or return value invalid
+	struct DerefMem {data0 [512]u8} // max 32, or return value invalid
 	retval := DerefMem {}
 	assert sizeof(retval) >= sizeof(T), tystr
 
@@ -173,7 +185,11 @@ fn create_struct_ffitype[T](v T) &C.ffi_type {
 
         tyobj := create_struct_ffitype_nu8(int(sizeof(v)))
 		return tyobj
+
 	} $else $if T.unaliased_typ is $array {
+        tyobj := create_struct_ffitype_nu8(int(sizeof(v)))
+        return tyobj
+	} $else $if T.unaliased_typ is $map {
         tyobj := create_struct_ffitype_nu8(int(sizeof(v)))
         return tyobj
 
@@ -184,8 +200,14 @@ fn create_struct_ffitype[T](v T) &C.ffi_type {
 
 		$for fld in T.fields {
 			tyi := ffity_oftmpl(v.$fld.name)
-            tyo := get_type_obj2(tyi)
-            elems << tyo
+            // dump('$tyi ${fld.name} ${fld.typ}')
+            $if fld.typ is $struct {
+                tyo := create_struct_ffitype(v.$fld.name)
+                elems << tyo
+            } $else {
+                tyo := get_type_obj2(tyi)
+                elems << tyo
+            }
 		}
 		tyobj.elements = elems.data
 
@@ -262,6 +284,7 @@ pub fn ffity_oftmpl[T](t T) int {
 	$if T.unaliased_typ is int {  return ctype_int
 	} $else $if T.unaliased_typ is bool {	    return ctype_int
 	} $else $if T.unaliased_typ is i8 {	    return ctype_sint8
+	} $else $if T.unaliased_typ is u8 {	    return ctype_uint8
 	} $else $if T.unaliased_typ is u32 {	    return ctype_uint32
 	} $else $if T.unaliased_typ is $enum {	    return ctype_uint32
 	} $else $if T.unaliased_typ is f32 {      return ctype_float
@@ -270,6 +293,9 @@ pub fn ffity_oftmpl[T](t T) int {
 	} $else $if T.unaliased_typ is i64 {	    return ctype_sint64
 	} $else $if T.unaliased_typ is u64 {	    return ctype_uint64
 	} $else $if T.unaliased_typ is $pointer {	return ctype_pointer
+	} $else $if T.unaliased_typ is $function {	return ctype_pointer
+	} $else $if T.unaliased_typ is $map {	return ctype_map
+	} $else $if T.unaliased_typ is $struct {	return ctype_struct
 	} $else {
 	    $if T is $alias {
 			// return ffity_oftmpl[T.unaliased_typ]() // elegant but not working
@@ -280,7 +306,7 @@ pub fn ffity_oftmpl[T](t T) int {
 				else {}
 			}
 		}
-	    log.warn("${@FILE_LINE}: unknown ${typeof(t).name}, alias=$isalias, pointer=$ispointer")
+	    log.warn("${@FILE_LINE}: unknown ${typeof(t).name}, alias=$isalias, pointer=$ispointer size=${sizeof(t)}")
 	    return -1
 	}
 
@@ -288,6 +314,7 @@ pub fn ffity_oftmpl[T](t T) int {
 
 pub const ctype_string = 64
 pub const ctype_array  = 65
+pub const ctype_map  = 66
 
 pub fn ffity_ofany(arg Anyer) int {
     mut fficty := ctype_int
@@ -324,7 +351,8 @@ pub fn ffity_ofany(arg Anyer) int {
                 warnit = false
                 fficty = ctype_array
 			} else if tyname.starts_with('map[') {
-
+                warnit = false
+                fficty = ctype_map
 			} else if tyname.count('.') > 0 { // non builtin struct or ref
 			    if arg.isptr() {
 					warnit = false
@@ -333,7 +361,9 @@ pub fn ffity_ofany(arg Anyer) int {
 			} else if tyname.count('.') == 0 { // builtin struct or ref
 
 			}
-			if warnit { log.warn('not support ${arg}, $tyname, isptr ${arg.isptr()}') }
+			if warnit {
+                log.warn('not support ${arg}, $tyname, isptr ${arg.isptr()}')
+            }
 		}
 	}
     return fficty

@@ -60,3 +60,36 @@ fn test_varr() {
 	assert s9 == [2,3,4]
 
 }
+
+/////////////
+
+fn foo_prmin_map(arr map[string]int) int {
+    res := 0
+    for k, v in arr { res += v }
+    return res
+}
+
+fn foo_prmout_map() map[string]int {
+    res := map[string]int{}
+    for i in 0..3 { res[i.str()] = i }
+    return res
+}
+
+fn foo_prminout_map(arr map[string]int) map[string]int {
+    res := map[string]int{}
+    for i, x in arr { res[i] = x + 1 }
+    return res
+}
+
+fn test_vmap() {
+	ret := ffi.callany[int](voidptr(foo_prmin_map), {'a':1,'b':2,'c':3})
+	assert ret == 6
+
+	s9 := ffi.callany[map[string]int](voidptr(foo_prmout_map))
+	assert s9.len == 3
+	assert s9 == {'0':0,'1':1,'2':2}
+
+	s9 = ffi.callany[map[string]int](voidptr(foo_prminout_map), {'a':1,'b':2,'c':3})
+	assert s9.len == 3
+	assert s9 == {'a':2,'b':3,'c':4}
+}
