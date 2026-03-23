@@ -40,7 +40,7 @@ typedef enum {
 } MisskeyNoteVisibility;
 
 typedef struct MisskeyProxy {
-    MisskeyProxyType type;
+    MisskeyProxyType proxy_type;
     char host[256];
     int port;
     char username[128];

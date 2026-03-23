@@ -38,8 +38,8 @@ mut:
 	until_date int
 }
 
-fn C.misskey_notes_create_full_raw(client &C.MisskeyClient, text charptr, reply_id charptr, renote_id charptr, file_ids voidptr, file_ids_count int, visibility C.MisskeyNoteVisibility, cw charptr, local_only int, channel_id charptr, auto_sensitive int, media_ids charptr, draft int, response &charptr) int
-fn C.misskey_notes_create_full(client &C.MisskeyClient, text charptr, reply_id charptr, renote_id charptr, file_ids voidptr, file_ids_count int, visibility C.MisskeyNoteVisibility, cw charptr, local_only int, channel_id charptr, auto_sensitive int, draft int, note_out &C.MisskeyNote) int
+fn C.misskey_notes_create_full_raw(client &C.MisskeyClient, text charptr, reply_id charptr, renote_id charptr, file_ids voidptr, file_ids_count int, visibility int, cw charptr, local_only int, channel_id charptr, auto_sensitive int, media_ids charptr, draft int, response &charptr) int
+fn C.misskey_notes_create_full(client &C.MisskeyClient, text charptr, reply_id charptr, renote_id charptr, file_ids voidptr, file_ids_count int, visibility int, cw charptr, local_only int, channel_id charptr, auto_sensitive int, draft int, note_out &C.MisskeyNote) int
 
 fn C.misskey_notes_local_timeline_full_raw(client &C.MisskeyClient, opts voidptr, response &charptr) int
 fn C.misskey_notes_global_timeline_full_raw(client &C.MisskeyClient, opts voidptr, response &charptr) int
@@ -548,7 +548,7 @@ pub:
 	reply_id       string                  // 回复目标ID（可为空）
 	renote_id      string                  // 转发目标ID（可为空，用于带文字转发）
 	file_ids       []string                // 附件ID列表
-	visibility     C.MisskeyNoteVisibility // 可见性
+	visibility     int // 可见性 (NoteVisibility)
 	cw             string                  // 内容警告文字（可为空）
 	local_only     bool                    // 是否仅本地可见
 	channel_id     string                  // 频道ID（可为空）

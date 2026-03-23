@@ -251,7 +251,7 @@ static void parse_proxy_url(const char* url, MisskeyProxy* proxy) {
         return;
     }
     
-    proxy->type = parse_proxy_type(url);
+    proxy->proxy_type = parse_proxy_type(url);
     
     char* host = NULL;
     rc = curl_url_get(h, CURLUPART_HOST, &host, 0);
@@ -286,7 +286,7 @@ static void parse_proxy_url(const char* url, MisskeyProxy* proxy) {
     curl_url_cleanup(h);
     
     if (proxy->host[0] == '\0') {
-        proxy->type = MISSKEY_PROXY_NONE;
+        proxy->proxy_type = MISSKEY_PROXY_NONE;
     }
 }
 
@@ -307,7 +307,7 @@ MisskeyError misskey_client_set_proxy_url(MisskeyClient* client, const char* pro
 MisskeyError misskey_client_set_proxy(MisskeyClient* client, const MisskeyProxy* proxy) {
     if (!client) return MISSKEY_ERROR_INVALID_PARAM;
     
-    if (!proxy || proxy->type == MISSKEY_PROXY_NONE || proxy->host[0] == '\0') {
+    if (!proxy || proxy->proxy_type == MISSKEY_PROXY_NONE || proxy->host[0] == '\0') {
         memset(&client->proxy, 0, sizeof(MisskeyProxy));
         client->proxy_enabled = 0;
         return MISSKEY_OK;
@@ -330,7 +330,7 @@ const MisskeyProxy* misskey_client_get_proxy(const MisskeyClient* client) {
 }
 
 static void apply_proxy_to_curl(CURL* curl, const MisskeyProxy* proxy) {
-    if (!curl || !proxy || proxy->type == MISSKEY_PROXY_NONE || proxy->host[0] == '\0') {
+    if (!curl || !proxy || proxy->proxy_type == MISSKEY_PROXY_NONE || proxy->host[0] == '\0') {
         return;
     }
     
@@ -339,7 +339,7 @@ static void apply_proxy_to_curl(CURL* curl, const MisskeyProxy* proxy) {
     curl_easy_setopt(curl, CURLOPT_PROXY, proxy_url);
     
     long proxy_type;
-    switch (proxy->type) {
+    switch (proxy->proxy_type) {
         case MISSKEY_PROXY_HTTP: proxy_type = CURLPROXY_HTTP; break;
         case MISSKEY_PROXY_HTTPS: proxy_type = CURLPROXY_HTTPS; break;
         case MISSKEY_PROXY_SOCKS4: proxy_type = CURLPROXY_SOCKS4; break;
@@ -2819,7 +2819,7 @@ MisskeyStream* misskey_stream_new_with_proxy(const char* host, const char* token
     strncpy(stream->host, host, sizeof(stream->host) - 1);
     if (token) strncpy(stream->token, token, sizeof(stream->token) - 1);
     
-    if (proxy && proxy->type != MISSKEY_PROXY_NONE && proxy->host[0] != '\0') {
+    if (proxy && proxy->proxy_type != MISSKEY_PROXY_NONE && proxy->host[0] != '\0') {
         memcpy(&stream->proxy, proxy, sizeof(MisskeyProxy));
         stream->proxy_enabled = 1;
     }
