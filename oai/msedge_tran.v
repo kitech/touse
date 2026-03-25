@@ -13,7 +13,7 @@ pub const mset_ua = 'msie 6'
 // to zh-CHS
 pub fn mset_api_url(tolang string, fromlang string) string {
 	fromlang = ''
-	
+
 	return 'https://api.cognitive.microsofttranslator.com/translate?from=${fromlang}&to=${tolang}&api-version=3.0&includeSentenceLength=true'
 }
 
@@ -32,7 +32,7 @@ pub fn mset_tran_full(tolang string, fromlang string, texts ... string) ![]strin
 	assert texts.len>0
 
 	static apikey_ := '' // seems about 30min
-	
+
 	if apikey_ == '' {
 		apikey_ = mset_get_key(false) !
 	}
@@ -40,7 +40,7 @@ pub fn mset_tran_full(tolang string, fromlang string, texts ... string) ![]strin
 	req := jsonx.encode(texts.map(|x| MsetReq{x}))
 	retrycnt := 0
 	retry: if retrycnt++ > 1 { return error('faild retry') }
-	
+
 	co := curlv.new().verbose(false)
 	co.url(mset_api_url(tolang, fromlang))
 	co.bearer_auth(apikey_)
@@ -50,7 +50,7 @@ pub fn mset_tran_full(tolang string, fromlang string, texts ... string) ![]strin
 
 	rsp := co.post() !
 	// dump(rsp)
-	
+
 	decerr := false
 	res := jsonx.decode[Response](rsp.data) or {
 		decerr = true
@@ -67,16 +67,16 @@ pub fn mset_tran_full(tolang string, fromlang string, texts ... string) ![]strin
 		apikey_ = mset_get_key(true) !
 		goto retry
 	} else if res.error.code != 0 {
-	
+
 		return errorwc(res.error.message, res.error.code)
 	}
-dump(res)
+
 	return res.translations.map(|x| x.text)
 }
 
 pub fn mset_get_key(renew bool) !string {
 	keyfile := os.join_path(os.temp_dir(), 'mset_apikey.txt')
-	
+
 	key := os.read_file(keyfile) or { omitor(err) }
 	if key == '' || renew {
 		co := curlv.new().url(mset_auth_url).verbose(false).useragent('msie 6')
@@ -100,17 +100,17 @@ pub:
 		language string
 		score f32
 	} @[json: detectedLanguage]
-	
+
 	translations []struct {
 		text string
 		to string
-		
+
 		sentLen struct {
 			srcSentLen	[]int
 			transSentLen []int
 		}
 	}
-	
+
 	error struct {
 		code	int
 		message 	string

@@ -96,7 +96,12 @@ pub struct ListenOpt {
     name string = "_ohmy._tcp.local." // _hostname._tcp.local.
     broadcast_timeval  int = 8 // sec
 
-    stopp  &bool = nil
+    stopp  &bool = &bool(&String{})
+}
+
+fn hostname() string {
+    name := os.hostname() or { 'nohost' }
+    return '${name}.local.'
 }
 
 fn C.sim_select(int, int) int
@@ -131,6 +136,10 @@ pub fn listen(opt ListenOpt) int {
     rec.type = .RT_PTR
     rec.name = cstr
     rec.data.ptr.name = cstr
+    adds := []Record{}
+    r := Record{type: .RT_PTR, name: String.from(hostname())}
+    r.data.ptr.name = r.name
+    adds << r
 
     btime := time.now()
     todur := opt.broadcast_timeval*time.second
@@ -142,7 +151,7 @@ pub fn listen(opt ListenOpt) int {
         } else if rc == 0 {
             if i == 0 || time.since(btime) >= todur {
                 btime = time.now()
-                rvi := C.mdns_announce_multicast(sock, buf.data, buf.len, rec, nil, 0, nil, 0)
+                rvi := C.mdns_announce_multicast(sock, buf.data, buf.len, rec, adds.data, adds.len, nil, 0)
                 // dump('mdns br $rvi')
                 // 101, 50
                 if C.errno == C.ENETUNREACH || C.errno == C.ENETDOWN {
