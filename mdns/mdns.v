@@ -72,6 +72,27 @@ pub fn String.from(s string) String {
     return String{s.str, usize(s.len)}
 }
 
+pub fn Record.new(r Anyer) Record {
+    o := Record{}
+    return o
+}
+
+pub fn RecordPtr.new() RecordPtr {
+    r := RecordPtr{}
+
+    return r
+}
+pub fn RecordSrv.new() RecordSrv {
+    r := RecordSrv{}
+
+    return r
+}
+pub fn RecordTxt.new() RecordTxt {
+    r := RecordTxt{}
+
+    return r
+}
+
 ////////
 const gvs = &Globs{}
 struct Globs {
@@ -137,8 +158,14 @@ pub fn listen(opt ListenOpt) int {
     rec.name = cstr
     rec.data.ptr.name = cstr
     adds := []Record{}
-    r := Record{type: .RT_PTR, name: String.from(hostname())}
-    r.data.ptr.name = r.name
+    // r := Record{type: .RT_PTR, name: String.from(hostname())}
+    // r.data.ptr.name = r.name
+    // adds << r
+    r := Record{}
+    r.type = .RT_SRV
+    r.name = cstr
+    dump(hostname())
+    r.data.srv = RecordSrv{port:8899, name: String.from(hostname())}
     adds << r
 
     btime := time.now()
@@ -151,7 +178,7 @@ pub fn listen(opt ListenOpt) int {
         } else if rc == 0 {
             if i == 0 || time.since(btime) >= todur {
                 btime = time.now()
-                rvi := C.mdns_announce_multicast(sock, buf.data, buf.len, rec, adds.data, adds.len, nil, 0)
+                rvi := C.mdns_announce_multicast(sock, buf.data, buf.len, rec, nil, 0, adds.data, adds.len)
                 // dump('mdns br $rvi')
                 // 101, 50
                 if C.errno == C.ENETUNREACH || C.errno == C.ENETDOWN {

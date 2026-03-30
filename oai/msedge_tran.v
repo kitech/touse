@@ -1,5 +1,6 @@
 module oai
 
+import log
 import os
 
 //import json
@@ -81,7 +82,7 @@ pub fn mset_get_key(renew bool) !string {
 	if key == '' || renew {
 		co := curlv.new().url(mset_auth_url).verbose(false).useragent('msie 6')
 		rsp := co.get() !
-		println(rsp.data)
+		log.debug(rsp.data)
 		if rsp.stcode != 200 {
 			return errorwc(rsp.stline, rsp.stcode)
 		}

@@ -44,10 +44,11 @@ pub struct C.DB {
 
     get_cachesize fn(&DB, &u32, &u32, &int) int
     set_cachesize fn(&DB, u32, u32, int) int
+    set_pagesize  fn(&DB, u32) int
 
     get_env  fn(&DB) &ENV
     set_alloc fn(&DB, voidptr, voidptr, voidptr) int
-    
+
     pub:
 }
 
@@ -72,7 +73,7 @@ pub struct C.DBC {
     close fn(&DBC) int
     cmp   fn(&DBC, &DBC, &int, u32) int
     get   fn(&DBC, &DBT, &DBT, u32) int
-    
+
     pub:
 }
 
@@ -88,7 +89,7 @@ pub fn DB.create(env &ENV, flags u32) &DB {
     if env == nil {
         // env = ENV.getornew()
     }
-    
+
     db := &DB(nil)
     rv := C.db_create(&db, env, flags)
     assert rv == 0, strerror(rv)
@@ -121,7 +122,7 @@ pub fn (db &DB) closex(wt u32) {
     rv := db.close(db, wt)
     assert rv == 0
 }
-pub fn (db &DB) openx(file string, typ int, flags u32) ! {
+pub fn (db &DB) openx(file string, dbname string, typ int, flags u32) ! {
     flags |= u32(THREAD)
 	flags |= u32(CREATE)
 	flags |= u32(NOMMAP)
@@ -131,8 +132,9 @@ pub fn (db &DB) openx(file string, typ int, flags u32) ! {
     assert rv0 == 0, strerror(rv0)
     // rv1 := db.set_flags(db, TXN_NOT_DURABLE)
     // assert rv1 == 0, strerror(rv1)
-    
-    rv := db.open(db, nil, file.str, nil, typ, flags, 0)
+
+    namec := if dbname == '' { charptr(nil) } else { charptr(dbname.str) }
+    rv := db.open(db, nil, file.str, namec, typ, flags, 0)
     assert rv == 0, strerror(rv)
 }
 
@@ -168,7 +170,7 @@ pub fn (db &DB) has(key string) !bool {
 
 pub fn (db &DB) getx(key string) !(string, bool) {
     buf := [9999]i8{}
-    
+
     k := DBT{data: key.str, size: u32(key.len+1)}
     // v := DBT{flags: DBT_USERMEM, ulen: 9999, data: &buf[0]}
     v := DBT{flags: DBT_MALLOC}
@@ -192,7 +194,7 @@ pub fn (db &DB) putx(key string, val string, flags u32) ! {
     // flags := u32(NODUPDATA)
     flags |= NOOVERWRITE
     rv := db.put(db, nil, &k, &v, flags)
-    assert rv == 0, strerror(rv)    
+    assert rv == 0, strerror(rv)
 }
 
 pub fn (db &DB) cursorx() !&DBC {
@@ -211,7 +213,7 @@ pub fn (db &DB) count_byiter() !int {
     k.flags |= DBT_PARTIAL
     k.data = &pval
     k.ulen = sizeof(pval)
-    
+
     v := DBT{flags: DBT_USERMEM}
     v.flags |= DBT_PARTIAL
     v.data = &pval
@@ -236,7 +238,7 @@ pub fn (db &DB) count_byrecno() !int {
 
     ok := c.set_last(false) !
     if !ok { return 0 }
-    
+
     res := c.get_recno() !
     return int(res)
 }
@@ -250,13 +252,13 @@ pub fn strerror(eno int) string {
 
 pub fn (c &DBC) closex() {
     rv := c.close(c)
-    assert rv == 0, strerror(rv)    
+    assert rv == 0, strerror(rv)
 }
 
 // too many useage by flags
 // split to seperated methods
 pub fn (c &DBC) getx() ! {
-    
+
 }
 
 // no malloc, no data copy
@@ -309,7 +311,7 @@ pub fn (c &DBC) get_recno() !u32 {
 pub fn (db &DB) get_recno(key string) !u32 {
     c := db.cursorx() !
     defer { c.closex() }
-    
+
     k := DBT{flags: 0}
     k.data = key.str
     k.size = u32(key.len+1)
@@ -319,27 +321,27 @@ pub fn (db &DB) get_recno(key string) !u32 {
         v := DBT{flags: DBT_USERMEM}
         v.flags |= DBT_PARTIAL
         v.ulen = 0
-        
+
         rv := c.get(c, &k, &v, SET)
         assert rv == 0, strerror(rv)
     }
-    
+
     res := u32(0)
     {
         v := DBT{flags: DBT_USERMEM}
         v.data = &res
         v.ulen = sizeof(res)
-        
+
         rv := c.get(c, &k, &v, GET_RECNO)
         assert rv == 0, strerror(rv)
     }
-    
+
     return res
 }
 pub fn (db &DB) get_kv(recno u32) !(string,string) {
     c := db.cursorx() !
     defer { c.closex() }
-    
+
     k := DBT{flags: DBT_MALLOC}
     k.data = &recno
     k.size = sizeof(recno)
@@ -396,10 +398,16 @@ pub fn (db &DB) set_cachesizex(totbytes usize, ncache int) {
     rv := db.set_cachesize(db, u32(gbytes), u32(bytes), ncache)
     assert rv == 0, strerror(rv)
 }
+// 512 - 64K
+pub fn (db &DB) set_pagesizex(pagesize int) {
+
+    rv := db.set_pagesize(db, u32(pagesize))
+    assert rv == 0, strerror(rv)
+}
 
 pub fn (db &DB) syncx(flags u32) ! {
     rv := db.sync(db, flags)
-    assert rv == 0, strerror(rv)    
+    assert rv == 0, strerror(rv)
 }
 
 pub fn (db &DB) env() &ENV {
@@ -426,14 +434,14 @@ pub fn (e &ENV) openx(db_home string, flags u32, mode int) ! {
     flags |= CREATE
     flags |= INIT_TXN
     flags |= RECOVER
-    
+
     rv := e.open(e, db_home.str, flags, mode)
     assert rv == 0, strerror(rv)
 }
 
 pub fn (e &ENV) set_cache_maxx(totbytes usize) {
     assert totbytes > 1024
-    
+
     gbytes := totbytes / bytes_gb
     bytes := totbytes % bytes_gb
 
@@ -582,7 +590,7 @@ pub const SLICE_CORRUPT	    = (-30970)    // /* A part of a sliced env is corrup
 pub const TIMEOUT		    = (-30969)    // /* Timed out on read consistency. */
 pub const VERIFY_BAD		= (-30968)    // /* Verify failed; bad format. */
 pub const ERSION_MISMATCH	= (-30967)    // /* Environment version mismatch. */
- 
+
 /* DB (private) error return codes. */
 pub const ALREADY_ABORTED	= (-30899)    // /* Spare error number (-30898). */
 pub const DELETED		    = (-30897)    // /* Recovery file marked deleted. */
@@ -621,4 +629,3 @@ pub const TXN_NOT_DURABLE   = u32(C.DB_TXN_NOT_DURABLE)
 pub const VERIFY            = u32(C.DB_VERIFY)
 pub const INIT_TXN          = u32(C.DB_INIT_TXN)
 pub const RECOVER           = u32(C.DB_RECOVER)
-
