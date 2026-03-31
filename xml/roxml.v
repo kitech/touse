@@ -14,6 +14,8 @@ import touse.ffi
 // x32 build
 // ./autogen.sh
 // $ ./configure --prefix=/opt/devsys32 --host=i686-linux-gnu "CFLAGS=-m32" "CXXFLAGS=-m32" "LDFLAGS=-m32"
+// arm64 build
+// $ ~/aprog/xpimerge/scripts/mytrab ./configure --host=aarch64-linux-android  --prefix=/opt/devsys-arm64
 
 $if prod || prodrc ? {
     // this module use function_missing feat, cannot static link

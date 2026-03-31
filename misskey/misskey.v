@@ -2,9 +2,14 @@ module misskey
 
 import json // includes cJSON
 
+$if android {
+    #flag -I /opt/vcpkg/installed/arm64-android-release/include/../include
+}
+
 #flag -I@DIR/src
 #flag @DIR/src/misskey_client.o
 #flag -lcurl
+
 
 #include "misskey_client.h"
 #include <string.h>
@@ -404,19 +409,19 @@ pub fn (c &Client) set_debug(enable bool) {
 pub fn (c &Client) set_proxy(proxy Proxy) ! {
 	mut c_proxy := C.MisskeyProxy{}
 	c_proxy.proxy_type = int(proxy.proxy_type)
-	
+
 	if proxy.host.len > 0 {
 		unsafe { C.strncpy(&char(c_proxy.host), proxy.host.str, 255) }
 		c_proxy.port = proxy.port
 	}
-	
+
 	if proxy.username.len > 0 {
 		unsafe { C.strncpy(&char(c_proxy.username), proxy.username.str, 127) }
 	}
 	if proxy.password.len > 0 {
 		unsafe { C.strncpy(&char(c_proxy.password), proxy.password.str, 127) }
 	}
-	
+
 	ret := C.misskey_client_set_proxy(c.c_client, &c_proxy)
 	if ret != 0 {
 		return error('set_proxy failed: ${MisskeyError(ret).detailed(c)}')
@@ -563,12 +568,12 @@ pub fn (c &Client) notes_create_full_raw(opts CreateNoteOptions) !string {
 	renote_cstr := if opts.renote_id.len > 0 { opts.renote_id.str } else { voidptr(0) }
 	cw_cstr := if opts.cw.len > 0 { opts.cw.str } else { voidptr(0) }
 	channel_cstr := if opts.channel_id.len > 0 { opts.channel_id.str } else { voidptr(0) }
-	
+
 	mut file_ids_ptr := voidptr(0)
 	if opts.file_ids.len > 0 {
 		file_ids_ptr = opts.file_ids[0].str
 	}
-	
+
 	mut response := voidptr(0)
 	ret := C.misskey_notes_create_full_raw(
 		c.c_client,
@@ -1241,7 +1246,7 @@ pub fn (c &Client) notes_timeline(limit int, include_local_renotes bool) ![]Note
 	if ret != 0 {
 		return error('notes_timeline failed: ${MisskeyError(ret).detailed(c)}')
 	}
-	
+
 	mut result := []Note{len: count}
 	for i := 0; i < count; i++ {
 		result[i] = to_note(unsafe { &notes_ptr[i] })
@@ -1257,7 +1262,7 @@ pub fn (c &Client) notes_local_timeline(limit int) ![]Note {
 	if ret != 0 {
 		return error('notes_local_timeline failed: ${MisskeyError(ret).detailed(c)}')
 	}
-	
+
 	mut result := []Note{len: count}
 	for i := 0; i < count; i++ {
 		result[i] = to_note(unsafe { &notes_ptr[i] })
@@ -1288,7 +1293,7 @@ pub fn (c &Client) notes_local_timeline_full(opts TimelineOptions) ![]Note {
 	if ret != 0 {
 		return error('notes_local_timeline_full failed: ${MisskeyError(ret).detailed(c)}')
 	}
-	
+
 	mut result := []Note{len: count}
 	for i := 0; i < count; i++ {
 		result[i] = to_note(unsafe { &notes_ptr[i] })
@@ -1304,7 +1309,7 @@ pub fn (c &Client) notes_global_timeline(limit int) ![]Note {
 	if ret != 0 {
 		return error('notes_global_timeline failed: ${MisskeyError(ret).detailed(c)}')
 	}
-	
+
 	mut result := []Note{len: count}
 	for i := 0; i < count; i++ {
 		result[i] = to_note(unsafe { &notes_ptr[i] })
@@ -1321,7 +1326,7 @@ pub fn (c &Client) notes_global_timeline_full(opts TimelineOptions) ![]Note {
 	if ret != 0 {
 		return error('notes_global_timeline_full failed: ${MisskeyError(ret).detailed(c)}')
 	}
-	
+
 	mut result := []Note{len: count}
 	for i := 0; i < count; i++ {
 		result[i] = to_note(unsafe { &notes_ptr[i] })
@@ -1353,12 +1358,12 @@ pub fn (c &Client) notes_create_full(opts CreateNoteOptions) !Note {
 	renote_cstr := if opts.renote_id.len > 0 { opts.renote_id.str } else { voidptr(0) }
 	cw_cstr := if opts.cw.len > 0 { opts.cw.str } else { voidptr(0) }
 	channel_cstr := if opts.channel_id.len > 0 { opts.channel_id.str } else { voidptr(0) }
-	
+
 	mut file_ids_ptr := voidptr(0)
 	if opts.file_ids.len > 0 {
 		file_ids_ptr = opts.file_ids[0].str
 	}
-	
+
 	mut cnote := &C.MisskeyNote{}
 	C.misskey_note_init(cnote)
 	ret := C.misskey_notes_create_full(
@@ -1406,7 +1411,7 @@ pub fn (c &Client) i_notifications(limit int) ![]Notification {
 	if ret != 0 {
 		return error('i_notifications failed: ${MisskeyError(ret).detailed(c)}')
 	}
-	
+
 	mut result := []Notification{len: count}
 	for i := 0; i < count; i++ {
 		result[i] = to_notification(unsafe { &notif_ptr[i] })
@@ -1445,7 +1450,7 @@ pub fn (c &Client) get_reactions(note_id string, reaction_type string, limit int
 	if ret != 0 {
 		return error('get_reactions failed: ${MisskeyError(ret).detailed(c)}')
 	}
-	
+
 	mut result := []Reaction{len: count}
 	for i := 0; i < count; i++ {
 		result[i] = to_reaction(unsafe { &reactions_ptr[i] })
@@ -1476,7 +1481,7 @@ pub fn (c &Client) drive_files(limit int, folder_id string) ![]DriveFile {
 	if ret != 0 {
 		return error('drive_files failed: ${MisskeyError(ret).detailed(c)}')
 	}
-	
+
 	mut result := []DriveFile{len: count}
 	for i := 0; i < count; i++ {
 		result[i] = to_drive_file(unsafe { &files_ptr[i] })
@@ -1512,7 +1517,7 @@ pub fn (c &Client) drive_folders(limit int, folder_id string) ![]DriveFolder {
 	if ret != 0 {
 		return error('drive_folders failed: ${MisskeyError(ret).detailed(c)}')
 	}
-	
+
 	mut result := []DriveFolder{len: count}
 	for i := 0; i < count; i++ {
 		result[i] = to_drive_folder(unsafe { &folders_ptr[i] })
@@ -1542,7 +1547,7 @@ pub fn (c &Client) clips_list() ![]Clip {
 	if ret != 0 {
 		return error('clips_list failed: ${MisskeyError(ret).detailed(c)}')
 	}
-	
+
 	mut result := []Clip{len: count}
 	for i := 0; i < count; i++ {
 		result[i] = to_clip(unsafe { &clips_ptr[i] })
@@ -1591,19 +1596,19 @@ pub fn stream_new(host string, token string) !Stream {
 pub fn stream_new_with_proxy(host string, token string, proxy Proxy) !Stream {
 	mut c_proxy := C.MisskeyProxy{}
 	c_proxy.proxy_type = int(proxy.proxy_type)
-	
+
 	if proxy.host.len > 0 {
 		unsafe { C.strncpy(&char(c_proxy.host), proxy.host.str, 255) }
 		c_proxy.port = proxy.port
 	}
-	
+
 	if proxy.username.len > 0 {
 		unsafe { C.strncpy(&char(c_proxy.username), proxy.username.str, 127) }
 	}
 	if proxy.password.len > 0 {
 		unsafe { C.strncpy(&char(c_proxy.password), proxy.password.str, 127) }
 	}
-	
+
 	c_stream := C.misskey_stream_new_with_proxy(host.str, token.str, &c_proxy)
 	if c_stream == unsafe { nil } {
 		return error('failed to create stream with proxy')

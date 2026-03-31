@@ -13,6 +13,9 @@ module bdb
 // write for v6.2
 // main major versions, 4.8, 5.3.28, 6.2
 
+// arm64 build
+// ~/aprog/xpimerge/scripts/mytrab ./dist/configure --prefix=/opt/devsys-arm64 --host=aarch64-linux-android --enable-shared=no
+
 pub type ENV = C.DB_ENV
 @[typedef]
 pub struct C.DB_ENV {

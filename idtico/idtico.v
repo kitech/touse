@@ -1,6 +1,10 @@
 module idtico
 
 
+$if android {
+    #flag -I /opt/vcpkg/installed/arm64-android-release/include
+}
+
 #flag -lpng
 #flag @DIR/md5.o
 #flag @DIR/identicon.o
