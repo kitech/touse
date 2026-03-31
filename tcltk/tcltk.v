@@ -1,0 +1,605 @@
+module tcltk
+
+import os
+import arrays
+import math
+import vcp
+
+// TCL_MEM_DEBUG
+// replace tcl malloc/free
+/*
+
+You can replace the whole Tcl memory manager entirely at compile-time. I played
+around with it for a time until I found my real reason I was leaking so much :)
+But I see your point. The method goes like this:
+
+1) add -DUSE_TCLALLOC=0 to the compile flags
+*2) use your own implementation of malloc/realloc/free
+
+[*=optional]
+If you go with the one in msvcrt, no redefining needed, you'll notice a marked
+improvement in memory blocks returned. In theory, it will slow down Tcl, but I
+don't have any numbers on that.
+*/
+
+// http://davesource.com/Fringe/Fringe/Computers/Languages/tcl_tk/tcl_C.html
+
+struct Globvars {
+pub mut:
+	argv           []voidptr
+	tclirp         voidptr
+	init_done_cbfn fn (voidptr) int = vnil
+	varno          i64              = 10
+}
+
+const gvars = &Globvars{}
+
+pub struct App {
+    pub mut:
+    ir voidptr
+}
+
+pub fn App.new() &App {
+    return &App{}
+}
+
+pub fn (app&App)exec(uinitfn fn(_ voidptr)) {
+    // tk_main2("${os.args[0]}.tcl")
+    args := os.args
+    args  << "${os.args[0]}.tcl"
+    tk_main(args, fn  [uinitfn](ir voidptr) int {
+        uinitfn(ir)
+        return 0
+    })
+}
+pub fn (app&App)exit() {
+    exit(0)
+}
+
+pub fn tk_main2(init_tcl_file string) {
+	args := [os.base(init_tcl_file), init_tcl_file]
+	tk_main(args, vnil)
+}
+
+// ui event look, will block forever
+// args[0] exe, args[1] initfile
+pub fn tk_main(args []string, init_done fn (ir voidptr) int) {
+	mut gvs := refvar2mut(gvars)
+	for arg in args {
+		gvs.argv << (arg.clone().str)
+	}
+    assert args.len > 1
+	if !os.exists(args[1]) {
+		tmpfile := os.join_path(os.temp_dir(), os.base(args[1]))
+		initcode := 'package require Tk\ntk systray exists;'
+        // initcode := ''
+		os.write_file(tmpfile, initcode) or { panic(err) }
+		vcp.warn('file404', args[1], '=>', tmpfile)
+		gvs.argv[1] = tmpfile.str
+	}
+
+	gvs.init_done_cbfn = init_done
+	init_proc2 := tk_init
+
+	argv4c := castptr[&charptr](gvs.argv.data)
+	C.Tk_Main(args.len, argv4c, init_proc2)
+	assert false, 'unreachable'
+}
+
+// like wish9.0 init, see tkAppInit.c: Tcl_AppInit
+pub fn tk_init(p voidptr) int {
+	mut gvs := refvar2mut(gvars)
+	gvs.tclirp = p
+
+	rc1 := C.Tcl_Init(p)
+	rc := C.Tk_Init(p)
+
+	tk_create_error_handler()
+	// C.Tcl_StaticLibrary(p, "tk2".str, C.Tk_Init, pnil)
+
+	if gvs.init_done_cbfn != vnil {
+		gvs.init_done_cbfn(p)
+	}
+	return rc
+}
+
+// source
+pub fn source_file(file string) int {
+	return 0
+}
+
+// call and eval are the same indeed
+pub fn eval(s string) int {
+	rc := C.Tcl_Eval(gvars.tclirp, s.str)
+	vcp.info(rc, s)
+	return rc
+}
+
+pub fn call(s string) int {
+	// vcp.info("calling", s, gvars.tclirp)
+	rc := C.Tcl_Eval(gvars.tclirp, s.str)
+	if rc != tclok {
+		// emsg := posix_error()
+		emsg2 := get_errnomsg0()
+		vcp.info('called', rc, emsg2, ':', s)
+	}
+	res := C.Tcl_GetStringResult(gvars.tclirp)
+	// vcp.info("res:", tosbca(res), ": ${s}")
+	return rc
+}
+
+pub fn call2(s string) !string {
+	// vcp.info("calling", s)
+	rc := C.Tcl_Eval(gvars.tclirp, s.str)
+	if rc != tclok {
+		// emsg := posix_error()
+		emsg2 := get_errnomsg0()
+		vcp.error('called', rc, emsg2, ':', s)
+		return error(emsg2)
+	}
+	resc := C.Tcl_GetStringResult(gvars.tclirp)
+	res := tosbca(resc)
+	// vcp.info("res:", res, ": ${s}")
+	return res
+}
+
+pub type TclcmdFunc = fn (cbval voidptr, ir voidptr, argv []string) int
+
+pub fn create_command(ir voidptr, name string, fnp TclcmdFunc, cbval voidptr) usize {
+	// vcp.info(name, fnp)
+	fn4c := fn [fnp] (cbv voidptr, ir voidptr, argc int, argv &charptr) int {
+		// vcp.info(@FILE_LINE, cbv, argc)
+		// arr := vcp.carr2varr_sized(argv, sizeof(usize), argc)
+		arr := vcp.csarr2vsarr(argv, argc - 1)
+		return fnp(cbv, ir, arr)
+	}
+	rc := C.Tcl_CreateCommand(ir, name.str, fn4c, cbval, pnil)
+	// vcp.info(rc, name)
+	return rc
+}
+
+pub fn getvar(ir voidptr, name string) string {
+	rv := C.Tcl_GetVar(ir, name.str, 0)
+	return tosbca(charptr(rv))
+}
+
+pub fn setvar(ir voidptr, name string, val voidptr) {
+	rv := C.Tcl_SetVar(ir, name.str, val, 0)
+	vcp.info(rv)
+}
+
+pub fn unsetvar(ir voidptr, name string) cint {
+	rv := C.Tcl_UnsetVar(ir, name.str, 0)
+	return rv
+}
+
+fn C.Tcl_PosixError(...voidptr) charptr
+pub fn posix_error() string {
+	rv := C.Tcl_PosixError(gvars.tclirp)
+	return tosbca(rv)
+}
+
+fn C.Tcl_GetErrno() int
+pub fn get_errno() int {
+	return C.Tcl_GetErrno()
+}
+
+fn C.Tcl_ErrnoMsg(...voidptr) charptr
+pub fn get_errnomsg(eno int) string {
+	return tosbca(C.Tcl_ErrnoMsg(eno))
+}
+
+pub fn get_errnomsg0() string {
+	return tosbca(C.Tcl_ErrnoMsg(C.Tcl_GetErrno()))
+}
+
+fn C.Tk_MainWindow(voidptr) usize
+fn tk_main_window(irp voidptr) usize {
+	return C.Tk_MainWindow(irp)
+}
+
+fn C.Tk_Screen()
+fn C.Tk_WindowId(voidptr) usize
+pub fn tk_windowid() usize {
+	return C.Tk_WindowId(tk_main_window(gvars.tclirp))
+}
+
+fn C.Tk_Display(usize) usize
+pub fn tk_display() usize {
+	return C.Tk_Display(tk_main_window(gvars.tclirp))
+}
+
+fn C.Tk_CreateErrorHandler(...voidptr) usize
+pub fn tk_create_error_handler() {
+	dsp := tk_display()
+	C.Tk_CreateErrorHandler(dsp, -1, -1, -1, fn (cbval voidptr, eeptr voidptr) {
+		vcp.info(111, cbval, eeptr)
+	}, vnil)
+}
+
+///
+fn nextvarname(pfx string) string {
+	mut gvs := refvar2mut(gvars)
+	no := gvs.varno++
+	return '.vtk_${pfx}_${no}'
+	// return ".ttk_${pfx}_${no}"
+}
+
+///
+pub struct Tkobject {
+pub mut:
+	varname string
+}
+
+pub fn (me Tkobject) name() string {
+	return me.varname
+}
+
+pub fn (me Tkobject) bind(ev string, cbval voidptr, fnx fn (cbv voidptr, args []string)) {
+	slotname := '${me.name()[1..]}_oncmd_${ev}'
+	create_command(gvars.tclirp, slotname, fn [fnx] (a0 voidptr, a1 voidptr, args []string) int {
+		vcp.info(@FILE_LINE, a0, a1, args.str())
+		fnx(a0, args)
+		return 0
+	}, cbval)
+
+	cmd := 'bind ${me.name()} ${ev} ${slotname}'
+	rc := call(cmd)
+}
+
+///
+// pub struct Bind {}
+
+pub interface Tkobjitf {
+	name() string
+}
+
+///
+
+// with container/layout feature
+pub struct Labelframe {
+	Tkobject
+}
+
+// parent empty for toplevel
+pub fn Labelframe.new(txt string, parent Tkobjitf) Labelframe {
+	vn := parent.name() + nextvarname('lbf')
+	cmd := 'labelframe ${vn} -text "${txt}"'
+	call(cmd)
+	return Labelframe{
+		varname: vn
+	}
+}
+
+@[params]
+pub struct PackOptions {
+pub mut:
+	side   string
+	fill   string
+	padx   string
+	pady   string
+	expend cint
+	insert ?Tkobjitf
+}
+
+pub fn (opts PackOptions) toline() string {
+	mut cmd := ''
+	if opts.side != '' {
+		cmd += ' -side ${opts.side}'
+	}
+	if v := opts.insert {
+		cmd += ' -in ${v.name()}'
+	}
+	if opts.fill != '' {
+		cmd += ' -fill ${opts.fill}'
+	}
+	if opts.expend == 1 {
+		cmd += ' -expend 1'
+	}
+	return cmd
+}
+
+pub fn (me Labelframe) pack(tko Tkobjitf, opts PackOptions) {
+	mut cmd := 'pack ${tko.name()}' // -fill x -padx 3p -pady 3p
+	cmd += opts.toline()
+	rc := call(cmd)
+}
+
+pub struct Button {
+	Tkobject
+}
+
+pub fn Button.new(txt string, parent Tkobjitf) Button {
+	vn := parent.name() + nextvarname('btn')
+	cmd := 'button ${vn} -text "${txt}"' //  -command create
+	call(cmd)
+	return Button{
+		varname: vn
+	}
+}
+
+pub fn (me Button) connect(fnx fn (voidptr, []string), cbval voidptr) {
+	slotname := '${me.name()[1..]}_oncmd'
+	create_command(gvars.tclirp, slotname, fn [fnx] (a0 voidptr, a1 voidptr, args []string) int {
+		// vcp.info(@FILE_LINE, a0, a1, args.str())
+		fnx(a0, args)
+		return 0
+	}, cbval)
+	cmd := '${me.name()} configure -command ${slotname}'
+	call(cmd)
+}
+
+pub enum ImageType {
+	bitmap
+	photo
+	nsimage
+}
+
+pub struct Image {
+	Tkobject
+}
+
+pub fn Image.new(name string, data string) Image {
+	vn := nextvarname('img')
+	cmd := 'image create photo ${name} -data "${data}"'
+	rc := call(cmd)
+	return Image{
+		varname: vn
+	}
+}
+
+pub struct Systray {
+	Tkobject
+}
+
+pub fn Systray.new(txt string) Systray {
+	imgname := 'styimg'
+	imgo := Image.new(imgname, 'R0lGODlhCwAPAKIAAP//////AMDAwICAgAAA/wAAAAAAAAAAACwAAAAACwAPAAADMzi6CzAugiAgDGE68aB0RXgRJBFVX0SNpQlUWfahQOvSsgrX7eZJMlQMWBEYj8iQchlKAAA7')
+
+	vn := nextvarname('sty')
+	cmd := 'tk systray create -image ${imgname} -text "${txt}"'
+	rc := call(cmd)
+	return Systray{
+		varname: vn
+	}
+}
+
+pub fn (me Systray) connect(whichbtn int, fnx fn (voidptr, []string), cbval voidptr) {
+	slotname := '${me.name()[1..]}_oncmd'
+	create_command(gvars.tclirp, slotname, fn [fnx] (a0 voidptr, a1 voidptr, args []string) int {
+		// vcp.info(@FILE_LINE, a0, a1, args.str())
+		fnx(a0, args)
+		return 0
+	}, cbval)
+
+	assert whichbtn == 1 || whichbtn == 3
+	cmd := '${me.name()} configure -command${whichbtn} ${slotname}'
+	call(cmd)
+}
+
+pub fn (me Systray) exists() bool {
+	return Systray.exists()
+}
+
+pub fn Systray.exists() bool {
+	cmd := 'tk systray exists'
+	rc := call(cmd)
+	return false
+}
+
+pub fn Systray.destroy() {
+	cmd := 'tk systray destroy'
+	rc := call(cmd)
+}
+
+pub struct Sysnotify {
+	Tkobject
+}
+
+pub fn Sysnotify.send(title string, txt string) {
+	// vn := nextvarname('sny')
+	cmd := 'tk sysnotify "${title}" "${txt}"'
+	rc := call(cmd)
+}
+
+// todo 移动窗口位置
+// todo 窗口背景/前景/theme
+
+pub struct Frame {
+	Tkobject
+}
+
+// parent empty for toplevel
+pub fn Frame.new(parent Tkobjitf) Frame {
+	vn := parent.name() + nextvarname('frm')
+	cmd := 'frame ${vn} -container true -width 300 -height 300'
+	rc := call(cmd)
+	return Frame{
+		varname: vn
+	}
+}
+
+pub struct Listbox {
+	Tkobject
+}
+
+pub struct TkOptions {
+pub mut:
+	bg string
+	fg string
+}
+
+pub struct ListboxOptions {
+	TkOptions
+pub mut:
+	selmode string
+}
+
+pub fn Listbox.new(parent Tkobjitf) Listbox {
+	vn := parent.name() + nextvarname('ltbox')
+	cmd := 'listbox ${vn} -width 30 -height 20'
+	rc := call(cmd)
+	return Listbox{
+		varname: vn
+	}
+}
+
+pub fn (me Listbox) add(val string) {
+	cmd := '${me.name()} insert 0 "${val}"'
+	rc := call(cmd)
+}
+
+pub fn (me Listbox) get(first string) string {
+	cmd := '${me.name()} get ${first}'
+	res := call2(cmd) or {
+		vcp.error(err.str())
+		''
+	}
+	vcp.info(res)
+	return res
+}
+
+pub fn (me Listbox) curselone() string {
+	cmd := '${me.name()} curselection'
+	res := call2(cmd) or {
+		vcp.error(err.str())
+		''
+	}
+	vcp.info(res)
+	return res
+}
+
+///
+
+pub struct Winfo {
+	// Tkobject
+}
+
+// pub fn Winfo.id()
+
+pub fn (me Tkobject) id() string {
+	cmd := 'winfo id ${me.name()}'
+	res := call2(cmd) or { panic(err) }
+	vcp.info(res)
+	return res
+}
+
+// main window
+pub struct Dotwin {
+}
+
+pub fn Dotwin.conf(obj Tkobjitf) {
+	mut cmd := '. configure '
+	mut mated := true
+	match obj {
+		Menu {
+			cmd += ' -menu ${obj.name()}'
+		}
+		else {
+			mated = false
+			vcp.info('nocat', typeof(obj).name)
+		}
+	}
+	if mated {
+		rv := call(cmd)
+	}
+}
+
+pub struct Menu {
+	Tkobject
+}
+
+// ?int none noset, or set
+// bool -opt, or omit
+// 还是不能用?int这种字段
+// 即使不用?int,还是无法通用实现
+// trailing struct literal arguments
+// by this property, easy call toline(label:'aaa',cascade:true,...)
+@[params]
+pub struct MenuOptions {
+	TkOptions
+pub mut:
+	// attr to fix v cannot given correct type
+	tearoff   ?int @[hehhe; option]
+	cascade   bool
+	label     string
+	underline ?int @[hehhe; option]
+	command   voidptr
+	foz       bool
+}
+
+pub fn (opts MenuOptions) toline() string {
+	mut cmd := ''
+
+	if opts.cascade {
+		cmd += ' cascade'
+	}
+	// if opts.label.len != 0 { cmd += " -label ${opts.label}"}
+	// if v := opts.underline  {
+	// 	cmd += " -underline ${v}"
+	// }
+	if opts.command != vnil {
+		cmd += ' command'
+	}
+
+	if v := opts.tearoff {
+		cmd += ' -tearoff ${v}'
+	}
+
+	if opts.label != '' {
+		cmd += ' -label "${opts.label}"'
+	}
+	if v := opts.underline {
+		cmd += ' -underline ${v}'
+	}
+	if opts.command != vnil {
+		cmd += ' -command ${opts.command}'
+	}
+	return cmd
+}
+
+pub fn Menu.new(opts MenuOptions) Menu {
+	vn := nextvarname('menu')
+	mut cmd := 'menu ${vn}'
+	cmd += opts.toline()
+	// if v := opts.tearoff {
+	// 	cmd += " -tearoff ${v}"
+	// }
+	// if opts.cascade { cmd += " cascade"}
+	// if opts.label.len != 0 { cmd += " -label ${opts.label}"}
+	// if v := opts.underline  {
+	// 	cmd += " -underline ${v}"
+	// }
+	cmd2 := struct_field_infos(opts)
+	rc := call(cmd)
+	return Menu{
+		varname: vn
+	}
+}
+
+pub fn (me Menu) add(m Menu, opts MenuOptions) {
+	mut cmd := '${me.name()} add '
+	cmd += opts.toline()
+	cmd += ' -menu ${m.name()}'
+	// if opts.command != vnil { cmd += " command" }
+	// if opts.label != "" { cmd += " -label \"${opts.label}\""}
+	// if v := opts.underline  {
+	// 	cmd += " -underline ${v}"
+	// }
+	// if opts.command != vnil {
+	// 	cmd += " -command ${opts.command}"
+	// }
+	rc := call(cmd)
+}
+
+pub fn (me Menu) addcmd(text string, fnx fn (cbv voidptr, args []string)) {
+	slotname := '${me.name()[1..]}_${text}_oncmd'
+	create_command(gvars.tclirp, slotname, fn [fnx] (a0 voidptr, a1 voidptr, args []string) int {
+		vcp.info(@FILE_LINE, a0, a1, args.str())
+		fnx(a0, args)
+		return 0
+	}, vnil)
+
+	cmd := '${me.name()} add command -label "${text}" -command ${slotname}'
+	call(cmd)
+}
