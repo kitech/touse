@@ -26,7 +26,6 @@ import vcp.venv
 
 #include "libfswatch.h"
 
-pub type Handle = voidptr
 
 // not need manual call, libfswatch would call auto
 pub fn init_library() int {
@@ -91,14 +90,6 @@ pub struct C.fsw_cevent {
 pub type CEvent = C.fsw_cevent
 
 
-pub struct Event {
-    pub:
-    orig string
-    name string
-    mask Flag
-    flags []Flag
-    // ctime time.Time
-}
 
 fn c2v_event(evt &CEvent, wtdirs []string) &Event {
     res := &Event{}
@@ -128,7 +119,6 @@ fn c2v_event(evt &CEvent, wtdirs []string) &Event {
 }
 
 type CEventCallback4c = fn(&CEvent, int, voidptr)
-pub type CEventCallback = fn(Event, voidptr)
 
 struct Globvars {
     pub mut:
