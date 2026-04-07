@@ -173,7 +173,13 @@ pub fn listen(opt ListenOpt) int {
     for i := 0;; i++ {
         rc := C.sim_select(sock, 1)
         if rc < 0 {
-            dump('error $rc')
+            emsg0 := C.strerror(C.errno)
+            emsg := charptr(emsg0).tosref()
+            dump('error $rc $emsg')
+            if emsg.contains('Interrupted system call') {
+                time.sleep(1234*time.millisecond)
+                continue
+            }
             return rc
         } else if rc == 0 {
             if i == 0 || time.since(btime) >= todur {

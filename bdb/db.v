@@ -152,6 +152,9 @@ pub fn (db &DB) truncatex() !u32 {
 // before open
 pub fn (db &DB) verifyx(file string) ! {
     rv := db.verify(db, file.str, nil, nil, 0)
+    if rv != 0 {
+        return errorwc(strerror(rv), rv)
+    }
     assert rv == 0, strerror(rv)
 }
 
@@ -190,13 +193,19 @@ pub fn (db &DB) getx(key string) !(string, bool) {
 }
 
 // anyway return recno without extra call?
-pub fn (db &DB) putx(key string, val string, flags u32) ! {
+pub fn (db &DB) putx(key string, val string, overwrite bool) ! {
     k := DBT{data: key.str, size: u32(key.len+1)}
     v := DBT{data: val.str, size: u32(val.len+1)}
 
-    // flags := u32(NODUPDATA)
-    flags |= NOOVERWRITE
+    //     flags |= NOOVERWRITE
+    // flags |= OVERWRITE_DUP
+    // flags |= NODUPDATA
+    flags := if overwrite { u32(0) } else { NOOVERWRITE }
+
     rv := db.put(db, nil, &k, &v, flags)
+    if rv != 0 {
+        return errorwc(strerror(rv), rv)
+    }
     assert rv == 0, strerror(rv)
 }
 
@@ -352,6 +361,9 @@ pub fn (db &DB) get_kv(recno u32) !(string,string) {
 
     assert recno > 0
     rv := c.get(c, &k, &v, SET_RECNO)
+    if rv != 0 {
+        return errorwc(strerror(rv), rv)
+    }
     assert rv == 0, strerror(rv) + ' ' + recno.str()
 
     if use_v_alloc {
@@ -395,10 +407,10 @@ pub const bytes_gb = 1024*1024*1024
 // ncache default 1
 // totbytes default 256KB
 pub fn (db &DB) set_cachesizex(totbytes usize, ncache int) {
-    gbytes := totbytes/ bytes_gb
+    gbytes := totbytes / bytes_gb
     bytes := totbytes % bytes_gb
 
-    rv := db.set_cachesize(db, u32(gbytes), u32(bytes), ncache)
+    rv := db.set_cachesize(db, u32(gbytes), u32(bytes), 1)
     assert rv == 0, strerror(rv)
 }
 // 512 - 64K

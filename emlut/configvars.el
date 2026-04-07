@@ -348,12 +348,36 @@
   (add-to-list 'my-lost-pkgs 'yasnippet)
   (message "need install package 'yasnippet")
   )
+;; treesit need install langauge parser, drop use
 (if (package-installed-p 'treesit-fold)
     (use-package treesit-fold
       :ensure t))
-(if (package-installed-p 'kirigami)
-    (use-package kirigami
-      :ensure t))
+
+;; (if (package-installed-p 'outline-indent)
+;;     (progn
+;;       (setq outline-indent-ellipsis " ▼")
+;;       (add-hook 'prog-mode-hook #'outline-indent-minor-mode)
+;;       (add-hook 'text-mode-hook #'outline-indent-minor-mode)
+;;       (add-hook 'latex-mode-hook #'outline-indent-minor-mode)
+;;       )
+;;   (add-to-list 'my-lost-pkgs 'outline-indent)
+;;   (message "need install package 'outline-indent")
+;;   )
+
+;; not good, indicator small and left
+(if (package-installed-p 'hideshowvis)
+    (progn
+      (add-hook 'prog-mode-hook #'hideshowvis-minor-mode)
+      ;; (add-hook 'prog-mode-hook #'hs-minor-mode)
+      (add-hook 'text-mode-hook #'hideshowvis-minor-mode)
+      ;; (add-hook 'text-mode-hook #'hs-minor-mode)
+      (add-hook 'latex-mode-hook #'hideshowvis-minor-mode)
+      ;; (add-hook 'latex-mode-hook #'hs-minor-mode)
+      )
+    (add-to-list 'my-lost-pkgs 'hideshowvis)
+    (message "need install package 'hideshowvis")
+    )
+
 
 ;; (custom-set-variables
 ;;  '(mini-frame-show-parameters
