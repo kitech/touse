@@ -4,7 +4,7 @@ import time
 import mdns
 
 fn normexit() {
-    time.sleep(15*time.second)
+    time.sleep(3005*time.second)
     exit(0)
 }
 

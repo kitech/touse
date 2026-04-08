@@ -18,6 +18,7 @@
 #include <ifaddrs.h>
 #include <net/if.h>
 #include <sys/time.h>
+#include <arpa/inet.h>
 #endif
 
 // Alias some things to simulate recieving data to fuzz library
@@ -96,4 +97,101 @@ ip_address_to_string(char* buffer, size_t capacity, const struct sockaddr* addr,
 	if (addr->sa_family == AF_INET6)
 		return ipv6_address_to_string(buffer, capacity, (const struct sockaddr_in6*)addr, addrlen);
 	return ipv4_address_to_string(buffer, capacity, (const struct sockaddr_in*)addr, addrlen);
+}
+
+char**
+getipaddrs(int* count, int max_count) {
+#ifndef _WIN32
+	struct ifaddrs* ifaddr = 0;
+	struct ifaddrs* ifa = 0;
+
+	if (getifaddrs(&ifaddr) < 0) {
+		*count = 0;
+		return 0;
+	}
+
+	int capacity = 32;
+	char** ips = (char**)malloc(capacity * sizeof(char*));
+	int num = 0;
+
+	for (ifa = ifaddr; ifa; ifa = ifa->ifa_next) {
+		if (!ifa->ifa_addr)
+			continue;
+		if (!(ifa->ifa_flags & IFF_UP) || !(ifa->ifa_flags & IFF_MULTICAST))
+			continue;
+		if ((ifa->ifa_flags & IFF_LOOPBACK) || (ifa->ifa_flags & IFF_POINTOPOINT))
+			continue;
+
+		if (ifa->ifa_addr->sa_family == AF_INET) {
+			struct sockaddr_in* saddr = (struct sockaddr_in*)ifa->ifa_addr;
+			if (saddr->sin_addr.s_addr == htonl(INADDR_LOOPBACK))
+				continue;
+
+			char ipstr[INET_ADDRSTRLEN];
+			if (inet_ntop(AF_INET, &saddr->sin_addr, ipstr, INET_ADDRSTRLEN) == 0)
+				continue;
+
+			if (num >= capacity) {
+				capacity *= 2;
+				ips = (char**)realloc(ips, capacity * sizeof(char*));
+			}
+			ips[num++] = strdup(ipstr);
+
+		} else if (ifa->ifa_addr->sa_family == AF_INET6) {
+			struct sockaddr_in6* saddr = (struct sockaddr_in6*)ifa->ifa_addr;
+			if (saddr->sin6_scope_id)
+				continue;
+
+			static const unsigned char localhost[] = {0, 0, 0, 0, 0, 0, 0, 0,
+			                                          0, 0, 0, 0, 0, 0, 0, 1};
+			static const unsigned char localhost_mapped[] = {0, 0, 0,    0,    0,    0, 0, 0,
+			                                                 0, 0, 0xff, 0xff, 0x7f, 0, 0, 1};
+			if (memcmp(saddr->sin6_addr.s6_addr, localhost, 16) == 0)
+				continue;
+			if (memcmp(saddr->sin6_addr.s6_addr, localhost_mapped, 16) == 0)
+				continue;
+
+			char ipstr[INET6_ADDRSTRLEN];
+			if (inet_ntop(AF_INET6, &saddr->sin6_addr, ipstr, INET6_ADDRSTRLEN) == 0)
+				continue;
+
+			if (num >= capacity) {
+				capacity *= 2;
+				ips = (char**)realloc(ips, capacity * sizeof(char*));
+			}
+			ips[num++] = strdup(ipstr);
+		}
+
+		if ((max_count > 0) && (num >= max_count))
+			break;
+	}
+
+	freeifaddrs(ifaddr);
+
+	*count = num;
+	return ips;
+#else
+	*count = 0;
+	return 0;
+#endif
+}
+
+void
+freeipaddrs(char** ips, int count) {
+	if (!ips)
+		return;
+	for (int i = 0; i < count; i++) {
+		if (ips[i])
+			free(ips[i]);
+	}
+	free(ips);
+}
+
+struct sockaddr_in
+ipv4_string_to_address(const char* ip4str) {
+    struct sockaddr_in addr;
+    memset(&addr, 0, sizeof(addr));
+    addr.sin_family = AF_INET;
+    inet_pton(AF_INET, ip4str, &addr.sin_addr);
+    return addr;
 }

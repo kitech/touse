@@ -110,6 +110,13 @@ pub fn set_service_cb(name string, f fn(string, string)) {
 fn C.mdns_socket_listen(...voidptr) usize
 fn C.mdns_announce_multicast(...voidptr) int
 fn C.mdns_goodbye_multicast(...voidptr) int
+fn C.ipv4_string_to_address(...voidptr) C.sockaddr_in
+fn C.getipaddrs(...voidptr) &charptr
+fn C.freeipaddrs(...voidptr)
+/*
+char** getipaddrs(int* count, int max_count);
+void freeipaddrs(char** ips, int count);
+*/
 
 @[params]
 pub struct ListenOpt {
@@ -148,6 +155,11 @@ c99 {
 pub fn listen(opt ListenOpt) int {
     gvs.lsnopt = opt
 
+    ipcnt := 0
+    ipstrs := C.getipaddrs(&ipcnt, 0)
+    ips := cstrs2vstrs(voidptr(ipstrs), ipcnt, true)
+    dump('$ipcnt $ips')
+
     buf := []i8{len:2048}
     sock := socket_open_service()
     assert sock > 0
@@ -168,6 +180,13 @@ pub fn listen(opt ListenOpt) int {
     r.data.srv = RecordSrv{port:8899, name: String.from(hostname())}
     adds << r
 
+    r = Record{}
+    r.type = .RT_A
+    r.name = String.from(hostname())
+    r.ttl = 60
+    r.rclass = 0
+    r.data.a = RecordA{ C.ipv4_string_to_address(ips[0].str)}
+
     btime := time.now()
     todur := opt.broadcast_timeval*time.second
     for i := 0;; i++ {
@@ -183,6 +202,7 @@ pub fn listen(opt ListenOpt) int {
             return rc
         } else if rc == 0 {
             if i == 0 || time.since(btime) >= todur {
+                log.info('broadcast hostname  A ...')
                 btime = time.now()
                 rvi := C.mdns_announce_multicast(sock, buf.data, buf.len, rec, nil, 0, adds.data, adds.len)
                 // dump('mdns br $rvi')
