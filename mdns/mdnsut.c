@@ -1,4 +1,5 @@
 
+#include <netinet/in.h>
 #include <sys/socket.h>
 #ifdef _WIN32
 #define _CRT_SECURE_NO_WARNINGS 1
@@ -106,6 +107,24 @@ ipv4_string_to_address(const char* ip4str) {
     addr.sin_family = AF_INET;
     inet_pton(AF_INET, ip4str, &addr.sin_addr);
     return addr;
+}
+struct sockaddr_in6
+ipv6_string_to_address(const char* ipstr) {
+    struct sockaddr_in6 addr;
+    memset(&addr, 0, sizeof(addr));
+    addr.sin6_family = AF_INET6;
+    inet_pton(AF_INET6, ipstr, &addr.sin6_addr);
+    return addr;
+}
+
+void ip_string_to_address(const char* ipstr, struct sockaddr* addr) {
+    if (strchr(ipstr, ':')) {
+	struct sockaddr_in6 ret = ipv6_string_to_address(ipstr);
+	memcpy(addr, &ret, sizeof(ret));
+    } else {
+	struct sockaddr_in ret = ipv4_string_to_address(ipstr);
+	memcpy(addr, &ret, sizeof(ret));
+    }
 }
 
 ///////////////
