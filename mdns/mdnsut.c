@@ -99,6 +99,17 @@ ip_address_to_string(char* buffer, size_t capacity, const struct sockaddr* addr,
 	return ipv4_address_to_string(buffer, capacity, (const struct sockaddr_in*)addr, addrlen);
 }
 
+struct sockaddr_in
+ipv4_string_to_address(const char* ip4str) {
+    struct sockaddr_in addr;
+    memset(&addr, 0, sizeof(addr));
+    addr.sin_family = AF_INET;
+    inet_pton(AF_INET, ip4str, &addr.sin_addr);
+    return addr;
+}
+
+///////////////
+
 char**
 getipaddrs(int* count, int max_count) {
 #if defined(_WIN32)
@@ -282,13 +293,4 @@ freeipaddrs(char** ips, int count) {
 			free(ips[i]);
 	}
 	free(ips);
-}
-
-struct sockaddr_in
-ipv4_string_to_address(const char* ip4str) {
-    struct sockaddr_in addr;
-    memset(&addr, 0, sizeof(addr));
-    addr.sin_family = AF_INET;
-    inet_pton(AF_INET, ip4str, &addr.sin_addr);
-    return addr;
 }
