@@ -23,7 +23,8 @@ pub struct C.mdns_record_t {
         txt  RecordTxt
     }
 
-    rclass u16
+    // rclass u16
+    rclass ClassType
     ttl    u32
 }
 
@@ -92,6 +93,17 @@ pub fn RecordTxt.new() RecordTxt {
 
     return r
 }
+pub fn RecordA.new(name string, ipstr string, ttl int) Record {
+    r := Record{}
+    r.type = .RT_A
+    r.rclass = .CLASS_IN
+    r.ttl = u32(ttl)
+    r.name = String.from(name)
+    d := RecordA{C.ipv4_string_to_address(ipstr)}
+    r.data.a = d
+
+    return r
+}
 
 ////////
 const gvs = &Globs{}
@@ -123,6 +135,7 @@ pub struct ListenOpt {
     pub:
     name string = "_ohmy._tcp.local." // _hostname._tcp.local.
     broadcast_timeval  int = 8 // sec
+    br_hostname bool = true
 
     stopp  &bool = &bool(&String{})
 }
@@ -169,6 +182,7 @@ pub fn listen(opt ListenOpt) int {
     rec.type = .RT_PTR
     rec.name = cstr
     rec.data.ptr.name = cstr
+
     adds := []Record{}
     // r := Record{type: .RT_PTR, name: String.from(hostname())}
     // r.data.ptr.name = r.name
@@ -184,8 +198,10 @@ pub fn listen(opt ListenOpt) int {
     r.type = .RT_A
     r.name = String.from(hostname())
     r.ttl = 60
-    r.rclass = 0
+    r.rclass = .CLASS_IN
     r.data.a = RecordA{ C.ipv4_string_to_address(ips[0].str)}
+    adds << r
+    log.info('${adds.len}')
 
     btime := time.now()
     todur := opt.broadcast_timeval*time.second
@@ -366,4 +382,9 @@ pub enum EntryType {
     ET_ANSWER     = C.MDNS_ENTRYTYPE_ANSWER
     ET_AUTHORITY  = C.MDNS_ENTRYTYPE_AUTHORITY
     ET_ADDITIONAL = C.MDNS_ENTRYTYPE_ADDITIONAL
+}
+
+pub enum ClassType as u16 {
+    CLASS_IN = C.MDNS_CLASS_IN  // 1
+    ClASS_ANY = C.MDNS_CLASS_ANY // 255
 }

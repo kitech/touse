@@ -101,7 +101,103 @@ ip_address_to_string(char* buffer, size_t capacity, const struct sockaddr* addr,
 
 char**
 getipaddrs(int* count, int max_count) {
-#ifndef _WIN32
+#if defined(_WIN32)
+
+	IP_ADAPTER_ADDRESSES* adapter_address = 0;
+	ULONG address_size = 8000;
+	unsigned int ret;
+	unsigned int num_retries = 4;
+	do {
+		adapter_address = (IP_ADAPTER_ADDRESSES*)malloc(address_size);
+		ret = GetAdaptersAddresses(AF_UNSPEC, GAA_FLAG_SKIP_MULTICAST | GAA_FLAG_SKIP_ANYCAST, 0,
+		                           adapter_address, &address_size);
+		if (ret == ERROR_BUFFER_OVERFLOW) {
+			free(adapter_address);
+			adapter_address = 0;
+			address_size *= 2;
+		} else {
+			break;
+		}
+	} while (num_retries-- > 0);
+
+	if (!adapter_address || (ret != NO_ERROR)) {
+		free(adapter_address);
+		*count = 0;
+		return 0;
+	}
+
+	int capacity = 32;
+	char** ips = (char**)malloc(capacity * sizeof(char*));
+	int num = 0;
+
+	for (PIP_ADAPTER_ADDRESSES adapter = adapter_address; adapter; adapter = adapter->Next) {
+		if (adapter->TunnelType == TUNNEL_TYPE_TEREDO)
+			continue;
+		if (adapter->OperStatus != IfOperStatusUp)
+			continue;
+
+		for (IP_ADAPTER_UNICAST_ADDRESS* unicast = adapter->FirstUnicastAddress; unicast;
+		     unicast = unicast->Next) {
+			if (unicast->Address.lpSockaddr->sa_family == AF_INET) {
+				struct sockaddr_in* saddr = (struct sockaddr_in*)unicast->Address.lpSockaddr;
+				if ((saddr->sin_addr.S_un.S_un_b.s_b1 == 127) &&
+				    (saddr->sin_addr.S_un.S_un_b.s_b2 == 0) &&
+				    (saddr->sin_addr.S_un.S_un_b.s_b3 == 0) &&
+				    (saddr->sin_addr.S_un.S_un_b.s_b4 == 1))
+					continue;
+
+				char ipstr[INET_ADDRSTRLEN];
+				if (inet_ntop(AF_INET, &saddr->sin_addr, ipstr, INET_ADDRSTRLEN) == 0)
+					continue;
+
+				if (num >= capacity) {
+					capacity *= 2;
+					ips = (char**)realloc(ips, capacity * sizeof(char*));
+				}
+				ips[num++] = strdup(ipstr);
+
+			} else if (unicast->Address.lpSockaddr->sa_family == AF_INET6) {
+				struct sockaddr_in6* saddr = (struct sockaddr_in6*)unicast->Address.lpSockaddr;
+				if (saddr->sin6_scope_id)
+					continue;
+
+				static const unsigned char localhost[] = {0, 0, 0, 0, 0, 0, 0, 0,
+				                                          0, 0, 0, 0, 0, 0, 0, 1};
+				static const unsigned char localhost_mapped[] = {0, 0, 0,    0,    0,    0, 0, 0,
+				                                                 0, 0, 0xff, 0xff, 0x7f, 0, 0, 1};
+				if (memcmp(saddr->sin6_addr.s6_addr, localhost, 16) == 0)
+					continue;
+				if (memcmp(saddr->sin6_addr.s6_addr, localhost_mapped, 16) == 0)
+					continue;
+				if (unicast->DadState != NldsPreferred)
+					continue;
+
+				char ipstr[INET6_ADDRSTRLEN];
+				if (inet_ntop(AF_INET6, &saddr->sin6_addr, ipstr, INET6_ADDRSTRLEN) == 0)
+					continue;
+
+				if (num >= capacity) {
+					capacity *= 2;
+					ips = (char**)realloc(ips, capacity * sizeof(char*));
+				}
+				ips[num++] = strdup(ipstr);
+			}
+
+			if ((max_count > 0) && (num >= max_count))
+				break;
+		}
+
+		if ((max_count > 0) && (num >= max_count))
+			break;
+	}
+
+	free(adapter_address);
+
+	*count = num;
+	return ips;
+
+#elif defined(__APPLE__) || defined(__linux__)
+
 	struct ifaddrs* ifaddr = 0;
 	struct ifaddrs* ifa = 0;
 
@@ -170,6 +266,7 @@ getipaddrs(int* count, int max_count) {
 
 	*count = num;
 	return ips;
+
 #else
 	*count = 0;
 	return 0;
