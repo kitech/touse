@@ -29,6 +29,9 @@ fn C.gh_client_repo_release_gen_notes(owner &char, repo &char, data &char) &Resp
 // Asset
 fn C.gh_client_repo_release_assets_list(owner &char, repo &char, id u32, opts &ReqListOpts) &Response
 fn C.gh_client_repo_release_asset_get(owner &char, repo &char, id u32) &Response
+fn C.gh_client_repo_release_asset_update(owner &char, repo &char, asset_id u32, data &char) &Response
+fn C.gh_client_repo_release_asset_delete(owner &char, repo &char, asset_id u32) &Response
+fn C.gh_client_repo_release_asset_upload(upload_url &char, name &char, label &char, file_path &char) &Response
 
 
 pub struct RateLimitData {

@@ -410,7 +410,191 @@ gh_client_repo_get(const char *owner, const char *repo,
 
     curl_slist_free_all(chunk);
     
-    return response;   
+return response; 
+}
+
+gh_client_response_t*
+gh_client_repo_release_asset_update(const char *owner, const char *repo,
+                                  const unsigned int asset_id,
+                                  const char *data)
+{
+    gh_client_response_t *response = gh_client_response_new();
+
+    if (owner == NULL) {
+        response->err_msg = calloc(25, sizeof(char));
+        strcpy(response->err_msg, "error: owner arg is NULL");
+        return response;
+    }
+
+    if (repo == NULL) {
+        response->err_msg = calloc(24, sizeof(char));
+        strcpy(response->err_msg, "error: repo arg is NULL");
+        return response;
+    }
+
+    struct curl_slist *chunk = NULL;
+    chunk = curl_slist_append(chunk, GH_REQ_JSON_HEADER);
+    chunk = curl_slist_append(chunk, token_header);
+    chunk = curl_slist_append(chunk, GH_REQ_VER_HEADER);
+    chunk = curl_slist_append(chunk, GH_REQ_DEF_UA_HEADER);
+
+    char url[DEFAULT_URL_SIZE] = GH_API_REPO_URL;
+    strcat(url, owner);
+    strcat(url, "/");
+    strcat(url, repo);
+    strcat(url, "/releases/assets/");
+
+    char id_val[11] = {0};
+    sprintf(id_val, "%d", asset_id);
+    strcat(url, id_val);
+
+    SET_BASIC_CURL_CONFIG;
+    curl_easy_setopt(curl, CURLOPT_CUSTOMREQUEST, "PATCH");
+    curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE, strlen(data));
+    curl_easy_setopt(curl, CURLOPT_POSTFIELDS, data);
+
+    CURLcode res = curl_easy_perform(curl);
+    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &response->resp_code);
+    CURL_CALL_ERROR_CHECK;
+
+    curl_slist_free_all(chunk);
+
+    return response; 
+}
+
+gh_client_response_t*
+gh_client_repo_release_asset_delete(const char *owner, const char *repo,
+                                 const unsigned int asset_id)
+{
+    gh_client_response_t *response = gh_client_response_new();
+
+    if (owner == NULL) {
+        response->err_msg = calloc(25, sizeof(char));
+        strcpy(response->err_msg, "error: owner arg is NULL");
+        return response;
+    }
+
+    if (repo == NULL) {
+        response->err_msg = calloc(24, sizeof(char));
+        strcpy(response->err_msg, "error: repo arg is NULL");
+        return response;
+    }
+
+    struct curl_slist *chunk = NULL;
+    chunk = curl_slist_append(chunk, GH_REQ_JSON_HEADER);
+    chunk = curl_slist_append(chunk, token_header);
+    chunk = curl_slist_append(chunk, GH_REQ_VER_HEADER);
+    chunk = curl_slist_append(chunk, GH_REQ_DEF_UA_HEADER);
+
+    char url[DEFAULT_URL_SIZE] = GH_API_REPO_URL;
+    strcat(url, owner);
+    strcat(url, "/");
+    strcat(url, repo);
+    strcat(url, "/releases/assets/");
+
+    char id_val[11] = {0};
+    sprintf(id_val, "%d", asset_id);
+    strcat(url, id_val);
+
+    SET_BASIC_CURL_CONFIG;
+    curl_easy_setopt(curl, CURLOPT_CUSTOMREQUEST, "DELETE");
+
+    CURLcode res = curl_easy_perform(curl);
+    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &response->resp_code);
+    CURL_CALL_ERROR_CHECK;
+
+    curl_slist_free_all(chunk);
+
+    return response; 
+}
+
+gh_client_response_t*
+gh_client_repo_release_asset_upload(const char *upload_url, const char *name,
+                                 const char *label, const char *file_path)
+{
+    gh_client_response_t *response = gh_client_response_new();
+
+    if (upload_url == NULL) {
+        response->err_msg = calloc(30, sizeof(char));
+        strcpy(response->err_msg, "error: upload_url arg is NULL");
+        return response;
+    }
+
+    if (file_path == NULL) {
+        response->err_msg = calloc(29, sizeof(char));
+        strcpy(response->err_msg, "error: file_path arg is NULL");
+        return response;
+    }
+    
+    FILE *fp = fopen(file_path, "rb");
+    if (fp == NULL) {
+        response->err_msg = calloc(20, sizeof(char));
+        strcpy(response->err_msg, "error: cannot read file");
+        return response;
+    }
+    
+    fseek(fp, 0, SEEK_END);
+    long file_size = ftell(fp);
+    fseek(fp, 0, SEEK_SET);
+    
+    char *file_data = malloc(file_size);
+    fread(file_data, 1, file_size, fp);
+    fclose(fp);
+    
+    char url[DEFAULT_URL_SIZE] = {0};
+    strncpy(url, upload_url, DEFAULT_URL_SIZE - 1);
+    
+    if (strstr(url, "?") == NULL) {
+        strcat(url, "?");
+    } else {
+        strcat(url, "&");
+    }
+    
+    strcat(url, "name=");
+    if (name) strcat(url, name);
+    
+    if (label && strlen(label) > 0) {
+        strcat(url, "&label=");
+        strcat(url, label);
+    }
+    
+    CURL *curl = curl_easy_init();
+    if (curl == NULL) {
+        response->err_msg = calloc(30, sizeof(char));
+        strcpy(response->err_msg, "error: curl_easy_init failed");
+        free(file_data);
+        return response;
+    }
+
+    struct curl_slist *chunk = NULL;
+    chunk = curl_slist_append(chunk, token_header);
+    chunk = curl_slist_append(chunk, GH_REQ_VER_HEADER);
+    chunk = curl_slist_append(chunk, GH_REQ_DEF_UA_HEADER);
+    chunk = curl_slist_append(chunk, "Content-Type: application/octet-stream");
+
+    curl_easy_setopt(curl, CURLOPT_URL, url);
+    curl_easy_setopt(curl, CURLOPT_POST, 1L);
+    curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE, file_size);
+    curl_easy_setopt(curl, CURLOPT_POSTFIELDS, file_data);
+
+    char content_length[50];
+    snprintf(content_length, sizeof(content_length), "Content-Length: %ld", file_size);
+    chunk = curl_slist_append(chunk, content_length);
+    curl_easy_setopt(curl, CURLOPT_HTTPHEADER, chunk);
+    curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
+    
+    CURLcode res = curl_easy_perform(curl);
+    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &response->resp_code);
+    if (res != CURLE_OK) {
+        response->err_msg = calloc(50, sizeof(char));
+        strcpy(response->err_msg, curl_easy_strerror(res));
+    }
+
+    free(file_data);
+    curl_slist_free_all(chunk);
+    curl_easy_cleanup(curl);
+
+    return response; 
 }
 
 gh_client_response_t*

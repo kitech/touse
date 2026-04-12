@@ -197,7 +197,13 @@ int
 gh_client_init(const char *token);
 
 /**
- * Set the value to be used as the user agent in requests.
+ * Set verbose mode for curl.
+ */
+void
+gh_client_set_verbose(int verbose);
+
+/**
+ * Free the memory used in the client response.
  */
 void
 gh_client_set_user_agent(const char *ua);
@@ -353,7 +359,32 @@ gh_client_repo_release_assets_list(const char *owner, const char *repo,
  */
 gh_client_response_t*
 gh_client_repo_release_asset_get(const char *owner, const char *repo,
-                                 const unsigned int id);
+                                  const unsigned int id);
+
+/**
+ * Update a release asset. The response memory needs to be
+ * freed by the caller.
+ */
+gh_client_response_t*
+gh_client_repo_release_asset_update(const char *owner, const char *repo,
+                                  const unsigned int asset_id,
+                                  const char *data);
+
+/**
+ * Delete a release asset. The response memory needs to be
+ * freed by the caller.
+ */
+gh_client_response_t*
+gh_client_repo_release_asset_delete(const char *owner, const char *repo,
+                                 const unsigned int asset_id);
+
+/**
+ * Upload a release asset. The response memory needs to be
+ * freed by the caller.
+ */
+gh_client_response_t*
+gh_client_repo_release_asset_upload(const char *upload_url, const char *name,
+                                 const char *label, const char *file_path);
 
 /**
  * Retrieve stargazers for a given repository. The response memory needs to be
