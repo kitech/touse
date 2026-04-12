@@ -25,6 +25,7 @@ pub fn set_service_cb(name string, f fn(string, string)) {
 pub struct ListenOpt {
     pub:
     name string = "_ohmy._tcp.local." // _hostname._tcp.local.
+    port int = 8899 // main app control tcp/udp port
     broadcast_timeval  int = 8 // sec
     br_hostname bool = true
 
@@ -59,11 +60,6 @@ c99 {
 pub fn listen(opt ListenOpt) int {
     gvs.lsnopt = opt
 
-    ipcnt := 0
-    ipstrs := C.getipaddrs(&ipcnt, 0)
-    ips := cstrs2vstrs(voidptr(ipstrs), ipcnt, true)
-    dump('$ipcnt $ips')
-
     buf := []i8{len:2048}
     sock := socket_open_service()
     assert sock > 0
@@ -75,24 +71,14 @@ pub fn listen(opt ListenOpt) int {
     rec.data.ptr.name = cstr
 
     adds := []Record{}
-    // r := Record{type: .RT_PTR, name: String.from(hostname())}
-    // r.data.ptr.name = r.name
-    // adds << r
     r := Record{}
     r.type = .RT_SRV
     r.name = cstr
-    dump(hostname())
-    r.data.srv = RecordSrv{port:8899, name: String.from(hostname())}
+    r.data.srv = RecordSrv{port:u16(opt.port), name: String.from(hostname())}
     adds << r
 
-    r = Record{}
-    r.type = .RT_A
-    r.name = String.from(hostname())
-    r.ttl = 60
-    r.rclass = .CLASS_IN
-    r.data.a = RecordA{ C.ipv4_string_to_address(ips[0].str)}
+    r = create_currip_reca() or { panic(err) }
     adds << r
-    log.info('${adds.len}')
 
     btime := time.now()
     todur := opt.broadcast_timeval*time.second
@@ -110,6 +96,10 @@ pub fn listen(opt ListenOpt) int {
         } else if rc == 0 {
             if i == 0 || time.since(btime) >= todur {
                 log.info('broadcast hostname  A ...')
+                // ip may change
+                ra := create_currip_reca() or { continue }
+                adds[adds.len-1] = ra
+
                 btime = time.now()
                 rvi := C.mdns_announce_multicast(sock, buf.data, buf.len, rec, nil, 0, adds.data, adds.len)
                 // dump('mdns br $rvi')
@@ -128,6 +118,26 @@ pub fn listen(opt ListenOpt) int {
         if rv < 0 { dump('error $rv'); return -1 }
     }
     return 0
+}
+
+fn create_currip_reca() !Record {
+
+    ipcnt := 0
+    ipstrs := C.getipaddrs(&ipcnt, 0)
+    ips := cstrs2vstrs(voidptr(ipstrs), ipcnt, true)
+    if ips.len == 0 {
+        log.error('$ipcnt $ips')
+        return error('ips zeror')
+    }
+
+    r := Record{}
+    r.type = .RT_A
+    r.name = String.from(hostname())
+    r.ttl = 60
+    r.rclass = .CLASS_IN
+    r.data.a = RecordA{ C.ipv4_string_to_address(ips[0].str)}
+
+    return r
 }
 
 // return 0 for success
