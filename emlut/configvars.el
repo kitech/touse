@@ -232,6 +232,7 @@
 			    window-safe-min-height)
     (setq require-final-newline nil)
     (add-hook 'before-save-hook 'delete-trailing-whitespace)
+    (add-hook 'go-mode-hook (lambda () (setq tab-width 4)))
 
     ;; ctrl + Mouse-1 = goto define
     )
