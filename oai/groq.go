@@ -50,7 +50,7 @@ func GroqAi(apikey string, prompt string) (string, error) {
 				// {Role: "user", Content: "Hello!"},
 				{Role: "user", Content: prompt},
 			},
-			MaxTokens:   1024,
+			MaxTokens:   2048,
 			TopP: 1, Temperature: 1,
 			Stream: false,
 		},
@@ -61,6 +61,7 @@ func GroqAi(apikey string, prompt string) (string, error) {
 		return "", err
 	}
 
-	log.Println(resp.Choices[0].Message.Content)
-	return resp.Choices[0].Message.Content, nil
+	rescc := resp.Choices[0].Message.Content
+	log.Println(len(rescc), rescc, len(rescc))
+	return rescc, nil
 }
