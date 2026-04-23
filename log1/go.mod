@@ -1,6 +1,6 @@
 module github.com/kitech/touse/log1
 
-go 1.22.3
+go 1.22.1
 
 require (
 	github.com/kitech/gopp v0.0.0-20251111005519-20edd49cad44
