@@ -13,6 +13,7 @@ static void print_search_usage(const char *prog) {
     printf("  -n, --num <num>        Number of results (default: 20, max: 50)\n");
     printf("  -p, --page <num>       Page number (default: 0)\n");
     printf("  -c, --channel <ch>     NixOS channel (default: unstable)\n");
+    printf("                          Options: unstable, staging, staging-next, 25.11, 25.04\n");
     printf("  -P, --plain            Output only package names\n");
     printf("  -d, --details          Show store path\n");
     printf("  -h, --help             Show this help\n");
@@ -119,7 +120,8 @@ static int run_search(int argc, char *argv[]) {
             
             char *store_path = NULL;
             if (opts.details) {
-                store_path = get_store_path(r->attr_name, opts.arch, NULL);
+                const char *jobset = get_hydra_jobset(opts.channel);
+                store_path = get_store_path(r->attr_name, opts.arch, jobset);
             }
             
             if (opts.plain) {

@@ -18,6 +18,12 @@ type DownloadOptions struct {
 
 var defaultCacheURL = "https://cache.nixos.org"
 
+func init() {
+	if url := os.Getenv("NIX_CACHE_URL"); url != "" {
+		defaultCacheURL = url
+	}
+}
+
 func getNarURL(cacheURL, storePath string) (narinfoURL, narURL string, err error) {
 	hash := strings.TrimPrefix(storePath, "/nix/store/")
 	hash = strings.SplitN(hash, "-", 1)[0]

@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"os/exec"
 	"runtime"
 	"strings"
 	"time"
@@ -64,6 +65,21 @@ var (
 	authPassword = "X8gPHnzL52wFEekuxsfQ9cSh"
 	hydraURL   = "https://hydra.nixos.org"
 )
+
+var channelMap = map[string]string{
+	"unstable":     "unstable",
+	"staging":      "staging",
+	"staging-next": "staging-next",
+	"25.11":        "release-25.11",
+	"25.04":        "release-25.04",
+}
+
+func getHydraJobset(channel string) string {
+	if jobset, ok := channelMap[channel]; ok {
+		return jobset
+	}
+	return "unstable"
+}
 
 func getSystemArch() string {
 	arch := runtime.GOARCH
@@ -184,6 +200,23 @@ func GetStorePath(attr string, arch string, jobset string) (string, error) {
 	return hydraResp.BuildOutputs.Out.Path, nil
 }
 
+func GetStorePathNix(packageNixPath string) (string, error) {
+	if packageNixPath == "" {
+		return "", fmt.Errorf("package nix path required")
+	}
+
+	cmd := exec.Command("nix", "eval", "--raw", "-f", packageNixPath, "outPath")
+	var out bytes.Buffer
+	cmd.Stdout = &out
+	cmd.Stderr = os.Stderr
+
+	if err := cmd.Run(); err != nil {
+		return "", err
+	}
+
+	return strings.TrimSpace(out.String()), nil
+}
+
 func formatDate(timestamp int64) string {
 	if timestamp == 0 {
 		return ""
@@ -215,7 +248,8 @@ func printResults(results []SearchResult, opts *SearchOptions) {
 	for _, r := range results {
 		storePath := ""
 		if opts.Details {
-			sp, err := GetStorePath(r.AttrName, arch, "")
+			jobset := getHydraJobset(opts.Channel)
+			sp, err := GetStorePath(r.AttrName, arch, jobset)
 			if err == nil {
 				storePath = sp
 			}
@@ -248,32 +282,36 @@ func printResults(results []SearchResult, opts *SearchOptions) {
 func Run(args []string) error {
 	opts := &SearchOptions{}
 
-	flag.StringVar(&opts.Query, "query", "", "Search query")
-	flag.StringVar(&opts.Arch, "a", "", "Target architecture")
-	flag.IntVar(&opts.Num, "n", 20, "Number of results")
-	flag.IntVar(&opts.Page, "p", 0, "Page number")
-	flag.StringVar(&opts.Channel, "c", "unstable", "NixOS channel")
+	fs := flag.NewFlagSet("nixse", flag.ContinueOnError)
+	fs.SetOutput(os.Stderr)
+	
+	fs.StringVar(&opts.Query, "query", "", "Search query")
+	fs.StringVar(&opts.Arch, "a", "", "Target architecture")
+	fs.IntVar(&opts.Num, "n", 20, "Number of results")
+	fs.IntVar(&opts.Page, "p", 0, "Page number")
+	fs.StringVar(&opts.Channel, "c", "unstable", "NixOS channel")
 
-	flag.BoolVar(&opts.Plain, "P", false, "Output only package names")
-	flag.BoolVar(&opts.Plain, "plain", false, "Output only package names (alias for -P)")
-	flag.BoolVar(&opts.Details, "details", false, "Show store path")
+	var plain bool
+	fs.BoolVar(&plain, "P", false, "Output only package names")
+	fs.BoolVar(&plain, "plain", false, "Output only package names (alias for -P)")
+	fs.BoolVar(&opts.Details, "d", false, "Show store path")
+	fs.BoolVar(&opts.Details, "details", false, "Show store path (alias for -d)")
 
-	flag.Usage = func() {
-		fmt.Fprintf(os.Stderr, "Usage: nixse [options] <query>\n")
-		fmt.Fprintf(os.Stderr, "Options:\n")
-		flag.PrintDefaults()
-		fmt.Fprintf(os.Stderr, "\nNote: Flags must appear before the query argument.\n")
-	}
+	fs.Parse(args)
+	
+	opts.Plain = plain
 
-	flag.Parse()
-
-	parsedArgs := flag.Args()
+	parsedArgs := fs.Args()
 	if len(parsedArgs) > 0 {
 		opts.Query = strings.Join(parsedArgs, " ")
 	}
 
 	if opts.Query == "" {
-		flag.Usage()
+		fmt.Fprintf(os.Stderr, "Usage: nixse [options] <query>\n")
+		fmt.Fprintf(os.Stderr, "Options:\n")
+		fs.PrintDefaults()
+		fmt.Fprintf(os.Stderr, "\nNote: Flags must appear before the query argument.\n")
+		fmt.Fprintf(os.Stderr, "Channels: unstable, staging, staging-next, 25.11, 25.04\n")
 		return fmt.Errorf("query required")
 	}
 

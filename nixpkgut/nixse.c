@@ -57,6 +57,61 @@ static char *base64_encode(const char *input) {
     return output;
 }
 
+const char *get_hydra_jobset(const char *channel) {
+    static const char *channel_map[][2] = {
+        {"unstable", "unstable"},
+        {"staging", "staging"},
+        {"staging-next", "staging-next"},
+        {"25.11", "release-25.11"},
+        {"25.04", "release-25.04"},
+        {NULL, "unstable"}
+    };
+    
+    for (int i = 0; channel_map[i][0] != NULL; i++) {
+        if (strcmp(channel, channel_map[i][0]) == 0) {
+            return channel_map[i][1];
+        }
+    }
+    return "unstable";
+}
+
+char *get_store_path_nix(const char *package_nix_path) {
+    if (!package_nix_path) return NULL;
+    
+    char cmd[1024];
+    snprintf(cmd, sizeof(cmd), "nix eval --raw -f %s outPath", package_nix_path);
+    
+    FILE *fp = popen(cmd, "r");
+    if (!fp) return NULL;
+    
+    char buffer[512] = {0};
+    char *result = calloc(1, 1);
+    size_t total = 0;
+    
+    while (fgets(buffer, sizeof(buffer), fp) != NULL) {
+        size_t len = strlen(buffer);
+        char *ptr = realloc(result, total + len + 1);
+        if (!ptr) {
+            free(result);
+            pclose(fp);
+            return NULL;
+        }
+        result = ptr;
+        memcpy(result + total, buffer, len);
+        total += len;
+        result[total] = '\0';
+    }
+    
+    pclose(fp);
+    
+    if (result) {
+        char *newline = strchr(result, '\n');
+        if (newline) *newline = '\0';
+    }
+    
+    return result;
+}
+
 char *get_system_arch(void) {
     struct utsname uname_data;
     if (uname(&uname_data) != 0) {

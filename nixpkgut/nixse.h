@@ -33,6 +33,8 @@ char *get_system_arch(void);
 char *make_auth_token(const char *username, const char *password);
 SearchResult *search_packages(const SearchOptions *opts, int *result_count);
 char *get_store_path(const char *attr, const char *arch, const char *jobset);
+const char *get_hydra_jobset(const char *channel);
+char *get_store_path_nix(const char *package_nix_path);
 void free_search_results(SearchResult *results, int count);
 
 #endif /* NIXSE_H */

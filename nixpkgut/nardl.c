@@ -7,6 +7,11 @@
 
 #define DEFAULT_CACHE_URL "https://cache.nixos.org"
 
+static const char *get_cache_url(void) {
+    const char *env = getenv("NIX_CACHE_URL");
+    return env ? env : DEFAULT_CACHE_URL;
+}
+
 typedef struct {
     char *data;
     size_t size;
@@ -47,7 +52,7 @@ static void get_hash_from_store_path(const char *store_path, char *hash_out, siz
 }
 
 int download_nar(const DownloadOptions *opts) {
-    const char *cache_url = opts->cache_url ? opts->cache_url : DEFAULT_CACHE_URL;
+    const char *cache_url = opts->cache_url ? opts->cache_url : get_cache_url();
     const char *store_path = opts->store_path;
     const char *output = opts->output;
     
