@@ -99,7 +99,7 @@ pub fn RecordA.new(name string, ipstr string, ttl int) Record {
     r.rclass = .CLASS_IN
     r.ttl = u32(ttl)
     r.name = String.from(name)
-    d := RecordA{C.ipv4_string_to_address(ipstr)}
+    d := RecordA{C.ipv4_string_to_address(ipstr.str)}
     r.data.a = d
 
     return r
