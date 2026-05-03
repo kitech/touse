@@ -54,8 +54,12 @@ func main() {
 	}
 	log.Printf("Allocated relay: %s, Address: %s, Lifetime: %d", alloc.RelayID, alloc.RelayAddress, alloc.Lifetime)
 
-	// 4. TURN example - Send message
+	// 4. TURN example - Add permission then send message
 	log.Println("=== TURN Send Example ===")
+	err = c.AddPermission([]string{"node_b"})
+	if err != nil {
+		log.Fatal("Add permission failed:", err)
+	}
 	msg := []byte("Hello from node_a via hturnal!")
 	err = c.SendToPeer("node_b", msg)
 	if err != nil {

@@ -42,6 +42,11 @@ type TURNSendRequest struct {
 	TTL     int    `json:"ttl,omitempty"`;
 };
 
+type TURNPermissionRequest struct {
+	RelayID string   `json:"relay_id"`;
+	PeerIDs []string `json:"peer_ids"`;
+};
+
 type TURNReceiveResponse struct {
 	Messages []TURNMessage `json:"messages"`;
 };

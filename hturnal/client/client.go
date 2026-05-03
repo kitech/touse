@@ -70,6 +70,15 @@ func (c *Client) SendToPeer(peerID string, data []byte) error {
 	return c.post("/turn/send", reqBody, &map[string]interface{}{})
 }
 
+// AddPermission adds permissions for peers
+func (c *Client) AddPermission(peerIDs []string) error {
+	reqBody := TURNPermissionRequest{
+		RelayID: c.relayID,
+		PeerIDs: peerIDs,
+	}
+	return c.post("/turn/permission", reqBody, &map[string]interface{}{})
+}
+
 // Receive receives messages from the relay (long-poll)
 func (c *Client) Receive(timeout int) ([]TURNMessage, error) {
 	if timeout <= 0 {
