@@ -4,7 +4,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"github.com/adrianbrad/queue"
+	//	"github.com/adrianbrad/queue"
 	"github.com/kitech/touse/hturnal/storage"
 	"net/http"
 	"time"
@@ -18,40 +18,60 @@ func NewAllocateHandler(store storage.Storage) http.HandlerFunc {
 			return
 		}
 
-		var req AllocateRequest
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			http.Error(w, "Invalid JSON", http.StatusBadRequest)
+		// 获取客户端IP（按优先级：X-Forwarded-For → X-Real-IP → RemoteAddr.IP）
+		clientIP := getClientIP(r)
+		
+		// 从按IP端口池分配端口（用于client_id）
+		clientPort, clientID, err := globalIPPortPool.AllocateClientPort(clientIP)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusServiceUnavailable)
 			return
 		}
-
-		// 清理该ClientID的旧allocation（防止同名客户端重复注册导致消息丢失）
-		if err := store.DeleteAllocationsByClientID(req.ClientID); err != nil {
+		
+		// 从全局端口池分配relay_port（用于数据平面）
+		relayPort, err := globalRelayPortPool.Allocate()
+		if err != nil {
+			globalIPPortPool.ReleaseClientPort(clientIP, clientPort)
+			http.Error(w, err.Error(), http.StatusServiceUnavailable)
+			return
+		}
+		
+		// 清理该clientID的旧allocation
+		if err := store.DeleteAllocationsByClientID(clientID); err != nil {
+			globalIPPortPool.ReleaseClientPort(clientIP, clientPort)
+			globalRelayPortPool.Release(relayPort)
 			http.Error(w, "Failed to cleanup old allocations", http.StatusInternalServerError)
 			return
 		}
-
-		// Generate relay ID
+		
+		// 生成内部relayID
 		relayID := generateID()
 		alloc := &storage.TURNAllocation{
 			RelayID:       relayID,
-			ClientID:      req.ClientID,
+			ClientID:      clientID,       // 服务端分配的 "ip:port"
+			RelayPort:     relayPort,       // 伪端口号
 			Permissions:   make(map[string]bool),
-			MessageQueues: make(map[string]*queue.Blocking[*storage.Message]),
+			IncomingQueue: make(chan *storage.PortData, 65535),
+			OutgoingQueue: make(chan *storage.PortData, 65535),
 			Lifetime:      10 * time.Minute,
 			ExpiresAt:     time.Now().Add(10 * time.Minute),
 		}
-
+		
 		if err := store.SaveAllocation(relayID, alloc); err != nil {
+			globalIPPortPool.ReleaseClientPort(clientIP, clientPort)
+			globalRelayPortPool.Release(relayPort)
 			http.Error(w, "Failed to save allocation", http.StatusInternalServerError)
 			return
 		}
 
 		resp := AllocateResponse{
-			RelayID:      relayID,
-			RelayAddress: fmt.Sprintf("%s", r.Host), // Simplified
-			Lifetime:     int(alloc.Lifetime.Seconds()),
+			ClientID:   clientID,                     // 返回 "ip:port"
+			RelayID:   relayID,
+			RelayPort:  relayPort,
+			RelayPath:  fmt.Sprintf("/relay/%d", relayPort),
+			Lifetime:  int(alloc.Lifetime.Seconds()),
 		}
-
+		
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(resp)
 	}
@@ -142,19 +162,10 @@ func NewSendHandler(store storage.Storage) http.HandlerFunc {
 	}
 
 	peerAlloc.Mu.Lock()
-	q, ok := peerAlloc.MessageQueues[peerAlloc.ClientID]
-	if !ok {
-		// Create blocking queue with capacity 65535
-		q = queue.NewBlocking[*storage.Message](nil, queue.WithCapacity(65535))
-		peerAlloc.MessageQueues[peerAlloc.ClientID] = q
+	if peerAlloc.MessageQueues == nil {
+		peerAlloc.MessageQueues = make(map[string][]*storage.Message)
 	}
-
-	// Offer message, return error if queue is full
-	if err := q.Offer(msg); err != nil {
-		peerAlloc.Mu.Unlock()
-		http.Error(w, "Queue full (max 65535 messages)", http.StatusServiceUnavailable)
-		return
-	}
+	peerAlloc.MessageQueues[peerAlloc.ClientID] = append(peerAlloc.MessageQueues[peerAlloc.ClientID], msg)
 	peerAlloc.Mu.Unlock()
 
 		resp := map[string]string{"status": "sent"}
@@ -200,48 +211,47 @@ func NewReceiveHandler(store storage.Storage) http.HandlerFunc {
 		for time.Now().Before(deadline) {
 			alloc.Mu.Lock()
 
-			// Read up to maxMessages from queue and dequeue (read-and-delete)
+			// Read up to maxMessages from slice and dequeue (read-and-delete)
 			var messages []*storage.Message
 			if alloc.MessageQueues != nil {
-				q, ok := alloc.MessageQueues[alloc.ClientID]
-				if ok && q != nil {
-					// 循环读取最多 maxMessages 条（非阻塞）
-					for i := 0; i < maxMessages; i++ {
-						if msg, err := q.Get(); err == nil {
-							messages = append(messages, msg)
-						} else {
-							break // 队列空
-						}
+				if msgs, ok := alloc.MessageQueues[alloc.ClientID]; ok && len(msgs) > 0 {
+					// 读取最多 maxMessages 条
+					count := maxMessages
+					if count > len(msgs) {
+						count = len(msgs)
 					}
+					messages = msgs[:count]
+					// 从slice中删除已读取的消息
+					alloc.MessageQueues[alloc.ClientID] = msgs[count:]
 				}
 			}
 
-		if len(messages) > 0 {
-			var respMessages []Message
-			for _, msg := range messages {
-				respMessages = append(respMessages, Message{
-					From:      msg.From,
-					Data:      base64.StdEncoding.EncodeToString(msg.Data),
-					Timestamp: msg.Timestamp.Unix(),
-				})
+			if len(messages) > 0 {
+				var respMessages []Message
+				for _, msg := range messages {
+					respMessages = append(respMessages, Message{
+						From:      msg.From,
+						Data:      base64.StdEncoding.EncodeToString(msg.Data),
+						Timestamp: msg.Timestamp.Unix(),
+					})
+				}
+				alloc.Mu.Unlock()
+
+				resp := ReceiveResponse{Messages: respMessages}
+				w.Header().Set("Content-Type", "application/json")
+				json.NewEncoder(w).Encode(resp)
+
+				// Flush the response to ensure it's sent immediately
+				if f, ok := w.(http.Flusher); ok {
+					f.Flush()
+				}
+
+				return
 			}
 			alloc.Mu.Unlock()
 
-			resp := ReceiveResponse{Messages: respMessages}
-			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(resp)
-
-			// Flush the response to ensure it's sent immediately
-			if f, ok := w.(http.Flusher); ok {
-				f.Flush()
-			}
-
-			return
+			time.Sleep(500 * time.Millisecond) // Short poll interval
 		}
-		alloc.Mu.Unlock()
-
-		time.Sleep(500 * time.Millisecond) // Short poll interval
-	}
 
 	// Timeout, return empty
 	resp := ReceiveResponse{Messages: []Message{}}

@@ -66,6 +66,9 @@ func setupRoutes(store storage.Storage) {
 
 	// Discovery endpoint
 	http.HandleFunc("/discovery/servers", wrap(discovery.NewHandler(store)))
+
+	// Relay endpoint (pseudo-port data plane)
+	http.HandleFunc("/relay/", wrap(turn.NewRelayHandler(store)))
 }
 
 // wrap adds common middleware: CORS, logging, content type

@@ -4,8 +4,8 @@
 A Go implementation of STUN/TURN protocols over HTTP, providing NAT traversal and relay services for P2P networks without standard UDP/TCP STUN/TURN protocols.
 
 **Module**: `github.com/kitech/touse/hturnal`  
-**Go Version**: 1.18 (compatible)  
-**Total Files**: 16
+**Go Version**: 1.20+  
+**Total Files**: 18
 
 ---
 
@@ -15,12 +15,16 @@ A Go implementation of STUN/TURN protocols over HTTP, providing NAT traversal an
 |----------|--------|-------|
 | **HTTP Router** | Standard `net/http` | No third-party packages (gorilla/mux removed) |
 | **Package Structure** | No `internal` package | All sub-packages at top level |
-| **Client Struct** | Unified `Client` | Merged STUN/TURN/Stream methods |
+| **Client ID Allocation** | Server-allocated | Format `"ip:port"`, from dual port pools |
+| **Port Pool Design** | Dual pools | Per-IP pool (1-1024) + Global pool (1-65535) |
+| **Data Plane** | Pseudo-port `/relay/{port}` | HTTP long-polling with `X-Hturnal-` headers |
+| **PacketConn** | `httpPacketConn` | Implements `net.PacketConn` for pion/turn compatibility |
+| **Queue Implementation** | Go channel | Replaced `adrianbrad/queue` (simplify design) |
 | **Default Port** | 8181 | Priority: `-port` flag > `PORT` env > default |
 | **Log** | Built-in `log` package | Default: `Lshortfile\|Ldate\|Ltime`, configurable |
 | **Storage** | Build tags switchable | `memory` (default), `redis`, `sqlite` |
-| **Binary Data** | Standard base64 | In JSON `data` field |
-| **Authentication** | Open access | No auth (simplify initial implementation) |
+| **Binary Data** | Raw binary + HTTP headers | `application/octet-stream` + `X-Hturnal-From` header |
+| **Authentication** | Reserved fields | Username/Password in ClientConfig for future use |
 | **NAT Detection** | Single IP mode | Returns `"nat_type": "Unknown (single IP)"` |
 | **Configuration** | Env vars + flags | `PORT`, `STORAGE_TYPE`, etc. |
 
@@ -28,17 +32,19 @@ A Go implementation of STUN/TURN protocols over HTTP, providing NAT traversal an
 
 ## Project Structure
 ```
-/home/yatseni/ttt/
+/home/gzleo/aprog/touse/hturnal/
 ├── cmd/
 │   ├── server/
 │   │   └── main.go          # Server entry point
 │   └── client/
-│       └── main.go          # Client example
+│       └── main.go          # Client example (updated for new API)
 ├── stun/                    # STUN server handlers
 │   ├── handler.go
 │   └── types.go
 ├── turn/                    # TURN server handlers
-│   ├── handler.go
+│   ├── handler.go          # Allocate with dual port pools
+│   ├── relay.go            # NEW: /relay/{port} pseudo-port data plane
+│   ├── portpool.go         # NEW: Dual port pool management
 │   ├── stream.go
 │   └── types.go
 ├── discovery/               # Server discovery endpoint
@@ -48,35 +54,14 @@ A Go implementation of STUN/TURN protocols over HTTP, providing NAT traversal an
 │   ├── memory.go          # In-memory storage (tags: !redis,!sqlite)
 │   ├── redis.go           # Redis storage (tags: redis)
 │   └── sqlite.go          # SQLite storage (tags: sqlite)
-├── server/                  # HTTP server setup
-│   └── server.go
 ├── client/                  # Client library
-│   ├── client.go         # Unified Client struct + all methods
+│   ├── client.go         # Allocate() returns net.PacketConn
+│   ├── packetconn.go      # NEW: httpPacketConn implementation
 │   └── types.go         # Request/response types
+├── mydemo/                 # Demo with two nodes
+│   └── main.go           # Updated for new API
 ├── cfworker/               # Cloudflare Worker (TypeScript port)
-│   ├── src/
-│   │   ├── index.ts          # Worker entry point
-│   │   ├── types.ts         # TypeScript types
-│   │   ├── storage.ts       # Memory + Durable Object storage
-│   │   ├── stun.ts          # STUN handlers
-│   │   ├── turn.ts          # TURN/Stream handlers
-│   │   ├── discovery.ts     # Discovery endpoint
-│   │   ├── utils.ts        # Utility functions
-│   │   └── durable_object.ts # Durable Object (SQLite backend)
-│   ├── examples/            # curl example scripts
-│   │   ├── 01_stun_binding.sh
-│   │   ├── 02_stun_nat_check.sh
-│   │   ├── 03_turn_allocate.sh
-│   │   ├── 04_turn_send_receive.sh
-│   │   ├── 05_turn_refresh_deallocate.sh
-│   │   ├── 06_stream_example.sh
-│   │   ├── 07_discovery.sh
-│   │   ├── 08_full_workflow.sh
-│   │   └── README.md
-│   ├── package.json
-│   ├── tsconfig.json
-│   ├── wrangler.toml
-│   └── README.md
+│   └── ... (unchanged)
 ├── go.mod                   # Module: github.com/kitech/touse/hturnal
 └── summary.md
 ```
@@ -94,12 +79,18 @@ A Go implementation of STUN/TURN protocols over HTTP, providing NAT traversal an
 ### TURN Endpoints
 | Endpoint | Method | Function |
 |----------|--------|----------|
-| `/turn/allocate` | POST | Allocate relay resource |
+| `/turn/allocate` | POST | Allocate relay (server-assigned clientID + relayPort) |
 | `/turn/permission` | POST | Add peer permissions |
 | `/turn/send` | POST | Send data to peer (base64 in JSON) |
 | `/turn/receive` | GET | Receive data (long-poll with `timeout` param) |
 | `/turn/refresh` | POST | Refresh allocation TTL |
 | `/turn/deallocate` | POST | Release relay resources |
+
+### TURN Relay Endpoint (NEW - Phase 3)
+| Endpoint | Method | Function |
+|----------|--------|----------|
+| `/relay/{port}` | POST | Send raw binary data (sets `X-Hturnal-Client-ID`, `X-Hturnal-Xor-Peer-Address`) |
+| `/relay/{port}` | GET | Receive data (long-poll, returns raw binary + `X-Hturnal-From` header) |
 
 ### TURN Stream Endpoints
 | Endpoint | Method | Function |
@@ -129,7 +120,10 @@ type Storage interface {
     // TURN
     SaveAllocation(relayID string, alloc *TURNAllocation) error
     GetAllocation(relayID string) (*TURNAllocation, error)
+    GetAllocationByClientID(clientID string) (*TURNAllocation, error)
+    GetAllocationByPort(port int) (*TURNAllocation, error)  // NEW
     DeleteAllocation(relayID string) error
+    DeleteAllocationsByClientID(clientID string) error
     
     // Stream
     SaveStream(streamID string, stream *StreamState) error
@@ -140,6 +134,22 @@ type Storage interface {
 }
 ```
 
+### TURNAllocation Structure (Updated)
+```go
+type TURNAllocation struct {
+    RelayID       string
+    ClientID      string                    // Server-allocated "ip:port"
+    RelayPort     int                       // Pseudo-port for /relay/{port}
+    Permissions   map[string]bool
+    MessageQueues map[string][]*Message    // Legacy (for /turn/receive)
+    IncomingQueue chan *PortData           // Peer→Owner (for /relay/{port})
+    OutgoingQueue chan *PortData           // Owner→Peer (for /relay/{port})
+    Lifetime      time.Duration
+    ExpiresAt     time.Time
+    Mu            sync.RWMutex
+}
+```
+
 ### Build Tags for Storage
 | File | Build Tag | Description |
 |------|------------|-------------|
@@ -147,57 +157,82 @@ type Storage interface {
 | `redis.go` | `//go:build redis` | Redis-backed storage |
 | `sqlite.go` | `//go:build sqlite` | SQLite-backed storage |
 
-### Cloudflare Worker Storage
-- **MemoryStorage**: In-memory Map (default for local dev)
-- **DurableObjectStorage**: SQLite-backed Durable Object (production, free plan)
-- **Switching**: Via `STORAGE_BACKEND` env var in `wrangler.toml`
+---
+
+## Port Pool Design (NEW - Phase 3)
+
+### Dual Port Pools
+1. **Per-IP Port Pool** (1-1024)
+   - Key: Client IP address
+   - Value: Allocated ports (max 1024 per IP)
+   - Used for: Generating `clientID` (format: `"ip:port"`)
+
+2. **Global Relay Port Pool** (1-65535)
+   - Shared across all clients
+   - Used for: `relayPort` (pseudo-port for `/relay/{port}`)
+
+### Client IP Detection Priority
+1. `X-Forwarded-For` header
+2. `X-Real-IP` header
+3. `RemoteAddr` (parse IP part)
 
 ---
 
-## Port Configuration
-Priority (highest to lowest):
-1. **Command-line flag**: `-port 9000`
-2. **Environment variable**: `PORT=9000`
-3. **Default**: `8181`
+## Client Package (Updated - Phase 4)
 
----
-
-## Log Configuration
-- **Package**: Built-in `log`
-- **Default flags**: `log.Lshortfile | log.Ldate | log.Ltime` (value: 11)
-- **Configurable via**:
-  - Command-line flag: `-log-flags 11`
-  - Method call: `log.SetFlags(flags)`
-
----
-
-## Client Package
-Unified `Client` struct with all methods:
-
+### API Compatibility with pion/turn
 ```go
 // client/client.go
 type Client struct {
-    serverURL string
+    config     *ClientConfig
     httpClient *http.Client
-    relayID   string
+    clientID   string    // Server-allocated "ip:port"
+    relayPort  int       // Pseudo-port for data plane
+    conn       net.PacketConn // httpPacketConn
 }
 
-func NewClient(serverURL string) *Client { ... }
+func NewClient(config *ClientConfig) (*Client, error)
 
 // STUN methods
 func (c *Client) GetPublicAddress(clientID string) (*STUNBindingResponse, error)
 func (c *Client) CheckNATType(clientID string) (*STUNNATCheckResponse, error)
 
-// TURN methods
-func (c *Client) Allocate(clientID string) (*TURNAllocateResponse, error)
-func (c *Client) SendToPeer(peerID string, data []byte) error
-func (c *Client) Receive(timeout int) ([]TURNMessage, error)
+// TURN methods (pion/turn compatible)
+func (c *Client) Allocate() (net.PacketConn, error)  // Returns httpPacketConn
+func (c *Client) Listen() error                       // No-op for HTTP
+func (c *Client) Close() error
 
-// Stream methods
-func (c *Client) StartStream(peerID string) (*StreamStartResponse, error)
+// Helper methods
+func (c *Client) GetClientID() string
+func (c *Client) GetRelayPort() int
 ```
 
-**Compatibility**: Go client works with both Go server and Cloudflare Worker (same JSON API).
+### httpPacketConn Implementation
+```go
+// client/packetconn.go
+type httpPacketConn struct {
+    serverURL  string
+    relayPort  int
+    clientID   string
+    httpClient *http.Client
+    localAddr  net.Addr
+}
+
+func (c *httpPacketConn) ReadFrom(b []byte) (int, net.Addr, error)
+func (c *httpPacketConn) WriteTo(b []byte, addr net.Addr) (int, error)
+func (c *httpPacketConn) Close() error
+func (c *httpPacketConn) LocalAddr() net.Addr
+func (c *httpPacketConn) SetDeadline(t time.Time) error
+func (c *httpPacketConn) SetReadDeadline(t time.Time) error
+func (c *httpPacketConn) SetWriteDeadline(t time.Time) error
+```
+
+### HTTP Headers for Data Plane
+- `X-Hturnal-Client-ID`: Sender/receiver identifier
+- `X-Hturnal-Xor-Peer-Address`: Peer address (XOR-PEER-ADDRESS simulation)
+- `X-Hturnal-From`: Sender address (in response)
+- `X-Hturnal-Timestamp`: Message timestamp (in response)
+- Standard proxy headers (`X-Forwarded-For`, `X-Real-IP`) unchanged
 
 ---
 
@@ -205,6 +240,8 @@ func (c *Client) StartStream(peerID string) (*StreamStartResponse, error)
 ```bash
 # 1. Default (in-memory storage)
 go build -o server ./cmd/server
+go build -o client ./cmd/client
+go build -o mydemo ./mydemo
 
 # 2. Redis storage
 go build -tags redis -o server ./cmd/server
@@ -212,8 +249,8 @@ go build -tags redis -o server ./cmd/server
 # 3. SQLite storage
 go build -tags sqlite -o server ./cmd/server
 
-# 4. Client
-go build -o client ./cmd/client
+# 4. Build all
+go build ./...
 ```
 
 ---
@@ -222,12 +259,13 @@ go build -o client ./cmd/client
 ```go
 module github.com/kitech/touse/hturnal
 
-go 1.18
+go 1.20
 
 require (
     github.com/google/uuid v1.6.0
     github.com/go-redis/redis/v8 v8.11.5  // redis tag
     github.com/mattn/go-sqlite3 v2.0.3+incompatible  // sqlite tag (needs CGO)
+    // adrianbrad/queue v1.7.0 - removed, using Go channel instead
 )
 ```
 
@@ -242,14 +280,39 @@ require (
 → {"mapped_address": "203.0.113.5:54321", "xored": false, "source": "http-stun"}
 ```
 
-### TURN Allocate
+### TURN Allocate (Updated)
 ```json
 // POST /turn/allocate
 {"client_id": "node_a"}
-→ {"relay_id": "relay_123", "relay_address": "203.0.113.5:12345", "lifetime": 600}
+→ {
+  "client_id": "192.168.1.100:1",
+  "relay_id": "relay_123",
+  "relay_port": 12345,
+  "relay_path": "/relay/12345",
+  "lifetime": 600
+}
 ```
 
-### TURN Send/Receive (base64)
+### TURN Relay Data Plane (NEW)
+```
+POST /relay/12345
+Headers:
+  X-Hturnal-Client-ID: 192.168.1.100:1
+  X-Hturnal-Xor-Peer-Address: 192.168.1.101:2
+  Content-Type: application/octet-stream
+Body: <raw binary data>
+
+GET /relay/12345
+Headers:
+  X-Hturnal-Client-ID: 192.168.1.100:1
+Response:
+  Headers:
+    X-Hturnal-From: 192.168.1.101:2
+    X-Hturnal-Timestamp: 1746000000
+  Body: <raw binary data>
+```
+
+### TURN Send/Receive (legacy, base64)
 ```json
 // POST /turn/send
 {"relay_id": "relay_123", "peer_id": "node_b", "data": "SGVsbG8=", "ttl": 300}
@@ -258,85 +321,20 @@ require (
 → {"messages": [{"from": "node_a", "data": "SGVsbG8=", "timestamp": 1746000000}]}
 ```
 
-### Stream Chunk
-```json
-// POST /turn/stream/send
-{"stream_id": "stream_456", "chunk_seq": 0, "data": "base64chunk...", "hash": "optional"}
-
-// GET /turn/stream/receive?stream_id=stream_456&timeout=30
-→ {"chunks": [{"seq": 0, "data": "base64chunk..."}], "stream_complete": false}
-```
-
----
-
-## Cloudflare Worker (cfworker/)
-
-### Features
-- **Language**: TypeScript
-- **Runtime**: Cloudflare Workers (V8 isolate)
-- **Storage**: Memory (default) or Durable Objects (SQLite, free plan)
-- **CORS**: Enabled (`Access-Control-Allow-Origin: *`)
-- **Long-polling**: Max 10 seconds (Worker CPU limit)
-
-### Configuration
-```toml
-# wrangler.toml
-name = "hturnal-worker"
-main = "src/index.ts"
-compatibility_date = "2025-07-18"
-
-[durable_objects]
-bindings = [
-  { name = "HTURNAL_DO", class_name = "HturnalDurableObject" }
-]
-
-[vars]
-STORAGE_BACKEND = "memory"  # or "durable_object"
-
-[triggers]
-crons = ["*/1 * * * *"]
-```
-
-### curl Examples
-All endpoints can be tested with curl (see `cfworker/examples/`):
-```bash
-# STUN Binding
-curl -s -X POST -H "Content-Type: application/json" \
-  -d '{"client_id":"test1"}' http://localhost:8181/stun/binding
-
-# TURN Allocate
-curl -s -X POST -H "Content-Type: application/json" \
-  -d '{"client_id":"test1"}' http://localhost:8181/turn/allocate
-
-# Discovery
-curl -s http://localhost:8181/discovery/servers
-```
-
 ---
 
 ## Implementation Order
-1. `go.mod` + `storage/types.go` + `storage/memory.go`
-2. `stun/types.go` + `stun/handler.go`
-3. `turn/types.go` + `turn/handler.go` + `turn/stream.go`
-4. `discovery/handler.go`
-5. `server/server.go`
-6. `client/types.go` + `client/client.go`
-7. `cmd/server/main.go` + `cmd/client/main.go`
-8. `storage/redis.go` + `storage/sqlite.go` (optional, with build tags)
-9. **cfworker/** - TypeScript port (completed)
-
----
-
-## Notes
-- All binary data encoded in standard base64 within JSON
-- Long-polling for `/turn/receive` and `/turn/stream/receive` (max 30s in Go, 10s in Worker)
-- Go memory storage uses `sync.RWMutex` for thread safety
-- Worker memory storage is per-isolate (no cross-isolate sharing)
-- Cleanup goroutine runs every 1 minute to remove expired data (Go)
-- Worker uses cron trigger for cleanup (configured in `wrangler.toml`)
-- Server returns CORS headers for cross-origin requests
-- Single IP NAT detection returns limited results (no multi-IP tests)
-- **Go client is fully compatible with cfworker** (same JSON API)
+1. ✅ `go.mod` + `storage/types.go` + `storage/memory.go`
+2. ✅ `stun/types.go` + `stun/handler.go`
+3. ✅ `turn/types.go` + `turn/handler.go` + `turn/stream.go`
+4. ✅ `discovery/handler.go`
+5. ✅ `cmd/server/main.go` + `cmd/client/main.go`
+6. ✅ `client/types.go` + `client/client.go`
+7. ✅ `turn/portpool.go` (Phase 3: Dual port pools)
+8. ✅ `turn/relay.go` (Phase 3: Pseudo-port data plane)
+9. ✅ `client/packetconn.go` (Phase 4: httpPacketConn)
+10. 🔄 `cmd/server/main.go` (register `/relay/` route)
+11. ⏳ Test full workflow
 
 ---
 
@@ -344,19 +342,42 @@ curl -s http://localhost:8181/discovery/servers
 
 ### ✅ Completed
 1. Go hturnal server implementation (all endpoints)
-2. Go client library + example
-3. cfworker TypeScript implementation (all endpoints)
-4. Durable Object storage backend (SQLite, free plan)
-5. curl examples (8 scripts + README)
-6. Memory/Durable Object storage switching
+2. Dual port pool management (Per-IP + Global)
+3. Server-allocated clientID (`"ip:port"` format)
+4. Pseudo-port data plane (`/relay/{port}`)
+5. Custom HTTP headers (`X-Hturnal-` prefix)
+6. Go channel-based queues (replaced adrianbrad/queue)
+7. Client API rewrite (`Allocate()` returns `net.PacketConn`)
+8. `httpPacketConn` implementation
+9. cfworker TypeScript implementation (all endpoints)
 
-### ⚠️ Pending
-1. Test full workflow with curl examples
-2. Fix potential syntax errors in TypeScript code
-3. Deploy cfworker to Cloudflare (test with `wrangler deploy`)
-4. Update Go client to use Cloudflare Worker URL
+### ⚠️ In Progress
+1. Fix remaining compilation error: `turn/handler.go` unused import
+2. Test compilation: `go build ./...`
+3. Start server and test with mydemo
+
+### ⏳ Pending
+1. Full workflow test (server + two clients)
+2. Verify bidirectional communication via `/relay/{port}`
+3. Test port allocation and release
+4. Deploy cfworker to Cloudflare (test with `wrangler deploy`)
+5. Update Go client to use Cloudflare Worker URL (optional)
 
 ### 🔴 Known Issues
-1. `src/durable_object.ts`: `1000` typo (written as `1000` in some places)
-2. Missing commas in `Map.set()` calls (may cause syntax errors)
-3. Need to verify all TypeScript files compile without errors
+1. `turn/handler.go:7:2`: Unused import `"github.com/adrianbrad/queue"` (fixing now)
+2. Port release logic needs to be in turn layer (not storage) to avoid circular dependency
+3. `WriteTo` addr parameter ignored (pseudo-port implies peer relationship)
+
+---
+
+## Notes
+- All binary data in `/relay/{port}` uses raw binary (`application/octet-stream`)
+- Metadata passed via HTTP headers (`X-Hturnal-From`, `X-Hturnal-Timestamp`)
+- Long-polling for `/relay/{port}` GET and `/turn/receive` (max 30s in Go)
+- Go memory storage uses `sync.RWMutex` for thread safety
+- Worker memory storage is per-isolate (no cross-isolate sharing)
+- Cleanup goroutine runs every 1 minute to remove expired data (Go)
+- Server returns CORS headers for cross-origin requests
+- Single IP NAT detection returns limited results (no multi-IP tests)
+- **Go client is fully compatible with cfworker** (same JSON API for legacy endpoints)
+- **New `/relay/{port}` endpoints are Go-only** (cfworker not updated yet)

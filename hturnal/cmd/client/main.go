@@ -1,8 +1,6 @@
 package main
 
 import (
-	"encoding/base64"
-	"flag"
 	"log"
 	"os"
 	"time"
@@ -11,112 +9,51 @@ import (
 )
 
 func main() {
-	// Log configuration
 	log.SetFlags(log.Lshortfile | log.Ldate | log.Ltime)
 
-	// Server URL configuration
-	serverURL := flag.String("server", "", "Server URL (default http://localhost:8181)")
-	flag.Parse()
-
-	if *serverURL == "" {
-		if envURL := os.Getenv("SERVER_URL"); envURL != "" {
-			*serverURL = envURL
-		} else {
-			*serverURL = "http://localhost:8181"
-		}
+	serverURL := "http://localhost:8181"
+	if envURL := os.Getenv("SERVER_URL"); envURL != "" {
+		serverURL = envURL
 	}
 
 	// Create client
-	c := client.NewClient(*serverURL)
-	log.Printf("Using server: %s", *serverURL)
-
-	// 1. STUN example - Get public address
-	log.Println("=== STUN Binding Example ===")
-	binding, err := c.GetPublicAddress("node_a")
+	config := client.NewClientConfig(serverURL)
+	c, err := client.NewClient(config)
 	if err != nil {
-		log.Fatal("STUN binding failed:", err)
+		log.Fatal("Failed to create client:", err)
 	}
-	log.Printf("Public address: %s", binding.MappedAddress)
 
-	// 2. STUN example - Check NAT type
-	log.Println("=== STUN NAT Check Example ===")
-	natResp, err := c.CheckNATType("node_a")
+	// Allocate TURN relay
+	conn, err := c.Allocate()
 	if err != nil {
-		log.Fatal("NAT check failed:", err)
+		log.Fatal("Allocate failed:", err)
 	}
-	log.Printf("NAT Type: %s, Public IP: %s", natResp.NATType, natResp.PublicIP)
 
-	// 3. TURN example - Allocate relay
-	log.Println("=== TURN Allocate Example ===")
-	alloc, err := c.Allocate("node_a")
-	if err != nil {
-		log.Fatal("TURN allocate failed:", err)
-	}
-	log.Printf("Allocated relay: %s, Address: %s, Lifetime: %d", alloc.RelayID, alloc.RelayAddress, alloc.Lifetime)
+	log.Printf("Allocated: clientID=%s, relayPort=%d", c.GetClientID(), c.GetRelayPort())
+	log.Printf("PacketConn local addr: %v", conn.LocalAddr())
 
-	// 4. TURN example - Add permission then send message
-	log.Println("=== TURN Send Example ===")
-	err = c.AddPermission([]string{"node_b"})
-	if err != nil {
-		log.Fatal("Add permission failed:", err)
-	}
-	msg := []byte("Hello from node_a via hturnal!")
-	err = c.SendToPeer("node_b", msg)
-	if err != nil {
-		log.Fatal("Send failed:", err)
-	}
-	log.Println("Message sent to node_b!")
-
-	// 5. TURN example - Receive messages (long-poll)
-	log.Println("=== TURN Receive Example ===")
+	// Example: receive data (blocking)
 	go func() {
+		buf := make([]byte, 65535)
 		for {
-			messages, err := c.Receive(30, 10)
+			n, addr, err := conn.ReadFrom(buf)
 			if err != nil {
-				log.Println("Receive error:", err)
-				continue
+				log.Println("ReadFrom error:", err)
+				return
 			}
-			for _, m := range messages {
-				data, _ := base64.StdEncoding.DecodeString(m.Data)
-				log.Printf("Received from %s: %s", m.From, string(data))
-			}
+			log.Printf("Received %d bytes from %v: %s", n, addr, string(buf[:n]))
 		}
 	}()
 
-	// 6. Stream example (optional)
-	log.Println("=== Stream Example ===")
-	streamResp, err := c.StartStream("node_b")
+	// Example: send data (addr is ignored in current implementation)
+	msg := []byte("Hello from hturnal client!")
+	_, err = conn.WriteTo(msg, nil)
 	if err != nil {
-		log.Fatal("Stream start failed:", err)
+		log.Println("WriteTo error:", err)
 	}
-	log.Printf("Stream started: %s, Chunk size: %d", streamResp.StreamID, streamResp.ChunkSize)
 
-	// Send a chunk
-	chunkData := []byte("Stream chunk data example")
-	err = c.SendChunk(streamResp.StreamID, 0, chunkData)
-	if err != nil {
-		log.Fatal("Send chunk failed:", err)
-	}
-	log.Println("Stream chunk sent!")
-
-	// Receive chunks
-	chunksResp, err := c.ReceiveChunks(streamResp.StreamID, 30)
-	if err != nil {
-		log.Fatal("Receive chunks failed:", err)
-	}
-			for _, chunk := range chunksResp.Chunks {
-				data, _ := base64.StdEncoding.DecodeString(chunk.Data)
-				log.Printf("Received chunk %d: %s", chunk.ChunkSeq, string(data))
-			}
-
-	// End stream
-	err = c.EndStream(streamResp.StreamID)
-	if err != nil {
-		log.Fatal("End stream failed:", err)
-	}
-	log.Println("Stream ended!")
-
-	// Keep running to allow receiving messages
-	log.Println("Client running... (Ctrl+C to stop)")
-	time.Sleep(1 * time.Hour)
+	time.Sleep(5 * time.Second)
+	conn.Close()
+	c.Close()
+	log.Println("Client closed")
 }

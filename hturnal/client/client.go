@@ -1,28 +1,32 @@
-package client;
+package client
 
 import (
 	"bytes"
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/http"
-	"net/url"
 	"time"
 )
 
-// Client is a unified client for STUN, TURN, and Stream operations
+// Client is compatible with pion/turn's Client
 type Client struct {
-	serverURL string
+	config     *ClientConfig
 	httpClient *http.Client
-	relayID   string // TURN relay ID (set after Allocate)
+	clientID   string    // Server-allocated "ip:port"
+	relayPort  int       // Pseudo-port for data plane
+	conn       net.PacketConn // httpPacketConn
 }
 
-// NewClient creates a new hturnal client
-func NewClient(serverURL string) *Client {
-	return &Client{
-		serverURL: serverURL,
-		httpClient: &http.Client{Timeout: 30 * time.Second},
+// NewClient creates a new client compatible with pion/turn
+func NewClient(config *ClientConfig) (*Client, error) {
+	if config.TURNServerAddr == "" {
+		return nil, fmt.Errorf("TURNServerAddr is required")
 	}
+	return &Client{
+		config:    config,
+		httpClient: &http.Client{Timeout: 30 * time.Second},
+	}, nil
 }
 
 // ---------- STUN Methods ----------
@@ -46,159 +50,95 @@ func (c *Client) CheckNATType(clientID string) (*STUNNATCheckResponse, error) {
 	return resp, err
 }
 
-// ---------- TURN Methods ----------
+// ---------- TURN Methods (pion/turn compatible) ----------
 
-// Allocate allocates a TURN relay resource
-func (c *Client) Allocate(clientID string) (*TURNAllocateResponse, error) {
-	reqBody := TURNAllocateRequest{ClientID: clientID}
-	resp := &TURNAllocateResponse{}
-	err := c.post("/turn/allocate", reqBody, resp)
-	if err == nil && resp.RelayID != "" {
-		c.relayID = resp.RelayID
-	}
-	return resp, err
-}
-
-// SendToPeer sends data to a peer via the relay
-func (c *Client) SendToPeer(peerID string, data []byte) error {
-	b64 := base64.StdEncoding.EncodeToString(data)
-	reqBody := TURNSendRequest{
-		RelayID: c.relayID,
-		PeerID:  peerID,
-		Data:    b64,
-	}
-	return c.post("/turn/send", reqBody, &map[string]interface{}{})
-}
-
-// AddPermission adds permissions for peers
-func (c *Client) AddPermission(peerIDs []string) error {
-	reqBody := TURNPermissionRequest{
-		RelayID: c.relayID,
-		PeerIDs: peerIDs,
-	}
-	return c.post("/turn/permission", reqBody, &map[string]interface{}{})
-}
-
-// Receive receives messages from the relay (long-poll)
-// maxMessages: max number of messages per request (0 means default 10)
-func (c *Client) Receive(timeout int, maxMessages int) ([]TURNMessage, error) {
-	if timeout <= 0 {
-		timeout = 30
-	}
-	if maxMessages <= 0 {
-		maxMessages = 10 // default
-	}
-	u := fmt.Sprintf("%s/turn/receive?relay_id=%s&timeout=%d&max_messages=%d",
-		c.serverURL, url.QueryEscape(c.relayID), timeout, maxMessages)
-
-	resp, err := c.httpClient.Get(u)
+// Allocate allocates a TURN relay resource, returns net.PacketConn
+// Compatible with pion/turn's Allocate() method
+func (c *Client) Allocate() (net.PacketConn, error) {
+	// POST /turn/allocate (empty body, server will allocate automatically)
+	resp, err := c.httpClient.Post(
+		c.config.TURNServerAddr+"/turn/allocate",
+		"application/json",
+		nil,
+	)
 	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("HTTP %d", resp.StatusCode)
+		return nil, fmt.Errorf("Allocate failed: HTTP %d", resp.StatusCode)
 	}
 
-	var result TURNReceiveResponse
+	// Parse response
+	var result AllocateResponse
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return nil, err
 	}
-	return result.Messages, nil
+
+	// Save server-allocated values
+	c.clientID = result.ClientID
+	c.relayPort = result.RelayPort
+
+	// Create httpPacketConn
+	c.conn = &httpPacketConn{
+		serverURL:  c.config.TURNServerAddr,
+		relayPort:  c.relayPort,
+		clientID:   c.clientID,
+		httpClient: c.httpClient,
+		localAddr:  &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: c.relayPort},
+	}
+
+	return c.conn, nil
 }
 
-// Refresh refreshes the TURN allocation TTL
-func (c *Client) Refresh(lifetime int) error {
-	reqBody := TURNRefreshRequest{
-		RelayID:  c.relayID,
-		Lifetime: lifetime,
-	}
-	return c.post("/turn/refresh", reqBody, &map[string]interface{}{})
+// Listen starts listening for incoming messages (no-op for HTTP, compatibility with pion/turn)
+func (c *Client) Listen() error {
+	return nil
 }
 
-// Deallocate releases the TURN relay
-func (c *Client) Deallocate() error {
-	reqBody := map[string]interface{}{"relay_id": c.relayID}
-	return c.post("/turn/deallocate", reqBody, &map[string]interface{}{})
-}
-
-// ---------- Stream Methods ----------
-
-// StartStream initializes a binary stream
-func (c *Client) StartStream(peerID string) (*StreamStartResponse, error) {
-	reqBody := StreamStartRequest{
-		ClientID: c.relayID, // Use relayID as client ID
-		PeerID:   peerID,
+// Close releases the TURN relay
+func (c *Client) Close() error {
+	if c.clientID != "" {
+		reqBody := map[string]interface{}{"client_id": c.clientID}
+		data, _ := json.Marshal(reqBody)
+		resp, err := c.httpClient.Post(
+			c.config.TURNServerAddr+"/turn/deallocate",
+			"application/json",
+			bytes.NewBuffer(data),
+		)
+		if err == nil && resp != nil {
+			resp.Body.Close()
+		}
 	}
-	resp := &StreamStartResponse{}
-	err := c.post("/turn/stream/start", reqBody, resp)
-	return resp, err
-}
-
-// SendChunk sends a stream chunk
-func (c *Client) SendChunk(streamID string, seq int, data []byte) error {
-	b64 := base64.StdEncoding.EncodeToString(data)
-	reqBody := StreamChunk{
-		StreamID: streamID,
-		ChunkSeq: seq,
-		Data:     b64,
-	}
-	return c.post("/turn/stream/send", reqBody, &map[string]interface{}{})
-}
-
-// ReceiveChunks receives stream chunks (long-poll)
-func (c *Client) ReceiveChunks(streamID string, timeout int) (*StreamReceiveResponse, error) {
-	if timeout <= 0 {
-		timeout = 30
-	}
-	u := fmt.Sprintf("%s/turn/stream/receive?stream_id=%s&timeout=%d",
-		c.serverURL, url.QueryEscape(streamID), timeout)
-
-	resp, err := c.httpClient.Get(u)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("HTTP %d", resp.StatusCode)
-	}
-
-	var result StreamReceiveResponse
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, err
-	}
-	return &result, nil
-}
-
-// EndStream signals the end of a stream
-func (c *Client) EndStream(streamID string) error {
-	reqBody := map[string]interface{}{"stream_id": streamID}
-	return c.post("/turn/stream/end", reqBody, &map[string]interface{}{})
+	return nil
 }
 
 // ---------- Helper Methods ----------
 
-// SetRelayID sets the relay ID (useful when using existing allocation)
-func (c *Client) SetRelayID(relayID string) {
-	c.relayID = relayID
+// GetClientID returns the server-allocated client ID
+func (c *Client) GetClientID() string {
+	return c.clientID
 }
 
-// GetRelayID returns the current relay ID
-func (c *Client) GetRelayID() string {
-	return c.relayID
+// GetRelayPort returns the relay port for data plane
+func (c *Client) GetRelayPort() int {
+	return c.relayPort
 }
 
 // post is a helper for POST requests
 func (c *Client) post(path string, reqBody, respBody interface{}) error {
-	u := c.serverURL + path
-	data, err := json.Marshal(reqBody)
-	if err != nil {
-		return err
+	u := c.config.TURNServerAddr + path
+	var body *bytes.Buffer
+	if reqBody != nil {
+		data, err := json.Marshal(reqBody)
+		if err != nil {
+			return err
+		}
+		body = bytes.NewBuffer(data)
 	}
 
-	resp, err := c.httpClient.Post(u, "application/json", bytes.NewBuffer(data))
+	resp, err := c.httpClient.Post(u, "application/json", body)
 	if err != nil {
 		return err
 	}

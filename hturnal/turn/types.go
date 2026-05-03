@@ -9,9 +9,11 @@ type AllocateRequest struct {
 
 // AllocateResponse is the response for TURN allocate
 type AllocateResponse struct {
-	RelayID      string `json:"relay_id"`
-	RelayAddress string `json:"relay_address"`
-	Lifetime     int    `json:"lifetime"`
+	ClientID   string `json:"client_id"`     // 服务端分配的客户端标识 "ip:port"
+	RelayID   string `json:"relay_id"`
+	RelayPort int    `json:"relay_port"`     // 伪端口（用于数据平面）
+	RelayPath string `json:"relay_path"`     // /relay/{port}
+	Lifetime  int    `json:"lifetime"`
 }
 
 // PermissionRequest is the request for adding permissions

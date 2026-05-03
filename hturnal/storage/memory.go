@@ -8,17 +8,17 @@ import (
 )
 
 type memoryStorage struct {
-	mu           sync.RWMutex
-	stunSessions map[string]*STUNSession
+	mu              sync.RWMutex
+	stunSessions    map[string]*STUNSession
 	turnAllocations map[string]*TURNAllocation
-	streams       map[string]*StreamState
+	streams         map[string]*StreamState
 }
 
 func NewStorage() Storage {
 	return &memoryStorage{
-		stunSessions:   make(map[string]*STUNSession),
+		stunSessions:    make(map[string]*STUNSession),
 		turnAllocations: make(map[string]*TURNAllocation),
-		streams:        make(map[string]*StreamState),
+		streams:         make(map[string]*StreamState),
 	}
 }
 
@@ -58,6 +58,28 @@ func (s *memoryStorage) GetAllocation(relayID string) (*TURNAllocation, error) {
 	return alloc, nil
 }
 
+func (s *memoryStorage) GetAllocationByClientID(clientID string) (*TURNAllocation, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for _, alloc := range s.turnAllocations {
+		if alloc.ClientID == clientID {
+			return alloc, nil
+		}
+	}
+	return nil, nil
+}
+
+func (s *memoryStorage) GetAllocationByPort(port int) (*TURNAllocation, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for _, alloc := range s.turnAllocations {
+		if alloc.RelayPort == port {
+			return alloc, nil
+		}
+	}
+	return nil, nil
+}
+
 func (s *memoryStorage) DeleteAllocation(relayID string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -69,7 +91,6 @@ func (s *memoryStorage) DeleteAllocationsByClientID(clientID string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	// 收集要删除的relayID
 	var toDelete []string
 	for relayID, alloc := range s.turnAllocations {
 		if alloc.ClientID == clientID {
@@ -77,23 +98,10 @@ func (s *memoryStorage) DeleteAllocationsByClientID(clientID string) error {
 		}
 	}
 
-	// 删除所有匹配的allocation
 	for _, relayID := range toDelete {
 		delete(s.turnAllocations, relayID)
 	}
-
 	return nil
-}
-
-func (s *memoryStorage) GetAllocationByClientID(clientID string) (*TURNAllocation, error) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	for _, alloc := range s.turnAllocations {
-		if alloc.ClientID == clientID {
-			return alloc, nil
-		}
-	}
-	return nil, nil
 }
 
 // Stream methods
@@ -114,7 +122,7 @@ func (s *memoryStorage) GetStream(streamID string) (*StreamState, error) {
 	return stream, nil
 }
 
-// Cleanup expired data
+// StartCleanup starts the cleanup goroutine
 func (s *memoryStorage) StartCleanup(interval time.Duration) {
 	go func() {
 		ticker := time.NewTicker(interval)
@@ -125,6 +133,7 @@ func (s *memoryStorage) StartCleanup(interval time.Duration) {
 	}()
 }
 
+// Cleanup expired data
 func (s *memoryStorage) cleanupExpired() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -138,21 +147,12 @@ func (s *memoryStorage) cleanupExpired() {
 		}
 	}
 
-	// Clean TURN allocations
+	// Clean TURN allocations (port release logic should be in turn layer)
 	for id, alloc := range s.turnAllocations {
 		if now.After(alloc.ExpiresAt) {
+			// TODO: Port release should be handled in turn layer to avoid circular dependency
+			// For now, just delete the allocation
 			delete(s.turnAllocations, id)
-		} else {
-		// Clean empty message queues
-		alloc.Mu.Lock()
-		for clientID, q := range alloc.MessageQueues {
-			if q == nil {
-				delete(alloc.MessageQueues, clientID)
-			}
-			// Note: BlockingQueue doesn't have Len() method
-			// Queue cleanup is handled by GC when allocation expires
-		}
-		alloc.Mu.Unlock()
 		}
 	}
 
