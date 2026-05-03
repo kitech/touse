@@ -11,7 +11,7 @@ pub struct Oai {
     pub:
     host   string = 'http://127.0.0.1:5001'
     apikey string
-    
+
     sess_id string
     pmsg_id   i64 // parent_message_id, our go msg 1, first come msg 2
 }
@@ -45,7 +45,7 @@ pub:
     created i64
     model string
     choices []Choise
-    
+
     usage Usage
 }
 struct Error1 {
@@ -80,10 +80,9 @@ pub fn Oai.new(apikey string, host string) &Oai {
 pub fn (o &Oai) models() ![]Model {
     uo := curlv.new()
     uo.url(o.host+models_path)
-    
+
     res := uo.get() !
-    dump(res.data)
-    
+
     jso := json.decode(Object, res.data) !
     return jso.data
 }
@@ -99,11 +98,14 @@ pub struct Req {
 }
 
 pub fn (o &Oai) chat(prompt string) !Resp {
-    return o.chat_with_model(prompt, '')!
+	mdls := o.models() !
+	mdl := mdls[0].id
+	assert mdl != ''
+    return o.chat_with_model(prompt, mdl)!
 }
 // model: deepseek-chat
 pub fn (o &Oai) chat_with_model(prompt string, model string) !Resp {
-    
+
     req := Req {sess_id: o.sess_id, pmsg_id: o.pmsg_id}
     req.model = model
     req.messages << Message{content: prompt}
@@ -113,7 +115,7 @@ pub fn (o &Oai) chat_with_model(prompt string, model string) !Resp {
     uo.url(o.host+chat_path)
     uo.header('Authorization', 'Bearer ${o.apikey}')
     uo.data_field(data)
-    
+
     res := uo.post() !
     if res.stcode!=200 {
         err := json.decode(Error1, res.data) !
@@ -129,18 +131,18 @@ pub fn (o &Oai) chat_with_model(prompt string, model string) !Resp {
 }
 
 pub fn (o &Oai) chat_with_stream(model string) {
-    
+
 }
 
 
 pub fn (o &Oai) txt2img(txt string) {
-    
+
 }
 
 pub fn (o &Oai) audio2text() {
-    
+
 }
 
 pub fn (o &Oai) audio2tran() {
-    
+
 }
