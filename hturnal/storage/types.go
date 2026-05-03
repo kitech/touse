@@ -3,6 +3,7 @@ package storage
 import (
 	"sync"
 	"time"
+	"github.com/adrianbrad/queue"
 )
 
 // STUNSession stores STUN session data
@@ -16,13 +17,13 @@ type STUNSession struct {
 
 // TURNAllocation stores TURN relay allocation
 type TURNAllocation struct {
-	RelayID     string
-	ClientID    string
-	Permissions map[string]bool // peer IDs
-	PendingData  map[string][]*Message // peer_id -> messages
-	Lifetime    time.Duration
-	ExpiresAt   time.Time
-	Mu           sync.RWMutex
+	RelayID       string
+	ClientID      string
+	Permissions   map[string]bool
+	MessageQueues map[string]*queue.Blocking[*Message] // peer_id -> blocking queue with capacity
+	Lifetime      time.Duration
+	ExpiresAt     time.Time
+	Mu            sync.RWMutex
 }
 
 // StreamState stores stream relay state
@@ -54,6 +55,7 @@ type Storage interface {
 	GetAllocation(relayID string) (*TURNAllocation, error)
 	GetAllocationByClientID(clientID string) (*TURNAllocation, error)
 	DeleteAllocation(relayID string) error
+	DeleteAllocationsByClientID(clientID string) error
 
 	// Stream
 	SaveStream(streamID string, stream *StreamState) error

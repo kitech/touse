@@ -71,7 +71,7 @@ func main() {
 	log.Println("=== TURN Receive Example ===")
 	go func() {
 		for {
-			messages, err := c.Receive(30)
+			messages, err := c.Receive(30, 10)
 			if err != nil {
 				log.Println("Receive error:", err)
 				continue

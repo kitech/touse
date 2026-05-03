@@ -177,6 +177,13 @@ func (s *sqliteStorage) DeleteAllocation(relayID string) error {
 	return err
 }
 
+func (s *sqliteStorage) DeleteAllocationsByClientID(clientID string) error {
+	_, err := s.db.Exec(`
+		DELETE FROM turn_allocations WHERE client_id = ?
+	`, clientID)
+	return err
+}
+
 // Stream methods
 func (s *sqliteStorage) SaveStream(streamID string, stream *StreamState) error {
 	data, err := json.Marshal(stream)

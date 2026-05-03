@@ -65,6 +65,26 @@ func (s *memoryStorage) DeleteAllocation(relayID string) error {
 	return nil
 }
 
+func (s *memoryStorage) DeleteAllocationsByClientID(clientID string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	// 收集要删除的relayID
+	var toDelete []string
+	for relayID, alloc := range s.turnAllocations {
+		if alloc.ClientID == clientID {
+			toDelete = append(toDelete, relayID)
+		}
+	}
+
+	// 删除所有匹配的allocation
+	for _, relayID := range toDelete {
+		delete(s.turnAllocations, relayID)
+	}
+
+	return nil
+}
+
 func (s *memoryStorage) GetAllocationByClientID(clientID string) (*TURNAllocation, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -122,6 +142,17 @@ func (s *memoryStorage) cleanupExpired() {
 	for id, alloc := range s.turnAllocations {
 		if now.After(alloc.ExpiresAt) {
 			delete(s.turnAllocations, id)
+		} else {
+		// Clean empty message queues
+		alloc.Mu.Lock()
+		for clientID, q := range alloc.MessageQueues {
+			if q == nil {
+				delete(alloc.MessageQueues, clientID)
+			}
+			// Note: BlockingQueue doesn't have Len() method
+			// Queue cleanup is handled by GC when allocation expires
+		}
+		alloc.Mu.Unlock()
 		}
 	}
 

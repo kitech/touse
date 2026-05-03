@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"github.com/adrianbrad/queue"
 	"github.com/kitech/touse/hturnal/storage"
 	"net/http"
 	"time"
@@ -23,15 +24,21 @@ func NewAllocateHandler(store storage.Storage) http.HandlerFunc {
 			return
 		}
 
+		// 清理该ClientID的旧allocation（防止同名客户端重复注册导致消息丢失）
+		if err := store.DeleteAllocationsByClientID(req.ClientID); err != nil {
+			http.Error(w, "Failed to cleanup old allocations", http.StatusInternalServerError)
+			return
+		}
+
 		// Generate relay ID
 		relayID := generateID()
 		alloc := &storage.TURNAllocation{
-			RelayID:     relayID,
-			ClientID:    req.ClientID,
-			Permissions: make(map[string]bool),
-			PendingData:  make(map[string][]*storage.Message),
-			Lifetime:    10 * time.Minute,
-			ExpiresAt:   time.Now().Add(10 * time.Minute),
+			RelayID:       relayID,
+			ClientID:      req.ClientID,
+			Permissions:   make(map[string]bool),
+			MessageQueues: make(map[string]*queue.Blocking[*storage.Message]),
+			Lifetime:      10 * time.Minute,
+			ExpiresAt:     time.Now().Add(10 * time.Minute),
 		}
 
 		if err := store.SaveAllocation(relayID, alloc); err != nil {
@@ -135,7 +142,19 @@ func NewSendHandler(store storage.Storage) http.HandlerFunc {
 	}
 
 	peerAlloc.Mu.Lock()
-	peerAlloc.PendingData[peerAlloc.ClientID] = append(peerAlloc.PendingData[peerAlloc.ClientID], msg)
+	q, ok := peerAlloc.MessageQueues[peerAlloc.ClientID]
+	if !ok {
+		// Create blocking queue with capacity 65535
+		q = queue.NewBlocking[*storage.Message](nil, queue.WithCapacity(65535))
+		peerAlloc.MessageQueues[peerAlloc.ClientID] = q
+	}
+
+	// Offer message, return error if queue is full
+	if err := q.Offer(msg); err != nil {
+		peerAlloc.Mu.Unlock()
+		http.Error(w, "Queue full (max 65535 messages)", http.StatusServiceUnavailable)
+		return
+	}
 	peerAlloc.Mu.Unlock()
 
 		resp := map[string]string{"status": "sent"}
@@ -154,8 +173,15 @@ func NewReceiveHandler(store storage.Storage) http.HandlerFunc {
 
 		relayID := r.URL.Query().Get("relay_id")
 		timeout := 30 // seconds
+		maxMessages := 10 // default max messages per request
 		if t := r.URL.Query().Get("timeout"); t != "" {
 			fmt.Sscanf(t, "%d", &timeout)
+		}
+		if m := r.URL.Query().Get("max_messages"); m != "" {
+			fmt.Sscanf(m, "%d", &maxMessages)
+		}
+		if maxMessages <= 0 {
+			maxMessages = 10
 		}
 
 		if relayID == "" {
@@ -173,34 +199,59 @@ func NewReceiveHandler(store storage.Storage) http.HandlerFunc {
 		deadline := time.Now().Add(time.Duration(timeout) * time.Second)
 		for time.Now().Before(deadline) {
 			alloc.Mu.Lock()
-			messages := alloc.PendingData[alloc.ClientID]
-			if len(messages) > 0 {
-				// Return messages and clear
-				var respMessages []Message
-				for _, msg := range messages {
-					respMessages = append(respMessages, Message{
-						From:      msg.From,
-						Data:      base64.StdEncoding.EncodeToString(msg.Data),
-						Timestamp: msg.Timestamp.Unix(),
-					})
-				}
-				alloc.PendingData[alloc.ClientID] = nil
-				alloc.Mu.Unlock()
 
-				resp := ReceiveResponse{Messages: respMessages}
-				w.Header().Set("Content-Type", "application/json")
-				json.NewEncoder(w).Encode(resp)
-				return
+			// Read up to maxMessages from queue and dequeue (read-and-delete)
+			var messages []*storage.Message
+			if alloc.MessageQueues != nil {
+				q, ok := alloc.MessageQueues[alloc.ClientID]
+				if ok && q != nil {
+					// 循环读取最多 maxMessages 条（非阻塞）
+					for i := 0; i < maxMessages; i++ {
+						if msg, err := q.Get(); err == nil {
+							messages = append(messages, msg)
+						} else {
+							break // 队列空
+						}
+					}
+				}
+			}
+
+		if len(messages) > 0 {
+			var respMessages []Message
+			for _, msg := range messages {
+				respMessages = append(respMessages, Message{
+					From:      msg.From,
+					Data:      base64.StdEncoding.EncodeToString(msg.Data),
+					Timestamp: msg.Timestamp.Unix(),
+				})
 			}
 			alloc.Mu.Unlock()
 
-			time.Sleep(500 * time.Millisecond) // Short poll interval
-		}
+			resp := ReceiveResponse{Messages: respMessages}
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(resp)
 
-		// Timeout, return empty
-		resp := ReceiveResponse{Messages: []Message{}}
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(resp)
+			// Flush the response to ensure it's sent immediately
+			if f, ok := w.(http.Flusher); ok {
+				f.Flush()
+			}
+
+			return
+		}
+		alloc.Mu.Unlock()
+
+		time.Sleep(500 * time.Millisecond) // Short poll interval
+	}
+
+	// Timeout, return empty
+	resp := ReceiveResponse{Messages: []Message{}}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(resp)
+
+	// Flush the response
+	if f, ok := w.(http.Flusher); ok {
+		f.Flush()
+	}
 	}
 }
 

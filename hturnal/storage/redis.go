@@ -122,6 +122,30 @@ func (s *redisStorage) DeleteAllocation(relayID string) error {
 	return nil
 }
 
+func (s *redisStorage) DeleteAllocationsByClientID(clientID string) error {
+	// Get relayID from client mapping
+	clientKey := fmt.Sprintf("turn:client:%s", clientID)
+	relayID, err := s.client.Get(s.ctx, clientKey).Result()
+	if err == redis.Nil {
+		// No allocation found for this clientID
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+
+	// Delete the allocation
+	allocKey := fmt.Sprintf("turn:%s", relayID)
+	if err := s.client.Del(s.ctx, allocKey).Err(); err != nil {
+		return err
+	}
+
+	// Delete client mapping
+	s.client.Del(s.ctx, clientKey)
+
+	return nil
+}
+
 // Stream methods
 func (s *redisStorage) SaveStream(streamID string, stream *StreamState) error {
 	key := fmt.Sprintf("stream:%s", streamID)

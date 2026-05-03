@@ -80,12 +80,16 @@ func (c *Client) AddPermission(peerIDs []string) error {
 }
 
 // Receive receives messages from the relay (long-poll)
-func (c *Client) Receive(timeout int) ([]TURNMessage, error) {
+// maxMessages: max number of messages per request (0 means default 10)
+func (c *Client) Receive(timeout int, maxMessages int) ([]TURNMessage, error) {
 	if timeout <= 0 {
 		timeout = 30
 	}
-	u := fmt.Sprintf("%s/turn/receive?relay_id=%s&timeout=%d",
-		c.serverURL, url.QueryEscape(c.relayID), timeout)
+	if maxMessages <= 0 {
+		maxMessages = 10 // default
+	}
+	u := fmt.Sprintf("%s/turn/receive?relay_id=%s&timeout=%d&max_messages=%d",
+		c.serverURL, url.QueryEscape(c.relayID), timeout, maxMessages)
 
 	resp, err := c.httpClient.Get(u)
 	if err != nil {
