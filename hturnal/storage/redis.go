@@ -68,7 +68,13 @@ func (s *redisStorage) SaveAllocation(relayID string, alloc *TURNAllocation) err
 	if err != nil {
 		return err
 	}
-	return s.client.Set(s.ctx, key, data, alloc.ExpiresAt.Sub(time.Now())).Err()
+	// Save allocation
+	if err := s.client.Set(s.ctx, key, data, alloc.ExpiresAt.Sub(time.Now())).Err(); err != nil {
+		return err
+	}
+	// Maintain clientID -> relayID mapping
+	clientKey := fmt.Sprintf("turn:client:%s", alloc.ClientID)
+	return s.client.Set(s.ctx, clientKey, relayID, alloc.ExpiresAt.Sub(time.Now())).Err()
 }
 
 func (s *redisStorage) GetAllocation(relayID string) (*TURNAllocation, error) {
@@ -83,9 +89,37 @@ func (s *redisStorage) GetAllocation(relayID string) (*TURNAllocation, error) {
 	return decodeTURNAllocation([]byte(val))
 }
 
+func (s *redisStorage) GetAllocationByClientID(clientID string) (*TURNAllocation, error) {
+	// Get relayID from client mapping
+	clientKey := fmt.Sprintf("turn:client:%s", clientID)
+	relayID, err := s.client.Get(s.ctx, clientKey).Result()
+	if err == redis.Nil {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	// Get allocation by relayID
+	return s.GetAllocation(relayID)
+}
+
 func (s *redisStorage) DeleteAllocation(relayID string) error {
+	// First get the allocation to find clientID
+	alloc, err := s.GetAllocation(relayID)
+	if err != nil {
+		return err
+	}
+	// Delete the allocation
 	key := fmt.Sprintf("turn:%s", relayID)
-	return s.client.Del(s.ctx, key).Err()
+	if err := s.client.Del(s.ctx, key).Err(); err != nil {
+		return err
+	}
+	// Delete client mapping if alloc exists
+	if alloc != nil {
+		clientKey := fmt.Sprintf("turn:client:%s", alloc.ClientID)
+		s.client.Del(s.ctx, clientKey)
+	}
+	return nil
 }
 
 // Stream methods

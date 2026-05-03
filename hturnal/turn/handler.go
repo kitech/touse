@@ -110,26 +110,33 @@ func NewSendHandler(store storage.Storage) http.HandlerFunc {
 			return
 		}
 
-		// Check permission
-		alloc.Mu.RLock()
-		hasPermission := alloc.Permissions[req.PeerID]
-		alloc.Mu.RUnlock()
+	// Check permission
+	alloc.Mu.RLock()
+	hasPermission := alloc.Permissions[req.PeerID]
+	alloc.Mu.RUnlock()
 
-		if !hasPermission {
-			http.Error(w, "No permission to send to this peer", http.StatusForbidden)
-			return
-		}
+	if !hasPermission {
+		http.Error(w, "No permission to send to this peer", http.StatusForbidden)
+		return
+	}
 
-		// Store message for peer
-		msg := &storage.Message{
-			From:      alloc.ClientID,
-			Data:      data,
-			Timestamp: time.Now(),
-		}
+	// Find peer's allocation
+	peerAlloc, err := store.GetAllocationByClientID(req.PeerID)
+	if err != nil || peerAlloc == nil {
+		http.Error(w, "Peer not found", http.StatusNotFound)
+		return
+	}
 
-		alloc.Mu.Lock()
-		alloc.PendingData[req.PeerID] = append(alloc.PendingData[req.PeerID], msg)
-		alloc.Mu.Unlock()
+	// Store message for peer (in peer's allocation)
+	msg := &storage.Message{
+		From:      alloc.ClientID,
+		Data:      data,
+		Timestamp: time.Now(),
+	}
+
+	peerAlloc.Mu.Lock()
+	peerAlloc.PendingData[peerAlloc.ClientID] = append(peerAlloc.PendingData[peerAlloc.ClientID], msg)
+	peerAlloc.Mu.Unlock()
 
 		resp := map[string]string{"status": "sent"}
 		w.Header().Set("Content-Type", "application/json")

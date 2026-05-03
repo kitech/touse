@@ -65,6 +65,17 @@ func (s *memoryStorage) DeleteAllocation(relayID string) error {
 	return nil
 }
 
+func (s *memoryStorage) GetAllocationByClientID(clientID string) (*TURNAllocation, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for _, alloc := range s.turnAllocations {
+		if alloc.ClientID == clientID {
+			return alloc, nil
+		}
+	}
+	return nil, nil
+}
+
 // Stream methods
 func (s *memoryStorage) SaveStream(streamID string, stream *StreamState) error {
 	s.mu.Lock()

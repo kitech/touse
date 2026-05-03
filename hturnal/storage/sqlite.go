@@ -55,6 +55,7 @@ func initSqliteTables(db *sql.DB) error {
 	_, err = db.Exec(`
 		CREATE TABLE IF NOT EXISTS turn_allocations (
 			relay_id TEXT PRIMARY KEY,
+			client_id TEXT NOT NULL,
 			data TEXT NOT NULL,
 			expires_at TIMESTAMP NOT NULL
 		)
@@ -121,9 +122,9 @@ func (s *sqliteStorage) SaveAllocation(relayID string, alloc *TURNAllocation) er
 	}
 
 	_, err = s.db.Exec(`
-		INSERT OR REPLACE INTO turn_allocations (relay_id, data, expires_at)
-		VALUES (?, ?, ?)
-	`, relayID, string(data), alloc.ExpiresAt)
+		INSERT OR REPLACE INTO turn_allocations (relay_id, client_id, data, expires_at)
+		VALUES (?, ?, ?, ?)
+	`, relayID, alloc.ClientID, string(data), alloc.ExpiresAt)
 	return err
 }
 
@@ -134,6 +135,27 @@ func (s *sqliteStorage) GetAllocation(relayID string) (*TURNAllocation, error) {
 		SELECT data, expires_at FROM turn_allocations
 		WHERE relay_id = ? AND expires_at > ?
 	`, relayID, time.Now()).Scan(&data, &expiresAt)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	var alloc TURNAllocation
+	if err := json.Unmarshal([]byte(data), &alloc); err != nil {
+		return nil, err
+	}
+	return &alloc, nil
+}
+
+func (s *sqliteStorage) GetAllocationByClientID(clientID string) (*TURNAllocation, error) {
+	var data string
+	var expiresAt time.Time
+	err := s.db.QueryRow(`
+		SELECT data, expires_at FROM turn_allocations
+		WHERE client_id = ? AND expires_at > ?
+	`, clientID, time.Now()).Scan(&data, &expiresAt)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}

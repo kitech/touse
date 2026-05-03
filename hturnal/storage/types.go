@@ -52,6 +52,7 @@ type Storage interface {
 	// TURN
 	SaveAllocation(relayID string, alloc *TURNAllocation) error
 	GetAllocation(relayID string) (*TURNAllocation, error)
+	GetAllocationByClientID(clientID string) (*TURNAllocation, error)
 	DeleteAllocation(relayID string) error
 
 	// Stream
