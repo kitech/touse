@@ -55,6 +55,18 @@ type STUNNATCheckResponse struct {
 	Details   map[string]interface{} `json:"details"`
 }
 
+// STUNBindingRequestToRequest is the request for SendBindingRequestTo
+type STUNBindingRequestToRequest struct {
+	ClientID   string `json:"client_id"`
+	TargetAddr string `json:"target_addr"`
+}
+
+// STUNBindingRequestToResponse is the response for SendBindingRequestTo
+type STUNBindingRequestToResponse struct {
+	MappedAddress string `json:"mapped_address"`
+	Source        string `json:"source"`
+}
+
 // ========== TURN types (local definitions for client) ==========
 
 // AllocateResponse is the response for TURN allocate
@@ -83,4 +95,42 @@ type StreamReceiveResponse struct {
 type StreamChunk struct {
 	Seq  int    `json:"seq"`
 	Data string `json:"data"`
+}
+
+// ========== TCP Allocation types (Phase 6) ==========
+
+// TCPAllocateResponse is the response for TCP allocation
+type TCPAllocateResponse struct {
+	ClientID  string `json:"client_id"`
+	RelayID   string `json:"relay_id"`
+	RelayPort int    `json:"relay_port"`
+	RelayPath string `json:"relay_path"`
+	Lifetime  int    `json:"lifetime"`
+}
+
+// TCPDialRequest is the request for dialing via TCP
+type TCPDialRequest struct {
+	RelayID string `json:"relay_id"`
+	PeerID  string `json:"peer_id"`
+}
+
+// TCPDialResponse is the response for TCP dial
+type TCPDialResponse struct {
+	ConnectionID string `json:"connection_id"`
+}
+
+// TCPAcceptResponse is the response for accepting TCP connections
+type TCPAcceptResponse struct {
+	ConnectionID string `json:"connection_id"`
+	PeerID      string `json:"peer_id"`
+}
+
+// TCPDeallocateRequest is the request for TCP deallocation
+type TCPDeallocateRequest struct {
+	RelayID string `json:"relay_id"`
+}
+
+// TCPDeallocateResponse is the response for TCP deallocation
+type TCPDeallocateResponse struct {
+	Status string `json:"status"`
 }

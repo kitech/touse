@@ -50,6 +50,42 @@ func (c *Client) CheckNATType(clientID string) (*STUNNATCheckResponse, error) {
 	return resp, err
 }
 
+// SendBindingRequest sends a STUN binding request to the STUN server
+// Compatible with pion/turn's SendBindingRequest() method
+func (c *Client) SendBindingRequest() (net.Addr, error) {
+	// Use the internally allocated clientID
+	resp, err := c.GetPublicAddress(c.clientID)
+	if err != nil {
+		return nil, err
+	}
+	// Parse mapped address as net.Addr
+	addr, err := net.ResolveUDPAddr("udp", resp.MappedAddress)
+	if err != nil {
+		return nil, err
+	}
+	return addr, nil
+}
+
+// SendBindingRequestTo sends a STUN binding request to a specific address
+// Compatible with pion/turn's SendBindingRequestTo(to net.Addr) method
+func (c *Client) SendBindingRequestTo(to net.Addr) (net.Addr, error) {
+	reqBody := STUNBindingRequestToRequest{
+		ClientID:  c.clientID,
+		TargetAddr: to.String(),
+	}
+	resp := &STUNBindingRequestToResponse{}
+	err := c.post("/stun/binding-to", reqBody, resp)
+	if err != nil {
+		return nil, err
+	}
+	// Parse mapped address as net.Addr
+	addr, err := net.ResolveUDPAddr("udp", resp.MappedAddress)
+	if err != nil {
+		return nil, err
+	}
+	return addr, nil
+}
+
 // ---------- TURN Methods (pion/turn compatible) ----------
 
 // Allocate allocates a TURN relay resource, returns net.PacketConn

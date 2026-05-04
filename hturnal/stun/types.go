@@ -24,3 +24,15 @@ type NATCheckResponse struct {
 	PublicIP  string                 `json:"public_ip"`
 	Details   map[string]interface{} `json:"details"`
 }
+
+// BindingRequestToRequest is the request for SendBindingRequestTo
+type BindingRequestToRequest struct {
+	ClientID   string `json:"client_id"`
+	TargetAddr string `json:"target_addr"` // "ip:port"
+}
+
+// BindingRequestToResponse is the response for SendBindingRequestTo
+type BindingRequestToResponse struct {
+	MappedAddress string `json:"mapped_address"`
+	Source        string `json:"source"`
+}

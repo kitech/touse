@@ -112,3 +112,46 @@ type StreamEndRequest struct {
 type StreamEndResponse struct {
 	Status string `json:"status"`
 }
+
+// ========= TCP Allocation Types (Phase 6) =========
+
+// TCPAllocateRequest is the request for TCP allocation
+type TCPAllocateRequest struct {
+	ClientID string `json:"client_id"`
+}
+
+// TCPAllocateResponse is the response for TCP allocation
+type TCPAllocateResponse struct {
+	ClientID   string `json:"client_id"`
+	RelayID    string `json:"relay_id"`
+	RelayPort  int    `json:"relay_port"`
+	RelayPath  string `json:"relay_path"`
+	Lifetime   int    `json:"lifetime"`
+}
+
+// TCPDialRequest is the request for dialing to a peer via TCP
+type TCPDialRequest struct {
+	RelayID string `json:"relay_id"`
+	PeerID  string `json:"peer_id"`
+}
+
+// TCPDialResponse is the response for TCP dial
+type TCPDialResponse struct {
+	ConnectionID string `json:"connection_id"`
+}
+
+// TCPAcceptResponse is the response for accepting TCP connections
+type TCPAcceptResponse struct {
+	ConnectionID string `json:"connection_id"`
+	PeerID      string `json:"peer_id"`
+}
+
+// TCPDeallocateRequest is the request for deallocating TCP
+type TCPDeallocateRequest struct {
+	RelayID string `json:"relay_id"`
+}
+
+// TCPDeallocateResponse is the response for TCP deallocate
+type TCPDeallocateResponse struct {
+	Status string `json:"status"`
+}

@@ -48,6 +48,7 @@ func main() {
 func setupRoutes(store storage.Storage) {
 	// STUN endpoints
 	http.HandleFunc("/stun/binding", wrap(stun.NewBindingHandler(store)))
+	http.HandleFunc("/stun/binding-to", wrap(stun.NewBindingRequestToHandler(store)))
 	http.HandleFunc("/stun/nat-check", wrap(stun.NewNATCheckHandler(store)))
 
 	// TURN endpoints
@@ -69,6 +70,15 @@ func setupRoutes(store storage.Storage) {
 
 	// Relay endpoint (pseudo-port data plane)
 	http.HandleFunc("/relay/", wrap(turn.NewRelayHandler(store)))
+
+	// TURN TCP endpoints (Phase 6)
+	http.HandleFunc("/turn/tcp/allocate", wrap(turn.NewTCPAllocateHandler(store)))
+	http.HandleFunc("/turn/tcp/dial", wrap(turn.NewTCPDialHandler(store)))
+	http.HandleFunc("/turn/tcp/accept", wrap(turn.NewTCPAcceptHandler(store)))
+	http.HandleFunc("/turn/tcp/deallocate", wrap(turn.NewTCPDeallocateHandler(store)))
+
+	// TCP Relay endpoint
+	http.HandleFunc("/relay/tcp/", wrap(turn.NewTCPRelayHandler(store)))
 }
 
 // wrap adds common middleware: CORS, logging, content type

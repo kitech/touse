@@ -97,7 +97,6 @@ func getClientIP(r *http.Request) string {
 }
 
 func getClientPort(r *http.Request) string {
-	// Try to get port from X-Forwarded-Port or X-Real-Port headers
 	if port := r.Header.Get("X-Forwarded-Port"); port != "" {
 		return port
 	}
@@ -110,4 +109,36 @@ func getClientPort(r *http.Request) string {
 		return addr[colon+1:]
 	}
 	return "0"
+}
+
+// NewBindingRequestToHandler handles SendBindingRequestTo
+func NewBindingRequestToHandler(store storage.Storage) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != "POST" {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
+		var req BindingRequestToRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "Invalid JSON", http.StatusBadRequest)
+			return
+		}
+
+		if req.ClientID == "" || req.TargetAddr == "" {
+			http.Error(w, "Missing client_id or target_addr", http.StatusBadRequest)
+			return
+		}
+
+		// Simulate STUN Binding Request to target address
+		// In a real implementation, this would send a UDP STUN request to target
+		// For now, return the target address as "mapped address" (simulation)
+		resp := BindingRequestToResponse{
+			MappedAddress: req.TargetAddr, // Simplified: return target as mapped
+			Source:        "http-stun-request-to",
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+	}
 }
