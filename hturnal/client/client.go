@@ -205,23 +205,46 @@ func (c *Client) SetPeerID(peerID string) {
 // post is a helper for POST requests
 func (c *Client) post(path string, reqBody, respBody interface{}) error {
 	u := c.config.TURNServerAddr + path
-	var body *bytes.Buffer
+
+	var resp *http.Response
+
 	if reqBody != nil {
 		data, err := json.Marshal(reqBody)
 		if err != nil {
 			return err
 		}
-		body = bytes.NewBuffer(data)
+		// Use NewRequest to have full control
+		req, err := http.NewRequest("POST", u, bytes.NewBuffer(data))
+		if err != nil {
+			return err
+		}
+		req.Header.Set("Content-Type", "application/json")
+		log.Printf("[post] URL=%s, body=%s", u, string(data))
+		resp, err = c.httpClient.Do(req)
+		if err != nil {
+			return fmt.Errorf("request failed: %v", err)
+		}
+	} else {
+		// For POST with empty body
+		req, err := http.NewRequest("POST", u, nil)
+		if err != nil {
+			return err
+		}
+		req.Header.Set("Content-Type", "application/json")
+		resp, err = c.httpClient.Do(req)
+		if err != nil {
+			return fmt.Errorf("request failed: %v", err)
+		}
 	}
 
-	resp, err := c.httpClient.Post(u, "application/json", body)
-	if err != nil {
-		return err
+	if resp == nil {
+		return fmt.Errorf("nil response from POST %s", u)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("HTTP %d", resp.StatusCode)
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("HTTP %d: %s", resp.StatusCode, string(body))
 	}
 
 	if respBody != nil {

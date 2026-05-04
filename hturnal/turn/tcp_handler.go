@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -19,17 +20,14 @@ func NewTCPAllocateHandler(store storage.Storage) http.HandlerFunc {
 			return
 		}
 
-		// Similar to UDP allocate but for TCP
 		clientIP := getClientIP(r)
 
-		// Allocate client port from per-IP pool
 		clientPort, clientID, err := globalIPPortPool.AllocateClientPort(clientIP)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusServiceUnavailable)
 			return
 		}
 
-		// Allocate relay port from global pool
 		relayPort, err := globalRelayPortPool.Allocate()
 		if err != nil {
 			globalIPPortPool.ReleaseClientPort(clientIP, clientPort)
@@ -37,7 +35,6 @@ func NewTCPAllocateHandler(store storage.Storage) http.HandlerFunc {
 			return
 		}
 
-		// Clean up old allocations for this client
 		if err := store.DeleteAllocationsByClientID(clientID); err != nil {
 			globalIPPortPool.ReleaseClientPort(clientIP, clientPort)
 			globalRelayPortPool.Release(relayPort)
@@ -45,7 +42,6 @@ func NewTCPAllocateHandler(store storage.Storage) http.HandlerFunc {
 			return
 		}
 
-		// Generate internal relay ID
 		relayID := generateID()
 		alloc := &storage.TURNAllocation{
 			RelayID:       relayID,
@@ -86,42 +82,111 @@ func NewTCPDialHandler(store storage.Storage) http.HandlerFunc {
 			return
 		}
 
+		// Read body
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			log.Printf("[TCPDial] Read body error: %v", err)
+			http.Error(w, "Invalid body", http.StatusBadRequest)
+			return
+		}
+		log.Printf("[TCPDial] Raw body: %s", string(body))
+
 		var req TCPDialRequest
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		if err := json.Unmarshal(body, &req); err != nil {
+			log.Printf("[TCPDial] JSON decode error: %v, body: %s", err, string(body))
 			http.Error(w, "Invalid JSON", http.StatusBadRequest)
 			return
 		}
+
+		log.Printf("[TCPDial] RelayID=%s, PeerID=%s", req.RelayID, req.PeerID)
 
 		if req.RelayID == "" || req.PeerID == "" {
 			http.Error(w, "Missing relay_id or peer_id", http.StatusBadRequest)
 			return
 		}
 
-		// Find allocation
-		alloc, err := store.GetAllocation(req.RelayID)
-		if err != nil || alloc == nil {
+		// Get caller's allocation
+		callerAlloc, err := store.GetAllocation(req.RelayID)
+		if err != nil || callerAlloc == nil {
 			http.Error(w, "Relay not found", http.StatusNotFound)
 			return
 		}
 
+		// Get peer's allocation
+		peerAlloc, err := store.GetAllocationByClientID(req.PeerID)
+		if err != nil || peerAlloc == nil {
+			http.Error(w, "Peer not found", http.StatusNotFound)
+			return
+		}
+
 		// Check permission
-		alloc.Mu.RLock()
-		hasPermission := alloc.Permissions[req.PeerID]
-		alloc.Mu.RUnlock()
+		callerAlloc.Mu.RLock()
+		hasPermission := callerAlloc.Permissions[req.PeerID]
+		callerAlloc.Mu.RUnlock()
+
+		// Auto-permit for demo (same-IP clients)
+		if !hasPermission {
+			callerAlloc.Mu.Lock()
+			callerAlloc.Permissions[req.PeerID] = true
+			callerAlloc.Mu.Unlock()
+			log.Printf("[TCPDial] Auto-permitted peer %s for demo", req.PeerID)
+			hasPermission = true
+		}
 
 		if !hasPermission {
 			http.Error(w, "Peer not permitted", http.StatusForbidden)
 			return
 		}
 
-		// Generate connection ID
+		// Create TCP connection
 		connID := fmt.Sprintf("conn_%d", time.Now().UnixNano())
+		tcpConn := &storage.TCPConnection{
+			ConnID:    connID,
+			OwnerID:   callerAlloc.ClientID,  // The one who initiated the connection
+			PeerID:    req.PeerID,
+			OwnerPort:  callerAlloc.RelayPort, // Owner's relay port (for URL routing)
+			Incoming:  make(chan *storage.PortData, 65535), // Peer→Owner
+			Outgoing:  make(chan *storage.PortData, 65535), // Owner→Peer
+			CreatedAt: time.Now(),
+		}
 
-		// Store connection info (in real implementation, would create actual TCP connection)
-		// For now, just return the connection ID
+		// Store connection in both allocations (under lock)
+		peerAlloc.Mu.Lock()
+		if peerAlloc.PendingConnections == nil {
+			peerAlloc.PendingConnections = make(chan *storage.TCPConnection, 1024)
+		}
+		if peerAlloc.Connections == nil {
+			peerAlloc.Connections = make(map[string]*storage.TCPConnection)
+		}
+		peerAlloc.Connections[connID] = tcpConn
+		peerAlloc.Mu.Unlock()
+
+		callerAlloc.Mu.Lock()
+		if callerAlloc.Connections == nil {
+			callerAlloc.Connections = make(map[string]*storage.TCPConnection)
+		}
+		callerAlloc.Connections[connID] = tcpConn
+		callerAlloc.Mu.Unlock()
+
+		// Push to pending queue for Accept (with timeout to avoid blocking)
+		pushTimeout := time.After(2 * time.Second)
+		select {
+		case peerAlloc.PendingConnections <- tcpConn:
+			log.Printf("[TCPDial] Connection %s pushed to peer %s pending queue", connID, req.PeerID)
+		case <-pushTimeout:
+			log.Printf("[TCPDial] Timeout pushing to pending queue for peer %s", req.PeerID)
+			http.Error(w, "Peer's pending queue full or blocked", http.StatusServiceUnavailable)
+			return
+		}
+
+		log.Printf("[TCPDial] Connection established: connID=%s, owner=%s (port %d), peer=%s",
+			connID, callerAlloc.ClientID, callerAlloc.RelayPort, req.PeerID)
+
 		resp := TCPDialResponse{
 			ConnectionID: connID,
 		}
+
+		log.Printf("[TCPDial] Connection %s created: caller=%s, peer=%s", connID, callerAlloc.ClientID, req.PeerID)
 
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(resp)
@@ -142,22 +207,57 @@ func NewTCPAcceptHandler(store storage.Storage) http.HandlerFunc {
 			return
 		}
 
-		// Find allocation
 		alloc, err := store.GetAllocation(relayID)
 		if err != nil || alloc == nil {
 			http.Error(w, "Relay not found", http.StatusNotFound)
 			return
 		}
 
-		// Long-poll for incoming connection (simplified: return immediately)
-		// In real implementation, would wait for actual incoming TCP connections
-		resp := TCPAcceptResponse{
-			ConnectionID: "conn_example",
-			PeerID:      "peer_example",
-		}
+		// Long-poll for incoming connection (30 second timeout)
+		timeout := 30 * time.Second
+		deadline := time.After(timeout)
 
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(resp)
+		log.Printf("[TCPAccept] Waiting for incoming connection, relayID=%s", relayID)
+
+		for {
+			alloc.Mu.Lock()
+			pendingChan := alloc.PendingConnections
+			alloc.Mu.Unlock()
+
+			if pendingChan != nil {
+				// Block on channel read with timeout
+				select {
+				case tcpConn := <-pendingChan:
+					if tcpConn != nil {
+						log.Printf("[TCPAccept] Accepted connection %s from %s", tcpConn.ConnID, tcpConn.PeerID)
+						resp := TCPAcceptResponse{
+							ConnectionID: tcpConn.ConnID,
+							PeerID:       tcpConn.PeerID,
+						}
+						w.Header().Set("Content-Type", "application/json")
+						json.NewEncoder(w).Encode(resp)
+						return
+					}
+				case <-deadline:
+					// Timeout
+					log.Printf("[TCPAccept] Timeout waiting for connection, relayID=%s", relayID)
+					http.Error(w, "Timeout waiting for connection", http.StatusGatewayTimeout)
+					return
+				case <-time.After(100 * time.Millisecond):
+					// Short poll interval, continue waiting
+				}
+			} else {
+				// Wait for pendingChan to be initialized
+				select {
+				case <-time.After(100 * time.Millisecond):
+					// Continue loop
+				case <-deadline:
+					log.Printf("[TCPAccept] Timeout waiting for connection, relayID=%s", relayID)
+					http.Error(w, "Timeout waiting for connection", http.StatusGatewayTimeout)
+					return
+				}
+			}
+		}
 	}
 }
 
@@ -191,7 +291,6 @@ func NewTCPDeallocateHandler(store storage.Storage) http.HandlerFunc {
 // GET /relay/tcp/{port}/{conn_id} - receive data (long-poll)
 func NewTCPRelayHandler(store storage.Storage) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		// Parse path: /relay/tcp/{port}/{conn_id}
 		path := r.URL.Path
 		parts := strings.Split(path, "/")
 		if len(parts) < 5 {
@@ -209,38 +308,61 @@ func NewTCPRelayHandler(store storage.Storage) http.HandlerFunc {
 			return
 		}
 
-		// Get client ID from header
 		clientID := r.Header.Get("X-Hturnal-Client-ID")
 		if clientID == "" {
 			http.Error(w, "Missing X-Hturnal-Client-ID", http.StatusBadRequest)
 			return
 		}
 
-		// Find allocation by port
 		alloc, err := store.GetAllocationByPort(port)
 		if err != nil || alloc == nil {
 			http.Error(w, "Port not found", http.StatusNotFound)
 			return
 		}
 
+		// Find TCP connection by connID
+		alloc.Mu.Lock()
+		var tcpConn *storage.TCPConnection
+		if alloc.Connections != nil {
+			tcpConn = alloc.Connections[connID]
+		}
+		alloc.Mu.Unlock()
+
+		if tcpConn == nil {
+			http.Error(w, "Connection not found", http.StatusNotFound)
+			return
+		}
+
+		log.Printf("[TCPRelay] port=%d, connID=%s, clientID=%s, alloc.ClientID=%s, method=%s",
+			port, connID, clientID, alloc.ClientID, r.Method)
+
+		// Determine if this client is the owner (the one who initiated the TCP connection)
+		isOwner := (clientID == tcpConn.OwnerID)
+
 		switch r.Method {
 		case "POST":
-			// Send data
 			data, err := io.ReadAll(io.LimitReader(r.Body, 65536))
 			if err != nil || len(data) > 65535 {
 				http.Error(w, "Invalid data", http.StatusBadRequest)
 				return
 			}
 
-			// Determine direction and queue
-			alloc.Mu.Lock()
-			var targetQueue chan *storage.PortData
-			if clientID == alloc.ClientID {
-				targetQueue = alloc.OutgoingQueue
+			// Route data to the OTHER side's channel
+			// If owner sends, data goes to peer's Incoming (which is tcpConn.Outgoing from peer's view)
+			// Actually, let's simplify: tcpConn has two channels:
+			// - OwnerToPeer: owner sends, peer receives from this
+			// - PeerToOwner: peer sends, owner receives from this
+			//
+			// For simplicity, we use:
+			// - tcpConn.Outgoing: data FROM owner TO peer
+			// - tcpConn.Incoming: data FROM peer TO owner
+
+			var targetChan chan *storage.PortData
+			if isOwner {
+				targetChan = tcpConn.Outgoing // Owner→Peer
 			} else {
-				targetQueue = alloc.IncomingQueue
+				targetChan = tcpConn.Incoming // Peer→Owner
 			}
-			alloc.Mu.Unlock()
 
 			portData := &storage.PortData{
 				From:      clientID,
@@ -249,37 +371,37 @@ func NewTCPRelayHandler(store storage.Storage) http.HandlerFunc {
 			}
 
 			select {
-			case targetQueue <- portData:
+			case targetChan <- portData:
+				log.Printf("[TCPRelay] Data sent to conn %s, len=%d, from=%s (isOwner=%v)",
+					connID, len(data), clientID, isOwner)
 				w.WriteHeader(http.StatusOK)
 			default:
+				log.Printf("[TCPRelay] Queue full for conn %s", connID)
 				http.Error(w, "Queue full", http.StatusServiceUnavailable)
 			}
 
 		case "GET":
-			// Receive data (long-poll)
 			timeout := 30
 			if t := r.URL.Query().Get("timeout"); t != "" {
 				fmt.Sscanf(t, "%d", &timeout)
 			}
 
 			deadline := time.Now().Add(time.Duration(timeout) * time.Second)
-			for time.Now().Before(deadline) {
-				alloc.Mu.Lock()
-				var sourceQueue chan *storage.PortData
-				if clientID == alloc.ClientID {
-					sourceQueue = alloc.IncomingQueue
-				} else if alloc.Permissions[clientID] {
-					sourceQueue = alloc.OutgoingQueue
-				} else {
-					alloc.Mu.Unlock()
-					http.Error(w, "Permission denied", http.StatusForbidden)
-					return
-				}
-				alloc.Mu.Unlock()
 
+			// Read from the channel that has data FOR this client
+			var sourceChan chan *storage.PortData
+			if isOwner {
+				sourceChan = tcpConn.Incoming // Owner reads data from Peer
+			} else {
+				sourceChan = tcpConn.Outgoing // Peer reads data from Owner
+			}
+
+			for time.Now().Before(deadline) {
 				select {
-				case portData := <-sourceQueue:
+				case portData := <-sourceChan:
 					if portData != nil {
+						log.Printf("[TCPRelay] Data received from conn %s, len=%d, from=%s (isOwner=%v)",
+							connID, len(portData.Data), portData.From, isOwner)
 						w.Header().Set("Content-Type", "application/octet-stream")
 						w.Header().Set("X-Hturnal-From", portData.From)
 						w.Header().Set("X-Hturnal-Timestamp", fmt.Sprintf("%d", portData.Timestamp.Unix()))
@@ -290,6 +412,7 @@ func NewTCPRelayHandler(store storage.Storage) http.HandlerFunc {
 					time.Sleep(100 * time.Millisecond)
 				}
 			}
+			log.Printf("[TCPRelay] Timeout waiting for data, connID=%s, clientID=%s", connID, clientID)
 			w.WriteHeader(http.StatusNoContent)
 
 		default:

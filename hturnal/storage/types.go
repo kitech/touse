@@ -14,6 +14,17 @@ type STUNSession struct {
 	ExpiresAt  time.Time
 }
 
+// TCPConnection represents a TCP-like connection between two clients
+type TCPConnection struct {
+	ConnID      string
+	OwnerID     string          // The client who initiated the connection (caller of DialTCP)
+	PeerID      string          // The peer who accepted the connection
+	OwnerPort   int             // Owner's relay port (for URL routing)
+	Incoming    chan *PortData  // Data from peer to owner
+	Outgoing    chan *PortData  // Data from owner to peer
+	CreatedAt   time.Time
+}
+
 // TURNAllocation stores TURN relay allocation
 type TURNAllocation struct {
 	RelayID       string
@@ -21,11 +32,15 @@ type TURNAllocation struct {
 	RelayPort     int                                 // 伪端口号（用于数据平面）
 	Permissions   map[string]bool
 	MessageQueues map[string][]*Message
-	IncomingQueue chan *PortData                      // Peer→Owner 数据队列
-	OutgoingQueue chan *PortData                      // Owner→Peer 数据队列
+	IncomingQueue chan *PortData                      // Peer→Owner 数据队列 (UDP-like)
+	OutgoingQueue chan *PortData                      // Owner→Peer 数据队列 (UDP-like)
 	Lifetime      time.Duration
 	ExpiresAt     time.Time
 	Mu            sync.RWMutex
+
+	// TCP connection management
+	PendingConnections chan *TCPConnection           // 待接受的 TCP 连接
+	Connections        map[string]*TCPConnection     // connID -> connection
 }
 
 // PortData represents data in relay port queues (原始二进制+元信息)

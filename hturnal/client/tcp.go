@@ -3,6 +3,7 @@ package client
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"net"
 )
 
@@ -14,6 +15,16 @@ type TCPAllocation struct {
 	localAddr net.Addr
 }
 
+// RelayID returns the relay ID
+func (a *TCPAllocation) RelayID() string {
+	return a.relayID
+}
+
+// RelayPort returns the relay port
+func (a *TCPAllocation) RelayPort() int {
+	return a.relayPort
+}
+
 // AllocateTCP creates a new TCP allocation
 // Corresponds to pion/turn's AllocateTCP() method
 func (c *Client) AllocateTCP() (*TCPAllocation, error) {
@@ -21,6 +32,20 @@ func (c *Client) AllocateTCP() (*TCPAllocation, error) {
 	err := c.post("/turn/tcp/allocate", nil, resp)
 	if err != nil {
 		return nil, err
+	}
+
+	// Save server-allocated values
+	c.clientID = resp.ClientID
+	c.relayID = resp.RelayID
+	c.relayPort = resp.RelayPort
+
+	// Debug log
+	log.Printf("[AllocateTCP] clientID=%s, relayID=%s, relayPort=%d", c.clientID, c.relayID, c.relayPort)
+
+	// Fallback: if server didn't return clientID, generate one
+	if c.clientID == "" {
+		c.clientID = fmt.Sprintf("client_%s", c.relayID)
+		log.Printf("[AllocateTCP] Warning: server returned empty client_id, using %s", c.clientID)
 	}
 
 	return &TCPAllocation{

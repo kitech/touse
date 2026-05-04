@@ -26,7 +26,11 @@ func (c *httpTCPConn) Read(b []byte) (int, error) {
 	url := fmt.Sprintf("%s/relay/tcp/%d/%s?timeout=30",
 		c.serverURL, c.relayPort, c.connID)
 
-	resp, err := c.httpClient.Get(url)
+	req, _ := http.NewRequest("GET", url, nil)
+	req.Header.Set("X-Hturnal-Client-ID", c.clientID)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		return 0, err
 	}
@@ -38,11 +42,22 @@ func (c *httpTCPConn) Read(b []byte) (int, error) {
 	}
 
 	if resp.StatusCode != 200 {
-		return 0, fmt.Errorf("HTTP %d", resp.StatusCode)
+		body, _ := io.ReadAll(resp.Body)
+		return 0, fmt.Errorf("HTTP %d: %s", resp.StatusCode, string(body))
 	}
 
-	n, err := io.ReadFull(resp.Body, b)
-	return n, err
+	// Read all data
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return 0, err
+	}
+
+	if len(data) == 0 {
+		return 0, fmt.Errorf("no data available")
+	}
+
+	n := copy(b, data)
+	return n, nil
 }
 
 // Write implements net.Conn
@@ -51,14 +66,21 @@ func (c *httpTCPConn) Write(b []byte) (int, error) {
 	url := fmt.Sprintf("%s/relay/tcp/%d/%s",
 		c.serverURL, c.relayPort, c.connID)
 
-	resp, err := c.httpClient.Post(url, "application/octet-stream", bytes.NewReader(b))
+	req, _ := http.NewRequest("POST", url, bytes.NewReader(b))
+	req.Header.Set("Content-Type", "application/octet-stream")
+	req.Header.Set("X-Hturnal-Client-ID", c.clientID)
+	// Note: X-Hturnal-Xor-Peer-Address is not needed for TCP relay
+	// The server routes data based on connID
+
+	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		return 0, err
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != 200 {
-		return 0, fmt.Errorf("HTTP %d", resp.StatusCode)
+		body, _ := io.ReadAll(resp.Body)
+		return 0, fmt.Errorf("HTTP %d: %s", resp.StatusCode, string(body))
 	}
 
 	return len(b), nil
