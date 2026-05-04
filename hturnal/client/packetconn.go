@@ -15,15 +15,24 @@ type httpPacketConn struct {
 	serverURL  string
 	relayPort  int
 	clientID   string
+	peerID    string // 对端 clientID
 	httpClient *http.Client
 	localAddr  net.Addr
+}
+
+// SetPeerID sets the peer client ID for WriteTo
+func (c *httpPacketConn) SetPeerID(peerID string) {
+	c.peerID = peerID
 }
 
 // ReadFrom implements net.PacketConn
 func (c *httpPacketConn) ReadFrom(b []byte) (int, net.Addr, error) {
 	url := fmt.Sprintf("%s/relay/%d?timeout=30", c.serverURL, c.relayPort)
 	for {
-		resp, err := c.httpClient.Get(url)
+		req, _ := http.NewRequest("GET", url, nil)
+		req.Header.Set("X-Hturnal-Client-ID", c.clientID)
+
+		resp, err := c.httpClient.Do(req)
 		if err != nil {
 			return 0, nil, err
 		}
@@ -59,11 +68,13 @@ func (c *httpPacketConn) ReadFrom(b []byte) (int, net.Addr, error) {
 func (c *httpPacketConn) WriteTo(b []byte, addr net.Addr) (int, error) {
 	url := fmt.Sprintf("%s/relay/%d", c.serverURL, c.relayPort)
 	req, _ := http.NewRequest("POST", url, bytes.NewReader(b))
-	req.Header.Set("X-Hturnal-Client-ID", c.clientID)
 	req.Header.Set("Content-Type", "application/octet-stream")
+	req.Header.Set("X-Hturnal-Client-ID", c.clientID)
 
-	// Set X-Hturnal-Xor-Peer-Address from addr
-	if addr != nil {
+	// 优先使用 c.peerID，其次使用 addr 参数
+	if c.peerID != "" {
+		req.Header.Set("X-Hturnal-Xor-Peer-Address", c.peerID)
+	} else if addr != nil {
 		req.Header.Set("X-Hturnal-Xor-Peer-Address", addr.String())
 	}
 

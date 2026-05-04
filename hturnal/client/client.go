@@ -14,6 +14,7 @@ type Client struct {
 	config     *ClientConfig
 	httpClient *http.Client
 	clientID   string    // Server-allocated "ip:port"
+	relayID    string    // Server-allocated relay ID
 	relayPort  int       // Pseudo-port for data plane
 	conn       net.PacketConn // httpPacketConn
 }
@@ -91,11 +92,13 @@ func (c *Client) SendBindingRequestTo(to net.Addr) (net.Addr, error) {
 // Allocate allocates a TURN relay resource, returns net.PacketConn
 // Compatible with pion/turn's Allocate() method
 func (c *Client) Allocate() (net.PacketConn, error) {
-	// POST /turn/allocate (empty body, server will allocate automatically)
+	// POST /turn/allocate (server will allocate automatically based on client IP)
+	reqBody := map[string]interface{}{} // empty JSON object
+	data, _ := json.Marshal(reqBody)
 	resp, err := c.httpClient.Post(
 		c.config.TURNServerAddr+"/turn/allocate",
 		"application/json",
-		nil,
+		bytes.NewBuffer(data),
 	)
 	if err != nil {
 		return nil, err
@@ -114,6 +117,7 @@ func (c *Client) Allocate() (net.PacketConn, error) {
 
 	// Save server-allocated values
 	c.clientID = result.ClientID
+	c.relayID = result.RelayID
 	c.relayPort = result.RelayPort
 
 	// Create httpPacketConn
@@ -160,6 +164,20 @@ func (c *Client) GetClientID() string {
 // GetRelayPort returns the relay port for data plane
 func (c *Client) GetRelayPort() int {
 	return c.relayPort
+}
+
+// GetRelayID returns the server-allocated relay ID
+func (c *Client) GetRelayID() string {
+	return c.relayID
+}
+
+// SetPeerID sets the peer client ID for WriteTo
+func (c *Client) SetPeerID(peerID string) {
+	if c.conn != nil {
+		if pc, ok := c.conn.(*httpPacketConn); ok {
+			pc.SetPeerID(peerID)
+		}
+	}
 }
 
 // post is a helper for POST requests

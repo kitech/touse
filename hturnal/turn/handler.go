@@ -22,19 +22,24 @@ func NewAllocateHandler(store storage.Storage) http.HandlerFunc {
 		clientIP := getClientIP(r)
 		
 		// 从按IP端口池分配端口（用于client_id）
+		log.Printf("[Allocate] Attempting to allocate client port for IP: %s", clientIP)
 		clientPort, clientID, err := globalIPPortPool.AllocateClientPort(clientIP)
 		if err != nil {
+			log.Printf("[Allocate] Failed to allocate client port: %v", err)
 			http.Error(w, err.Error(), http.StatusServiceUnavailable)
 			return
 		}
+		log.Printf("[Allocate] Allocated clientPort=%d, clientID=%s", clientPort, clientID)
 		
 		// 从全局端口池分配relay_port（用于数据平面）
 		relayPort, err := globalRelayPortPool.Allocate()
 		if err != nil {
+			log.Printf("[Allocate] Failed to allocate relay port: %v", err)
 			globalIPPortPool.ReleaseClientPort(clientIP, clientPort)
 			http.Error(w, err.Error(), http.StatusServiceUnavailable)
 			return
 		}
+		log.Printf("[Allocate] Allocated relayPort=%d", relayPort)
 		
 		// 清理该clientID的旧allocation
 		if err := store.DeleteAllocationsByClientID(clientID); err != nil {
@@ -71,6 +76,8 @@ func NewAllocateHandler(store storage.Storage) http.HandlerFunc {
 			RelayPath:  fmt.Sprintf("/relay/%d", relayPort),
 			Lifetime:  int(alloc.Lifetime.Seconds()),
 		}
+		
+		log.Printf("Allocate response: clientID=%s, relayPort=%d, relayID=%s", clientID, relayPort, relayID)
 		
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(resp)

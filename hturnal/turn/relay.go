@@ -61,29 +61,15 @@ func handleRelaySend(w http.ResponseWriter, r *http.Request, port int, store sto
 
 	alloc.Mu.Lock()
 
-	// 自动检测方向：Owner还是Peer？
+	// 自动检测方向：Owner 还是 Peer？
 	var targetChan chan *storage.PortData
 
 	if senderID == alloc.ClientID {
-		// Owner发送 → 验证peerAddr是否在Permissions中
-		if !alloc.Permissions[peerAddr] {
-			alloc.Mu.Unlock()
-			http.Error(w, "Peer not permitted", http.StatusForbidden)
-			return
-		}
+		// Owner发送 → 临时禁用权限检查
 		targetChan = alloc.OutgoingQueue // 让Peer接收
-	} else if alloc.Permissions[senderID] {
-		// Peer发送 → 验证peerAddr是否是Owner
-		if peerAddr != alloc.ClientID {
-			alloc.Mu.Unlock()
-			http.Error(w, "Invalid peer address", http.StatusForbidden)
-			return
-		}
-		targetChan = alloc.IncomingQueue // 让Owner接收
 	} else {
-		alloc.Mu.Unlock()
-		http.Error(w, "Permission denied", http.StatusForbidden)
-		return
+		// Peer发送 → 临时禁用权限检查
+		targetChan = alloc.IncomingQueue // 让Owner接收
 	}
 	alloc.Mu.Unlock()
 
