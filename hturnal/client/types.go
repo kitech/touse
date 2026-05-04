@@ -71,11 +71,12 @@ type STUNBindingRequestToResponse struct {
 
 // AllocateResponse is the response for TURN allocate
 type AllocateResponse struct {
-	ClientID   string `json:"client_id"`
-	RelayID    string `json:"relay_id"`
-	RelayPort  int    `json:"relay_port"`
-	RelayPath  string `json:"relay_path"`
-	Lifetime   int    `json:"lifetime"`
+	ClientID    string `json:"client_id"`
+	RelayID     string `json:"relay_id"`
+	RelayPort   int    `json:"relay_port"`
+	RelayPath   string `json:"relay_path"`
+	RelayAddress string `json:"relay_address"` // 兼容旧版服务器
+	Lifetime    int    `json:"lifetime"`
 }
 
 // StreamStartResponse is the response for stream start

@@ -1,6 +1,7 @@
 package client
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"net"
@@ -50,7 +51,7 @@ func (c *httpTCPConn) Write(b []byte) (int, error) {
 	url := fmt.Sprintf("%s/relay/tcp/%d/%s",
 		c.serverURL, c.relayPort, c.connID)
 
-	resp, err := c.httpClient.Post(url, "application/octet-stream", nil)
+	resp, err := c.httpClient.Post(url, "application/octet-stream", bytes.NewReader(b))
 	if err != nil {
 		return 0, err
 	}

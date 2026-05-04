@@ -3,6 +3,7 @@ package turn
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 	"time"
@@ -208,13 +209,89 @@ func NewTCPRelayHandler(store storage.Storage) http.HandlerFunc {
 			return
 		}
 
+		// Get client ID from header
+		clientID := r.Header.Get("X-Hturnal-Client-ID")
+		if clientID == "" {
+			http.Error(w, "Missing X-Hturnal-Client-ID", http.StatusBadRequest)
+			return
+		}
+
+		// Find allocation by port
+		alloc, err := store.GetAllocationByPort(port)
+		if err != nil || alloc == nil {
+			http.Error(w, "Port not found", http.StatusNotFound)
+			return
+		}
+
 		switch r.Method {
 		case "POST":
-			// Send data (simplified: just return OK)
-			w.WriteHeader(http.StatusOK)
+			// Send data
+			data, err := io.ReadAll(io.LimitReader(r.Body, 65536))
+			if err != nil || len(data) > 65535 {
+				http.Error(w, "Invalid data", http.StatusBadRequest)
+				return
+			}
+
+			// Determine direction and queue
+			alloc.Mu.Lock()
+			var targetQueue chan *storage.PortData
+			if clientID == alloc.ClientID {
+				targetQueue = alloc.OutgoingQueue
+			} else {
+				targetQueue = alloc.IncomingQueue
+			}
+			alloc.Mu.Unlock()
+
+			portData := &storage.PortData{
+				From:      clientID,
+				Data:      data,
+				Timestamp: time.Now(),
+			}
+
+			select {
+			case targetQueue <- portData:
+				w.WriteHeader(http.StatusOK)
+			default:
+				http.Error(w, "Queue full", http.StatusServiceUnavailable)
+			}
+
 		case "GET":
-			// Receive data (simplified: return no content)
+			// Receive data (long-poll)
+			timeout := 30
+			if t := r.URL.Query().Get("timeout"); t != "" {
+				fmt.Sscanf(t, "%d", &timeout)
+			}
+
+			deadline := time.Now().Add(time.Duration(timeout) * time.Second)
+			for time.Now().Before(deadline) {
+				alloc.Mu.Lock()
+				var sourceQueue chan *storage.PortData
+				if clientID == alloc.ClientID {
+					sourceQueue = alloc.IncomingQueue
+				} else if alloc.Permissions[clientID] {
+					sourceQueue = alloc.OutgoingQueue
+				} else {
+					alloc.Mu.Unlock()
+					http.Error(w, "Permission denied", http.StatusForbidden)
+					return
+				}
+				alloc.Mu.Unlock()
+
+				select {
+				case portData := <-sourceQueue:
+					if portData != nil {
+						w.Header().Set("Content-Type", "application/octet-stream")
+						w.Header().Set("X-Hturnal-From", portData.From)
+						w.Header().Set("X-Hturnal-Timestamp", fmt.Sprintf("%d", portData.Timestamp.Unix()))
+						w.Write(portData.Data)
+						return
+					}
+				default:
+					time.Sleep(100 * time.Millisecond)
+				}
+			}
 			w.WriteHeader(http.StatusNoContent)
+
 		default:
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		}

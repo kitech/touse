@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"log"
 	//	"github.com/adrianbrad/queue"
 	"github.com/kitech/touse/hturnal/storage"
 	"net/http"

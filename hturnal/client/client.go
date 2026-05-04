@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
+	"log"
 	"net"
 	"net/http"
 	"time"
@@ -109,10 +111,30 @@ func (c *Client) Allocate() (net.PacketConn, error) {
 		return nil, fmt.Errorf("Allocate failed: HTTP %d", resp.StatusCode)
 	}
 
+	// Read raw body for debugging
+	rawBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response: %v", err)
+	}
+	log.Printf("[Allocate] Raw response: %s", string(rawBody))
+
 	// Parse response
 	var result AllocateResponse
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+	if err := json.Unmarshal(rawBody, &result); err != nil {
 		return nil, err
+	}
+
+	// If server doesn't return client_id/relay_port (old server), generate locally
+	if result.ClientID == "" {
+		// Generate a placeholder client_id (format: "ip:port")
+		// In production, server should allocate this
+		result.ClientID = fmt.Sprintf("client_%s", result.RelayID)
+		log.Printf("[Allocate] Warning: server returned empty client_id, using %s", result.ClientID)
+	}
+	if result.RelayPort == 0 {
+		// Generate a pseudo relay port
+		result.RelayPort = 10000 + len(result.RelayID) // deterministic pseudo port
+		log.Printf("[Allocate] Warning: server returned empty relay_port, using %d", result.RelayPort)
 	}
 
 	// Save server-allocated values
