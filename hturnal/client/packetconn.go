@@ -44,12 +44,26 @@ func (c *httpPacketConn) ReadFrom(b []byte) (int, net.Addr, error) {
 		}
 
 		if resp.StatusCode != http.StatusOK {
+			body, _ := io.ReadAll(resp.Body)
 			resp.Body.Close()
-			return 0, nil, fmt.Errorf("HTTP %d", resp.StatusCode)
+			return 0, nil, fmt.Errorf("HTTP %d: %s", resp.StatusCode, string(body))
 		}
 
-		n, err := io.ReadFull(resp.Body, b)
+		// 读取所有数据（不是固定长度）
+		data, err := io.ReadAll(resp.Body)
 		resp.Body.Close()
+
+		if err != nil {
+			return 0, nil, err
+		}
+
+		if len(data) == 0 {
+			time.Sleep(100 * time.Millisecond)
+			continue
+		}
+
+		// 复制数据到缓冲区
+		n := copy(b, data)
 
 		// Get sender info from headers
 		from := resp.Header.Get("X-Hturnal-From")
@@ -60,23 +74,30 @@ func (c *httpPacketConn) ReadFrom(b []byte) (int, net.Addr, error) {
 			addr = &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 0}
 		}
 
-		return n, addr, err
+		return n, addr, nil
 	}
 }
 
 // WriteTo implements net.PacketConn
 func (c *httpPacketConn) WriteTo(b []byte, addr net.Addr) (int, error) {
+	// 数据应该发送到对端的端口，但当前设计是发送到自己的端口+头部指定对端
+	// 服务器会从 X-Hturnal-Xor-Peer-Address 找到对端，把数据放入对端的队列
 	url := fmt.Sprintf("%s/relay/%d", c.serverURL, c.relayPort)
 	req, _ := http.NewRequest("POST", url, bytes.NewReader(b))
 	req.Header.Set("Content-Type", "application/octet-stream")
 	req.Header.Set("X-Hturnal-Client-ID", c.clientID)
 
 	// 优先使用 c.peerID，其次使用 addr 参数
-	if c.peerID != "" {
-		req.Header.Set("X-Hturnal-Xor-Peer-Address", c.peerID)
-	} else if addr != nil {
-		req.Header.Set("X-Hturnal-Xor-Peer-Address", addr.String())
+	targetPeer := c.peerID
+	if targetPeer == "" && addr != nil {
+		targetPeer = addr.String()
 	}
+	
+	if targetPeer == "" {
+		return 0, fmt.Errorf("no peer specified for WriteTo")
+	}
+	
+	req.Header.Set("X-Hturnal-Xor-Peer-Address", targetPeer)
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
@@ -85,7 +106,8 @@ func (c *httpPacketConn) WriteTo(b []byte, addr net.Addr) (int, error) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return 0, fmt.Errorf("HTTP %d", resp.StatusCode)
+		body, _ := io.ReadAll(resp.Body)
+		return 0, fmt.Errorf("HTTP %d: %s", resp.StatusCode, string(body))
 	}
 
 	return len(b), nil

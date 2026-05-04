@@ -3,6 +3,7 @@ package turn
 import (
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"time"
 
@@ -29,51 +30,40 @@ func NewRelayHandler(store storage.Storage) http.HandlerFunc {
 	}
 }
 
-// handleRelaySend handles POST /relay/{port} (发送数据，模拟Send Indication)
-func handleRelaySend(w http.ResponseWriter, r *http.Request, port int, store storage.Storage) {
-	// 获取发送方标识
+// handleRelaySend handles POST /relay/{port}
+// 数据从 sender 发到 peer，存入 peer 的 IncomingQueue
+func handleRelaySend(w http.ResponseWriter, r *http.Request, senderPort int, store storage.Storage) {
 	senderID := r.Header.Get("X-Hturnal-Client-ID")
 	if senderID == "" {
 		http.Error(w, "Missing X-Hturnal-Client-ID", http.StatusBadRequest)
 		return
 	}
 
-	// 获取对端地址（XOR-PEER-ADDRESS模拟）
-	peerAddr := r.Header.Get("X-Hturnal-Xor-Peer-Address")
-	if peerAddr == "" {
+	peerID := r.Header.Get("X-Hturnal-Xor-Peer-Address")
+	if peerID == "" {
 		http.Error(w, "Missing X-Hturnal-Xor-Peer-Address", http.StatusBadRequest)
 		return
 	}
 
-	// 查找该端口对应的allocation
-	alloc, err := store.GetAllocationByPort(port)
-	if err != nil || alloc == nil {
-		http.Error(w, "Port not found", http.StatusNotFound)
+	// 查找对端的 allocation（数据要发给对端）
+	peerAlloc, err := store.GetAllocationByClientID(peerID)
+	if err != nil || peerAlloc == nil {
+		log.Printf("[RelaySend] Peer not found: peerID=%s, err=%v", peerID, err)
+		http.Error(w, "Peer not found", http.StatusNotFound)
 		return
 	}
 
-	// 读取原始二进制数据（限制64KB）
+	// 读取数据
 	data, err := io.ReadAll(io.LimitReader(r.Body, 65536))
 	if err != nil || len(data) > 65535 {
 		http.Error(w, "Invalid data", http.StatusBadRequest)
 		return
 	}
 
-	alloc.Mu.Lock()
+	log.Printf("[RelaySend] SenderID=%s, peerID=%s, dataLen=%d, peerRelayPort=%d",
+		senderID, peerID, len(data), peerAlloc.RelayPort)
 
-	// 自动检测方向：Owner 还是 Peer？
-	var targetChan chan *storage.PortData
-
-	if senderID == alloc.ClientID {
-		// Owner发送 → 临时禁用权限检查
-		targetChan = alloc.OutgoingQueue // 让Peer接收
-	} else {
-		// Peer发送 → 临时禁用权限检查
-		targetChan = alloc.IncomingQueue // 让Owner接收
-	}
-	alloc.Mu.Unlock()
-
-	// 构造PortData并尝试发送到channel（非阻塞）
+	// 将数据放入对端的 IncomingQueue
 	portData := &storage.PortData{
 		From:      senderID,
 		Data:      data,
@@ -81,30 +71,43 @@ func handleRelaySend(w http.ResponseWriter, r *http.Request, port int, store sto
 	}
 
 	select {
-	case targetChan <- portData:
+	case peerAlloc.IncomingQueue <- portData:
+		log.Printf("[RelaySend] Data sent to peer's IncomingQueue, peerID=%s", peerID)
 		w.WriteHeader(http.StatusOK)
 	default:
+		log.Printf("[RelaySend] Queue full for peerID=%s", peerID)
 		http.Error(w, "Queue full", http.StatusServiceUnavailable)
 	}
 }
 
-// handleRelayReceive handles GET /relay/{port} (接收数据，长轮询，模拟Data Indication)
-func handleRelayReceive(w http.ResponseWriter, r *http.Request, port int, store storage.Storage) {
-	// 获取接收方标识
+// handleRelayReceive handles GET /relay/{port}
+// 从自己的 IncomingQueue 接收数据
+func handleRelayReceive(w http.ResponseWriter, r *http.Request, myPort int, store storage.Storage) {
 	receiverID := r.Header.Get("X-Hturnal-Client-ID")
 	if receiverID == "" {
 		http.Error(w, "Missing X-Hturnal-Client-ID", http.StatusBadRequest)
 		return
 	}
 
-	// 查找该端口对应的allocation
-	alloc, err := store.GetAllocationByPort(port)
-	if err != nil || alloc == nil {
+	// 查找自己的 allocation（通过端口）
+	myAlloc, err := store.GetAllocationByPort(myPort)
+	if err != nil || myAlloc == nil {
 		http.Error(w, "Port not found", http.StatusNotFound)
 		return
 	}
 
-	// 解析超时参数
+	// 验证这是否是接收者自己的端口
+	if receiverID != myAlloc.ClientID {
+		log.Printf("[RelayReceive] Port does not belong to receiver: receiverID=%s, alloc.ClientID=%s",
+			receiverID, myAlloc.ClientID)
+		http.Error(w, "Port does not belong to you", http.StatusForbidden)
+		return
+	}
+
+	log.Printf("[RelayReceive] ReceiverID=%s, myPort=%d, queueLen=%d",
+		receiverID, myPort, len(myAlloc.IncomingQueue))
+
+	// 解析超时
 	timeout := 30
 	if t := r.URL.Query().Get("timeout"); t != "" {
 		fmt.Sscanf(t, "%d", &timeout)
@@ -112,41 +115,21 @@ func handleRelayReceive(w http.ResponseWriter, r *http.Request, port int, store 
 
 	deadline := time.Now().Add(time.Duration(timeout) * time.Second)
 	for time.Now().Before(deadline) {
-		alloc.Mu.Lock()
-		var targetChan chan *storage.PortData
-
-		// 自动检测：Owner还是Peer？
-		if receiverID == alloc.ClientID {
-			// Owner接收 → 从IncomingQueue取（Peer发的）
-			targetChan = alloc.IncomingQueue
-		} else if alloc.Permissions[receiverID] {
-			// Peer接收 → 从OutgoingQueue取（Owner发的）
-			targetChan = alloc.OutgoingQueue
-		} else {
-			alloc.Mu.Unlock()
-			http.Error(w, "Permission denied", http.StatusForbidden)
-			return
-		}
-		alloc.Mu.Unlock()
-
-		// 非阻塞读取
 		select {
-		case portData := <-targetChan:
+		case portData := <-myAlloc.IncomingQueue:
 			if portData != nil {
-				// 返回原始二进制数据 + 元信息头
+				log.Printf("[RelayReceive] Received data from %s, len=%d", portData.From, len(portData.Data))
 				w.Header().Set("Content-Type", "application/octet-stream")
-				w.Header().Set("X-Hturnal-From", portData.From) // 发送方
+				w.Header().Set("X-Hturnal-From", portData.From)
 				w.Header().Set("X-Hturnal-Timestamp", fmt.Sprintf("%d", portData.Timestamp.Unix()))
 				w.Write(portData.Data)
 				return
 			}
 		default:
-			// 没有数据，继续等待
+			time.Sleep(100 * time.Millisecond)
 		}
-
-		time.Sleep(100 * time.Millisecond)
 	}
 
-	// 超时
+	log.Printf("[RelayReceive] Timeout waiting for data, receiverID=%s", receiverID)
 	w.WriteHeader(http.StatusNoContent)
 }

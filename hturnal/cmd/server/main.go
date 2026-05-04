@@ -96,8 +96,10 @@ func wrap(h http.HandlerFunc) http.HandlerFunc {
 			return
 		}
 
-		// JSON content type
-		w.Header().Set("Content-Type", "application/json")
+		// JSON content type (skip for /relay/ paths, they set their own Content-Type)
+		if len(r.URL.Path) < 6 || r.URL.Path[:6] != "/relay/" {
+			w.Header().Set("Content-Type", "application/json")
+		}
 
 		// Execute handler
 		h(w, r)
