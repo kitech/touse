@@ -3,6 +3,7 @@
 package storage
 
 import (
+	"log"
 	"sync"
 	"time"
 )
@@ -160,6 +161,53 @@ func (s *memoryStorage) cleanupExpired() {
 	for id, stream := range s.streams {
 		if now.After(stream.ExpiresAt) {
 			delete(s.streams, id)
+		}
+	}
+
+	// Clean timed out TCP connections (but don't release allocation, wait for Refresh to expire)
+	for relayID, alloc := range s.turnAllocations {
+		if alloc.Connections != nil {
+			alloc.Mu.Lock()
+			for connID, tcpConn := range alloc.Connections {
+				shouldCleanup := false
+
+				// Condition 1: Connection timed out (no activity for 5 minutes)
+				if time.Since(tcpConn.LastActivity) > 5*time.Minute {
+					shouldCleanup = true
+					log.Printf("[Cleanup] TCP connection %s timed out (last activity: %v)",
+						connID, tcpConn.LastActivity)
+				}
+
+				// Condition 2: Connection was explicitly closed
+				if tcpConn.Closed {
+					shouldCleanup = true
+					log.Printf("[Cleanup] TCP connection %s was closed", connID)
+				}
+
+				if shouldCleanup && !tcpConn.Closed {
+					tcpConn.Closed = true
+
+					// Safely close channels (use recover to avoid panic from double close)
+					func() {
+						defer func() {
+							if r := recover(); r != nil {
+								log.Printf("[Cleanup] Recovered from panic when closing channels for %s: %v", connID, r)
+							}
+						}()
+
+						// Close channels to signal connection is dead
+						close(tcpConn.Incoming)
+						close(tcpConn.Outgoing)
+					}()
+
+					// Remove from map and cleanup backoff/metrics
+					delete(alloc.Connections, connID)
+					delete(alloc.BackoffMap, connID)
+					delete(alloc.MetricsMap, connID)
+					log.Printf("[Cleanup] Removed TCP connection %s from allocation %s", connID, relayID)
+				}
+			}
+			alloc.Mu.Unlock()
 		}
 	}
 }

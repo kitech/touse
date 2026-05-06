@@ -5,7 +5,7 @@
 //
 // 1. Start hturnal server:
 //
-//      cd /home/gzleo/aprog/touse/hturnal
+//      cd ~/aprog/touse/hturnal
 //      go build -o server ./cmd/server
 //      ./server
 //

@@ -39,7 +39,7 @@ func main() {
 	if port == "" {
 		port = "8181"
 	}
-	addr := ":" + port
+	addr := "0.0.0.0:" + port
 
 	log.Printf("Starting hturnal server on %s", addr)
 	log.Fatal(http.ListenAndServe(addr, nil))
@@ -78,8 +78,11 @@ func setupRoutes(store storage.Storage) {
 	http.HandleFunc("/turn/tcp/deallocate", wrap(turn.NewTCPDeallocateHandler(store)))
 
 	// TCP Relay endpoint
-	http.HandleFunc("/relay/tcp/", wrap(turn.NewTCPRelayHandler(store)))
-}
+		http.HandleFunc("/relay/tcp/", wrap(turn.NewTCPRelayHandler(store)))
+
+		// Debug stats endpoint
+		http.HandleFunc("/debug/stats", wrap(turn.StatsHandler(store)))
+	}
 
 // wrap adds common middleware: CORS, logging, content type
 func wrap(h http.HandlerFunc) http.HandlerFunc {

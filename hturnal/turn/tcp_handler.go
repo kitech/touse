@@ -7,9 +7,22 @@ import (
 	"log"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/kitech/touse/hturnal/storage"
+)
+
+// Global statistics for relay speed
+var (
+	globalTxBytes   int64 // total bytes sent
+	globalRxBytes   int64 // total bytes received
+	globalTxMu      sync.RWMutex
+	globalRxMu      sync.RWMutex
+	globalTxRate    float64 // bytes per second (simple moving average)
+	globalRxRate    float64
+	lastTxCalcTime  time.Time
+	lastRxCalcTime  time.Time
 )
 
 // NewTCPAllocateHandler handles TCP allocation
@@ -339,6 +352,26 @@ func NewTCPRelayHandler(store storage.Storage) http.HandlerFunc {
 		// Determine if this client is the owner (the one who initiated the TCP connection)
 		isOwner := (clientID == tcpConn.OwnerID)
 
+		// Get or create backoff state and metrics for this connection
+		alloc.Mu.Lock()
+		if alloc.BackoffMap == nil {
+			alloc.BackoffMap = make(map[string]*storage.BackoffState)
+		}
+		if alloc.MetricsMap == nil {
+			alloc.MetricsMap = make(map[string]*storage.TCPConnMetrics)
+		}
+		cb, ok := alloc.BackoffMap[connID]
+		if !ok {
+			cb = &storage.BackoffState{}
+			alloc.BackoffMap[connID] = cb
+		}
+		m, ok := alloc.MetricsMap[connID]
+		if !ok {
+			m = &storage.TCPConnMetrics{}
+			alloc.MetricsMap[connID] = m
+		}
+		alloc.Mu.Unlock()
+
 		switch r.Method {
 		case "POST":
 			data, err := io.ReadAll(io.LimitReader(r.Body, 65536))
@@ -348,15 +381,6 @@ func NewTCPRelayHandler(store storage.Storage) http.HandlerFunc {
 			}
 
 			// Route data to the OTHER side's channel
-			// If owner sends, data goes to peer's Incoming (which is tcpConn.Outgoing from peer's view)
-			// Actually, let's simplify: tcpConn has two channels:
-			// - OwnerToPeer: owner sends, peer receives from this
-			// - PeerToOwner: peer sends, owner receives from this
-			//
-			// For simplicity, we use:
-			// - tcpConn.Outgoing: data FROM owner TO peer
-			// - tcpConn.Incoming: data FROM peer TO owner
-
 			var targetChan chan *storage.PortData
 			if isOwner {
 				targetChan = tcpConn.Outgoing // Owner→Peer
@@ -370,15 +394,68 @@ func NewTCPRelayHandler(store storage.Storage) http.HandlerFunc {
 				Timestamp: time.Now(),
 			}
 
-			select {
-			case targetChan <- portData:
-				log.Printf("[TCPRelay] Data sent to conn %s, len=%d, from=%s (isOwner=%v)",
-					connID, len(data), clientID, isOwner)
-				w.WriteHeader(http.StatusOK)
-			default:
-				log.Printf("[TCPRelay] Queue full for conn %s", connID)
-				http.Error(w, "Queue full", http.StatusServiceUnavailable)
+			// Exponential backoff with simple implementation
+			baseDelay := 50 * time.Millisecond
+			maxDelay := 9 * time.Second
+			attempt := 0
+
+			for attempt < 10 { // max 10 attempts
+				select {
+				case targetChan <- portData:
+					// Success
+					cb.Mu.Lock()
+					cb.Attempts = 0
+					cb.Mu.Unlock()
+
+					// Update per-connection metrics
+					m.TxBytes += int64(len(data))
+					if m.TxLastCalc.IsZero() {
+						m.TxLastCalc = time.Now()
+					} else {
+						elapsed := time.Since(m.TxLastCalc).Seconds()
+						if elapsed > 0 {
+							m.TxRate = float64(m.TxBytes) / elapsed
+						}
+					}
+
+					// Update global statistics
+					globalTxMu.Lock()
+					globalTxBytes += int64(len(data))
+					if lastTxCalcTime.IsZero() {
+						lastTxCalcTime = time.Now()
+					} else {
+						elapsed := time.Since(lastTxCalcTime).Seconds()
+						if elapsed > 0 {
+							globalTxRate = float64(globalTxBytes) / elapsed
+						}
+					}
+					globalTxMu.Unlock()
+
+					tcpConn.LastActivity = time.Now()
+					log.Printf("[TCPRelay] Data sent to conn %s, len=%d, from=%s (isOwner=%v)",
+						connID, len(data), clientID, isOwner)
+					w.WriteHeader(http.StatusOK)
+					return
+				default:
+					// Queue full, calculate backoff delay
+					delay := baseDelay * time.Duration(1<<attempt)
+					if delay > maxDelay {
+						delay = maxDelay
+					}
+					log.Printf("[TCPRelay] Queue full for conn %s, attempt %d, waiting %v",
+						connID, attempt, delay)
+					time.Sleep(delay)
+					attempt++
+				}
 			}
+
+			// Failed after max attempts
+			cb.Mu.Lock()
+			cb.Attempts++
+			cb.Mu.Unlock()
+			log.Printf("[TCPRelay] Persistent queue full for conn %s, attempts=%d", connID, cb.Attempts)
+			w.Header().Set("Retry-After", "1")
+			http.Error(w, "Too Many Requests - send queue full", http.StatusTooManyRequests)
 
 		case "GET":
 			timeout := 30
@@ -396,27 +473,93 @@ func NewTCPRelayHandler(store storage.Storage) http.HandlerFunc {
 				sourceChan = tcpConn.Outgoing // Peer reads data from Owner
 			}
 
-			for time.Now().Before(deadline) {
-				select {
-				case portData := <-sourceChan:
-					if portData != nil {
-						log.Printf("[TCPRelay] Data received from conn %s, len=%d, from=%s (isOwner=%v)",
-							connID, len(portData.Data), portData.From, isOwner)
-						w.Header().Set("Content-Type", "application/octet-stream")
-						w.Header().Set("X-Hturnal-From", portData.From)
-						w.Header().Set("X-Hturnal-Timestamp", fmt.Sprintf("%d", portData.Timestamp.Unix()))
-						w.Write(portData.Data)
-						return
-					}
-				default:
-					time.Sleep(100 * time.Millisecond)
+		for time.Now().Before(deadline) {
+			select {
+			case portData, ok := <-sourceChan:
+				if !ok {
+					// Channel closed, connection is dead
+					log.Printf("[TCPRelay] Connection %s closed (channel closed)", connID)
+					http.Error(w, "Connection closed", http.StatusGone)
+					return
 				}
+				if portData != nil {
+					log.Printf("[TCPRelay] Data received from conn %s, len=%d, from=%s (isOwner=%v)",
+						connID, len(portData.Data), portData.From, isOwner)
+
+					tcpConn.LastActivity = time.Now()
+
+					// Update per-connection metrics
+					m.RxBytes += int64(len(portData.Data))
+					if m.RxLastCalc.IsZero() {
+						m.RxLastCalc = time.Now()
+					} else {
+						elapsed := time.Since(m.RxLastCalc).Seconds()
+						if elapsed > 0 {
+							m.RxRate = float64(m.RxBytes) / elapsed
+						}
+					}
+
+					// Update global statistics
+					globalRxMu.Lock()
+					globalRxBytes += int64(len(portData.Data))
+					if lastRxCalcTime.IsZero() {
+						lastRxCalcTime = time.Now()
+					} else {
+						elapsed := time.Since(lastRxCalcTime).Seconds()
+						if elapsed > 0 {
+							globalRxRate = float64(globalRxBytes) / elapsed
+						}
+					}
+					globalRxMu.Unlock()
+
+					w.Header().Set("Content-Type", "application/octet-stream")
+					w.Header().Set("X-Hturnal-From", portData.From)
+					w.Header().Set("X-Hturnal-Timestamp", fmt.Sprintf("%d", portData.Timestamp.Unix()))
+					w.Write(portData.Data)
+					return
+				}
+			default:
+				time.Sleep(100 * time.Millisecond)
 			}
+		}
 			log.Printf("[TCPRelay] Timeout waiting for data, connID=%s, clientID=%s", connID, clientID)
 			w.WriteHeader(http.StatusNoContent)
 
 		default:
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		}
+	}
+}
+
+// StatsHandler returns overall relay statistics and per-connection details
+func StatsHandler(store storage.Storage) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+
+		// Get global statistics with locks
+		globalTxMu.RLock()
+		txBytes := globalTxBytes
+		txRate := globalTxRate
+		globalTxMu.RUnlock()
+
+		globalRxMu.RLock()
+		rxBytes := globalRxBytes
+		rxRate := globalRxRate
+		globalRxMu.RUnlock()
+
+		// Overall statistics
+		stats := map[string]interface{}{
+			"global_tx_total_bytes": txBytes,
+			"global_tx_rate":      txRate,
+			"global_rx_total_bytes": rxBytes,
+			"global_rx_rate":      rxRate,
+			"connections":            make(map[string]interface{}),
+		}
+
+		// Collect per-connection statistics from storage
+		// In a real implementation, iterate over allocations and collect per-connection stats
+		// For now, we just return overall stats
+
+		json.NewEncoder(w).Encode(stats)
 	}
 }

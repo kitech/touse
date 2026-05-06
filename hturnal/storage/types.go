@@ -23,6 +23,8 @@ type TCPConnection struct {
 	Incoming    chan *PortData  // Data from peer to owner
 	Outgoing    chan *PortData  // Data from owner to peer
 	CreatedAt   time.Time
+	LastActivity time.Time      // Last activity time for timeout detection
+	Closed      bool            // Whether the connection has been closed
 }
 
 // TURNAllocation stores TURN relay allocation
@@ -41,6 +43,26 @@ type TURNAllocation struct {
 	// TCP connection management
 	PendingConnections chan *TCPConnection           // 待接受的 TCP 连接
 	Connections        map[string]*TCPConnection     // connID -> connection
+
+	// TCP connection backoff and metrics (json:"-" to avoid serialization)
+	BackoffMap  map[string]*BackoffState  `json:"-"`
+	MetricsMap  map[string]*TCPConnMetrics `json:"-"`
+}
+
+// BackoffState stores exponential backoff state for a TCP connection
+type BackoffState struct {
+	Mu       sync.Mutex
+	Attempts int
+}
+
+// TCPConnMetrics stores metrics for a TCP connection
+type TCPConnMetrics struct {
+	TxBytes     int64     // total bytes sent
+	RxBytes     int64     // total bytes received
+	TxLastCalc  time.Time // last rate calculation time
+	RxLastCalc  time.Time
+	TxRate      float64   // bytes per second (simple moving average)
+	RxRate      float64
 }
 
 // PortData represents data in relay port queues (原始二进制+元信息)
