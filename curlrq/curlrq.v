@@ -1,3 +1,4 @@
+@[has_globals]
 module curlrq
 
 #flag -lcurl
@@ -62,6 +63,73 @@ pub:
 	max_response_size  int
 	verify_ssl         bool
 	user_data          voidptr
+}
+
+__global default_eng &C.curlrq_engine_t
+
+fn default_engine() &C.curlrq_engine_t {
+	if default_eng == 0 {
+		default_eng = C.curlrq_init(3)
+	}
+	return default_eng
+}
+
+pub fn init(max_concurrent int) {
+	if default_eng == 0 {
+		default_eng = C.curlrq_init(max_concurrent)
+	}
+}
+
+pub fn add(req Request, cb Callback) ! {
+	e := Engine{default_engine()}
+	e.add(req, cb)!
+}
+
+pub fn wait() {
+	C.curlrq_wait(default_engine())
+}
+
+pub fn pending() int {
+	return C.curlrq_pending(default_engine())
+}
+
+pub fn active() int {
+	return C.curlrq_active(default_engine())
+}
+
+pub fn response_free(resp &C.curlrq_response_t) {
+	C.curlrq_response_free(resp)
+}
+
+pub fn cleanup() {
+	if default_eng != 0 {
+		C.curlrq_cleanup(default_eng)
+		default_eng = unsafe { nil }
+	}
+}
+
+pub fn set_max_queue_len(max_len int) {
+	C.curlrq_set_max_queue_len(default_engine(), max_len)
+}
+
+pub fn set_default_timeout_ms(ms int) {
+	C.curlrq_set_default_timeout_ms(default_engine(), ms)
+}
+
+pub fn set_default_connect_timeout_ms(ms int) {
+	C.curlrq_set_default_connect_timeout_ms(default_engine(), ms)
+}
+
+pub fn set_default_max_response_size(size int) {
+	C.curlrq_set_default_max_response_size(default_engine(), size)
+}
+
+pub fn set_default_verify_ssl(verify bool) {
+	C.curlrq_set_default_verify_ssl(default_engine(), if verify { 1 } else { 0 })
+}
+
+pub fn set_default_header(header string) {
+	C.curlrq_set_default_header(default_engine(), header.str)
 }
 
 pub struct Engine {
