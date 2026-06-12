@@ -64,18 +64,6 @@ pub:
 	user_data          voidptr
 }
 
-pub fn init(max_concurrent int) &C.curlrq_engine_t {
-	return C.curlrq_init(max_concurrent)
-}
-
-pub fn cleanup(engine &C.curlrq_engine_t) {
-	C.curlrq_cleanup(engine)
-}
-
-pub fn response_free(resp &C.curlrq_response_t) {
-	C.curlrq_response_free(resp)
-}
-
 pub struct Engine {
 	handle &C.curlrq_engine_t
 }
