@@ -9,5 +9,6 @@
 (load "configvars.el")
 (load "switch-buffer.el")
 (load "keymaps.el")
+(run-with-idle-timer 2 nil #'load "locale-zh")
 
 (provide 'emlut)

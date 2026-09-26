@@ -78,7 +78,9 @@
 
 
 ;; menu-bar and tool-bar and tab-line theme
-(set-face-attribute 'menu nil :background "#1C1C1C" :foreground "#DCDCCC" :bold t)
+(set-face-attribute 'menu nil
+  :background "#1C1C1C" :foreground "#DCDCCC" :bold t
+  :family "WenQuanYi Micro Hei")
 (set-face-attribute 'mode-line nil :background "gray20" :foreground "#DCDCDC")
 (set-face-attribute 'tool-bar nil :background "#1C1C1C" :foreground "#DCDCCC" :bold t)
 (set-face-attribute 'tab-line nil :background "gray20" :foreground "gray80" :bold t)
@@ -107,6 +109,9 @@
 (when (member "Segoe UI Emoji" (font-family-list))
   (set-fontset-font
     t 'symbol (font-spec :family "Segoe UI Emoji") nil 'prepend))
+
+;; UTF-8 语言环境，确保 GTK 菜单 CJK 编码正确
+(set-language-environment 'UTF-8)
 
 (setq initial-frame-alist '((top . 0) (left . 80) (width . 126) (height . 33)))
 ; (add-to-list 'initial-frame-alist '(fullscreen . maximized))
@@ -138,6 +143,13 @@
   (interactive)
   (message "Hello, world!"))
 
+;;; Devin 菜单新增命令
+(defun my-toggle-cua-mode ()
+  "Toggle `cua-mode' on/off. C-RET to start column (rectangle) selection."
+  (interactive)
+  (cua-mode 'toggle)
+  (message "CUA mode %s" (if cua-mode "enabled (C-RET for column selection)" "disabled")))
+
 (require 'easymenu)
 ; (easy-menu-add-item global-map '("Tools")
 ;                     '("My Custom Command" . my-custom-command)
@@ -152,6 +164,11 @@
 ;; for custom set-face, set-option with tabbed multiple category support
 (define-key my-menu-bar-menu-devin [my-cmd6] '("配置管理 UI" . my-custom-command))
 (define-key my-menu-bar-menu-devin [my-cmd7] '("包管理 UI" . my-package-popup))
+
+;;; Devin 菜单新增项
+(define-key my-menu-bar-menu-devin [my-column-sel]  '("Column Selection" . my-toggle-cua-mode))
+(define-key my-menu-bar-menu-devin [my-split-below] '("Split Window Below" . split-window-below))
+(define-key my-menu-bar-menu-devin [my-split-right] '("Split Window Right"  . split-window-right))
 
 (defvar my-menu-bar-menu1 (make-sparse-keymap "Mine1"))
 (define-key-after global-map [menu-bar my-menu1] (cons "Mine1" my-menu-bar-menu1) 'Tools)
@@ -407,6 +424,6 @@
 ;; and basic editor visible then load it
 
 ;; (message (format "%s" (my-emver)))
-(if (file-exists-p my-emloc-zhdir)
-    (add-hook 'window-setup-hook 'my-load-loczh)
-  (message (format "dir not exist %s" my-emloc-zhdir)))
+;; (if (file-exists-p my-emloc-zhdir)
+;;     (add-hook 'window-setup-hook 'my-load-loczh)
+;;   (message (format "dir not exist %s" my-emloc-zhdir)))
