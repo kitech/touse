@@ -73,7 +73,8 @@ pub mut:
 }
 pub type SourceRange = C.CXSourceRange
 
-@[typedef]
+// @[typedef]
+
 pub struct C.CXUnsavedFile {
 pub mut:
 	filename &char
