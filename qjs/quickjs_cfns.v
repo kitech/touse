@@ -43,6 +43,7 @@ pub mut:
 pub type JSValue = C.JSValue
 
 // 辅助：union 字段的各种 reinterpret 访问。
+// 通过 voidptr 中转，兼容 u 字段是 union 或 u64 的情况。
 @[inline]
 pub fn (v JSValue) get_tag() i64 {
 	return v.tag
@@ -50,40 +51,79 @@ pub fn (v JSValue) get_tag() i64 {
 
 @[inline]
 pub fn (v JSValue) get_i32() i32 {
-	return i32(v.u & 0xFFFF_FFFF)
+	return unsafe { *(&i32(voidptr(&v.u))) }
 }
 
 @[inline]
 pub fn (v JSValue) get_bool() bool {
-	return (v.u & 0xFFFF_FFFF) != 0
+	return unsafe { *(&u32(voidptr(&v.u))) != 0 }
 }
 
 @[inline]
 pub fn (v JSValue) get_f64() f64 {
-	mut out := f64(0)
-	unsafe {
-		vmemcpy(&out, &v.u, sizeof(f64))
-	}
-	return out
+	return unsafe { *(&f64(voidptr(&v.u))) }
 }
 
 @[inline]
 pub fn (v JSValue) get_ptr() voidptr {
-	return voidptr(v.u)
+	return unsafe { *(&voidptr(voidptr(&v.u))) }
 }
 
 @[inline]
 pub fn (v JSValue) get_int64() i64 {
-	return i64(v.u)
+	return unsafe { *(&i64(voidptr(&v.u))) }
 }
 
 // 构造：mk_val(tag, u64 payload)
+// 通过内存写入，避免依赖 u 字段的静态类型。
 @[inline]
 pub fn mk_val(tag i64, payload u64) JSValue {
-	return JSValue{
-		u:   payload
-		tag: tag
+	mut v := JSValue{ tag: tag }
+	unsafe {
+		*(&u64(voidptr(&v.u))) = payload
 	}
+	return v
+}
+
+// ─── 引用计数辅助（用内存 reinterpret，兼容 u 是 union 或 u64）──────────
+// 取 union 起始地址，按 voidptr 解释（union 前 8 字节就是指针/refcount 指针）
+@[inline]
+fn union_as_ptr(v JSValue) voidptr {
+	return unsafe { *(&voidptr(voidptr(&v.u))) }
+}
+
+// refcount 位于 JSValue 指向对象的起始 4 字节
+@[inline]
+fn refcount_ptr(v JSValue) &u32 {
+	return unsafe { &u32(union_as_ptr(v)) }
+}
+
+// 等价于 QuickJS 的 JS_VALUE_HAS_REF_COUNT（注意：无符号比较）
+@[inline]
+fn value_has_ref_count(v JSValue) bool {
+	return u32(v.tag) >= u32(i32(tag_first))
+}
+
+// JSValue JS_DupValue(JSContext *, JSValue)
+pub fn dup_value(ctx voidptr, v JSValue) JSValue {
+	if value_has_ref_count(v) {
+		p := refcount_ptr(v)
+		unsafe {
+			*p = *p + 1
+		}
+	}
+	return v
+}
+
+// JSValue JS_DupValueRT(JSRuntime *, JSValue)
+pub fn dup_value_rt(rt voidptr, v JSValue) JSValue {
+	if value_has_ref_count(v) {
+		p := refcount_ptr(v)
+		unsafe {
+			*p = *p + 1
+		}
+	}
+	return v
 }
 
 // ─── 常用 JS_TAG_* 常量（补全，配合 tag 字段使用）─────────────────────────
@@ -282,42 +322,51 @@ pub fn is_object(v JSValue) bool {
 	return v.tag == tag_object
 }
 
-// JSValue JS_DupValue(JSContext *, JSValue)  → 有引用计数时 ref_count++
-@[inline]
-pub fn dup_value(ctx voidptr, v JSValue) JSValue {
-	if v.tag >= tag_first {
-		p := unsafe { &u32(voidptr(v.u)) }
-		unsafe {
-			*p = *p + 1
-		}
-	}
-	return v
-}
-
-// JSValue JS_DupValueRT(JSRuntime *, JSValue)
-@[inline]
-pub fn dup_value_rt(rt voidptr, v JSValue) JSValue {
-	if v.tag >= tag_first {
-		p := unsafe { &u32(voidptr(v.u)) }
-		unsafe {
-			*p = *p + 1
-		}
-	}
-	return v
-}
 
 fn C.__JS_FreeValue(ctx voidptr, v C.JSValue) cvoid
 
 fn C.__JS_FreeValueRT(rt voidptr, v C.JSValue) cvoid
 
+
+// JSValue JS_NewInt64(JSContext *, int64_t)  → int32 可表示时走 JS_NewInt32，否则走 __JS_NewFloat64
+// int32 可表示时走 JS_NewInt32，否则走 JS_NewFloat64。
+// 不能调 C.__JS_NewFloat64：static inline，无外部符号，链接失败。
+@[inline]
+pub fn new_int64(ctx voidptr, val i64) JSValue {
+	if val >= i64(min_i32) && val <= i64(max_i32) {
+		return C.JS_NewInt32(ctx, i32(val))
+	}
+	return C.JS_NewFloat64(ctx, f64(val))
+}
+
+// JSValue __JS_NewFloat64(JSContext *, double) —— 用公开 API 替代
+pub fn __js_new_float64(ctx voidptr, d f64) JSValue {
+	return C.JS_NewFloat64(ctx, d)
+}
+
+// JSValue __JS_NewShortBigInt(JSContext *, int64_t) —— 用公开 API 替代
+pub fn __js_new_short_big_int(ctx voidptr, d i64) JSValue {
+	return C.JS_NewBigInt64(ctx, d)
+}
+
+// 下面这两个 fn C. 声明一起删掉，避免和头文件原型冲突：
+// fn C.__JS_NewFloat64(ctx voidptr, d f64) C.JSValue
+// fn C.__JS_NewShortBigInt(ctx voidptr, d i64) C.JSValue
+
+// 声明真正的外部释放函数（RT 版本在 quickjs.c 里是非 static 的）
+fn C.JS_FreeValueRT(rt voidptr, v C.JSValue) cvoid
+fn C.JS_FreeValue(ctx voidptr, v C.JSValue) cvoid
+
 // void JS_FreeValue(JSContext *, JSValue)
 pub fn free_value(ctx voidptr, v JSValue) {
-	if v.tag >= tag_first {
-		p := unsafe { &u32(voidptr(v.u)) }
+	if value_has_ref_count(v) {
+		p := refcount_ptr(v)
 		unsafe {
 			*p = *p - 1
 			if *p == 0 {
-				C.__JS_FreeValue(ctx, v)
+				// 用 RT 版本释放，ctx 可以通过 JS_GetRuntime 拿到
+				rt := C.JS_GetRuntime(ctx)
+				C.JS_FreeValue(rt, v)
 			}
 		}
 	}
@@ -325,41 +374,17 @@ pub fn free_value(ctx voidptr, v JSValue) {
 
 // void JS_FreeValueRT(JSRuntime *, JSValue)
 pub fn free_value_rt(rt voidptr, v JSValue) {
-	if v.tag >= tag_first {
-		p := unsafe { &u32(voidptr(v.u)) }
+	if value_has_ref_count(v) {
+		p := refcount_ptr(v)
 		unsafe {
 			*p = *p - 1
 			if *p == 0 {
-				C.__JS_FreeValueRT(rt, v)
+				C.JS_FreeValueRT(rt, v)
 			}
 		}
 	}
 }
 
-// JSValue __JS_NewFloat64(JSContext *, double)
-fn C.__JS_NewFloat64(ctx voidptr, d f64) C.JSValue
-
-// JSValue __JS_NewFloat64(JSContext *, double)
-pub fn __js_new_float64(ctx voidptr, d f64) JSValue {
-	return C.__JS_NewFloat64(ctx, d)
-}
-
-// JSValue __JS_NewShortBigInt(JSContext *, int64_t)
-fn C.__JS_NewShortBigInt(ctx voidptr, d i64) C.JSValue
-
-// JSValue __JS_NewShortBigInt(JSContext *, int64_t)
-pub fn __js_new_short_big_int(ctx voidptr, d i64) JSValue {
-	return C.__JS_NewShortBigInt(ctx, d)
-}
-
-// JSValue JS_NewInt64(JSContext *, int64_t)  → int32 可表示时走 JS_NewInt32，否则走 __JS_NewFloat64
-@[inline]
-pub fn new_int64(ctx voidptr, val i64) JSValue {
-	if val >= i64(min_i32) && val <= i64(max_i32) {
-		return C.JS_NewInt32(ctx, i32(val))
-	}
-	return C.__JS_NewFloat64(ctx, f64(val))
-}
 
 // ─── JSRuntime ─────────────────────────────────────────────────────────────
 // JSRuntime * JS_NewRuntime()
@@ -563,13 +588,14 @@ pub fn add_intrinsic_eval(ctx voidptr) {
 	C.JS_AddIntrinsicEval(ctx)
 }
 
+// gone
 // void JS_AddIntrinsicStringNormalize(JSContext *)
-fn C.JS_AddIntrinsicStringNormalize(ctx voidptr) cvoid
+// fn C.JS_AddIntrinsicStringNormalize(ctx voidptr) cvoid
 
 // void JS_AddIntrinsicStringNormalize(JSContext *)
-pub fn add_intrinsic_string_normalize(ctx voidptr) {
-	C.JS_AddIntrinsicStringNormalize(ctx)
-}
+// pub fn add_intrinsic_string_normalize(ctx voidptr) {
+//	C.JS_AddIntrinsicStringNormalize(ctx)
+// }
 
 // void JS_AddIntrinsicRegExpCompiler(JSContext *)
 fn C.JS_AddIntrinsicRegExpCompiler(ctx voidptr) cvoid
@@ -846,12 +872,15 @@ pub fn value_to_atom(ctx voidptr, val JSValue) u32 {
 }
 
 // ─── Class ────────────────────────────────────────────────────────────────
-// JSClassID JS_NewClassID(JSClassID *)
-fn C.JS_NewClassID(pclass_id &u32) u32
 
-// JSClassID JS_NewClassID(JSClassID *)
-pub fn new_class_id(pclass_id &u32) u32 {
-	return C.JS_NewClassID(pclass_id)
+// void JS_NewClassID(JSRuntime *, JSClassID *)
+fn C.JS_NewClassID(rt voidptr, pclass_id &u32) cvoid
+
+// void JS_NewClassID(JSRuntime *, JSClassID *)
+// 保持"返回 class_id"的便利 API
+pub fn new_class_id(rt voidptr, pclass_id &u32) u32 {
+	C.JS_NewClassID(rt, pclass_id)
+	return *pclass_id
 }
 
 // JSClassID JS_GetClassID(JSValue)
@@ -969,11 +998,13 @@ pub fn has_exception(ctx voidptr) bool {
 }
 
 // int JS_IsError(JSContext *, JSValue)
-fn C.JS_IsError(ctx voidptr, val C.JSValue) cint
+// quickjs origin fn C.JS_IsError(ctx voidptr, val C.JSValue) int
+// quickjs-ng
+fn C.JS_IsError(val C.JSValue) int
 
 // int JS_IsError(JSContext *, JSValue)
 pub fn is_error(ctx voidptr, val JSValue) bool {
-	return C.JS_IsError(ctx, val) != 0
+	return C.JS_IsError(val) != 0
 }
 
 // void JS_SetUncatchableError(JSContext *, JSValue, int)
@@ -1049,6 +1080,7 @@ pub fn throw_out_of_memory(ctx voidptr) JSValue {
 }
 
 // ─── 比较 / 转换 ─────────────────────────────────────────────────────────
+/*
 // int JS_StrictEq(JSContext *, JSValue, JSValue)
 fn C.JS_StrictEq(ctx voidptr, op1 C.JSValue, op2 C.JSValue) cint
 
@@ -1071,6 +1103,71 @@ fn C.JS_SameValueZero(ctx voidptr, op1 C.JSValue, op2 C.JSValue) cint
 // int JS_SameValueZero(JSContext *, JSValue, JSValue)
 pub fn same_value_zero(ctx voidptr, op1 JSValue, op2 JSValue) bool {
 	return C.JS_SameValueZero(ctx, op1, op2) != 0
+}
+*/
+
+// ─── 重写：JS_StrictEq / JS_SameValue / JS_SameValueZero ──────────────────
+// 这三个函数在旧版 libqjs 中不存在（2025-05 才引入）。
+// 改为在 V 侧纯实现，避免链接错误。
+
+// JS 严格相等（===）
+// 规则：类型相同且值相同。对象/字符串/符号等比较引用。
+pub fn strict_eq(ctx voidptr, op1 JSValue, op2 JSValue) bool {
+	if op1.tag != op2.tag {
+		return false
+	}
+	return match op1.tag {
+		tag_int { op1.get_i32() == op2.get_i32() }
+		tag_bool { op1.get_bool() == op2.get_bool() }
+		tag_float64 {
+			// NaN !== NaN，+0 === -0
+			if js_value_is_nan(op1) || js_value_is_nan(op2) {
+				return false
+			}
+			op1.get_f64() == op2.get_f64()
+		}
+		tag_null, tag_undefined { true }
+		else {
+			// 字符串/对象/符号/BigInt 等有引用计数的类型，比较指针地址
+			op1.get_ptr() == op2.get_ptr()
+		}
+	}
+}
+
+// JS SameValue（与 Object.is 语义一致）
+// 与 strict_eq 的区别：NaN 与 NaN 相等，+0 与 -0 不相等。
+pub fn same_value(ctx voidptr, op1 JSValue, op2 JSValue) bool {
+	if op1.tag != op2.tag {
+		return false
+	}
+	if op1.tag == tag_float64 {
+		// NaN 与 NaN 相等
+		if js_value_is_nan(op1) && js_value_is_nan(op2) {
+			return true
+		}
+		// +0 与 -0 不相等，需要比较符号位
+		if op1.get_f64() == 0.0 && op2.get_f64() == 0.0 {
+			return math.signbit(op1.get_f64()) == math.signbit(op2.get_f64())
+		}
+		return op1.get_f64() == op2.get_f64()
+	}
+	return strict_eq(ctx, op1, op2)
+}
+
+// JS SameValueZero（与 SameValue 类似，但 +0 与 -0 视为相等）
+pub fn same_value_zero(ctx voidptr, op1 JSValue, op2 JSValue) bool {
+	if op1.tag != op2.tag {
+		return false
+	}
+	if op1.tag == tag_float64 {
+		// NaN 与 NaN 相等
+		if js_value_is_nan(op1) && js_value_is_nan(op2) {
+			return true
+		}
+		// +0 与 -0 视为相等，直接比较数值即可
+		return op1.get_f64() == op2.get_f64()
+	}
+	return strict_eq(ctx, op1, op2)
 }
 
 // int JS_ToBool(JSContext *, JSValue)
@@ -1276,11 +1373,11 @@ pub fn new_array(ctx voidptr) JSValue {
 }
 
 // int JS_IsArray(JSContext *, JSValue)
-fn C.JS_IsArray(ctx voidptr, val C.JSValue) cint
+fn C.JS_IsArray(/*ctx voidptr,*/ val C.JSValue) cint
 
 // int JS_IsArray(JSContext *, JSValue)
 pub fn is_array(ctx voidptr, val JSValue) bool {
-	return C.JS_IsArray(ctx, val) != 0
+	return C.JS_IsArray(/*ctx,*/ val) != 0
 }
 
 // JSValue JS_NewDate(JSContext *, double)
