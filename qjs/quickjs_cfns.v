@@ -26,6 +26,11 @@ $if !use_raw_qjs ? {
 }
 #flag -lqjs
 
+fn C.JS_GetVersion() charptr
+pub fn get_version() string {
+	return tos2(C.JS_GetVersion())
+}
+
 // ─── JSValue 核心类型（补全）──────────────────────────────────────────────
 // C 侧定义（quickjs.h）：
 //   typedef union { int32_t int32; double float64; void* ptr; int64_t short_big_int; } JSValueUnion;

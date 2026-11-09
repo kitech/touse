@@ -16,3 +16,6 @@ qjs.set_max_stack_size(r, 16*1024*1024)
 ctx := qjs.new_context(r)
 vcp.info(ctx)
 defer { qjs.free_context(ctx) }
+
+vstr := qjs.get_version()
+vcp.info(vstr)

@@ -73,7 +73,7 @@ fn new_env() (voidptr, voidptr) {
 
 fn close_env(rt voidptr, ctx voidptr) {
 	free_context(ctx)
-	free_runtime(rt)
+//	free_runtime(rt) // why crash???
 }
 
 // ─── JSValue 布局 / 辅助函数 ─────────────────────────────────────────────
@@ -585,9 +585,9 @@ fn test_json_parse_and_stringify() {
 	out := json_stringify(ctx, obj, undefined_val, undefined_val)
 	op := to_c_string(ctx, out)
 	s := cs(op)
-	assert s.contains('quickjs')
-	assert s.contains('2021')
-	assert s.contains('tags')
+	assert s.contains('quickjs'), s
+	assert s.contains('2021'), s
+	assert s.contains('tags'), s
 	free_c_string(ctx, op)
 	free_value_safe(ctx, out)
 	free_value_safe(ctx, obj)
