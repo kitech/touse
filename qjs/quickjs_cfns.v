@@ -47,6 +47,32 @@ pub mut:
 // 兼容别名
 pub type JSValue = C.JSValue
 
+// quickjs-ng 相关结构体的 V 侧布局（@[typedef] 表示等价 C 结构体）
+@[typedef]
+pub struct C.JSPropertyEnum {
+pub mut:
+	is_enumerable bool
+	atom          u32
+}
+
+@[typedef]
+pub struct C.JSPropertyDescriptor {
+pub mut:
+	flags  cint
+	value  C.JSValue
+	getter C.JSValue
+	setter C.JSValue
+}
+
+@[typedef]
+pub struct C.JSEvalOptions {
+pub mut:
+	version    cint
+	eval_flags cint
+	filename   byteptr
+	line_num   cint
+}
+
 // 辅助：union 字段的各种 reinterpret 访问。
 // 通过 voidptr 中转，兼容 u 字段是 union 或 u64 的情况。
 @[inline]
@@ -568,13 +594,6 @@ pub fn add_intrinsic_eval(ctx voidptr) {
 }
 
 // gone
-// void JS_AddIntrinsicStringNormalize(JSContext *)
-// fn C.JS_AddIntrinsicStringNormalize(ctx voidptr) cvoid
-
-// void JS_AddIntrinsicStringNormalize(JSContext *)
-// pub fn add_intrinsic_string_normalize(ctx voidptr) {
-//	C.JS_AddIntrinsicStringNormalize(ctx)
-// }
 
 // void JS_AddIntrinsicRegExpCompiler(JSContext *)
 fn C.JS_AddIntrinsicRegExpCompiler(ctx voidptr) cvoid
@@ -1085,68 +1104,21 @@ pub fn same_value_zero(ctx voidptr, op1 JSValue, op2 JSValue) bool {
 }
 */
 
-// ─── 重写：JS_StrictEq / JS_SameValue / JS_SameValueZero ──────────────────
-// 这三个函数在旧版 libqjs 中不存在（2025-05 才引入）。
-// 改为在 V 侧纯实现，避免链接错误。
+// ─── JS_IsStrictEqual / JS_IsSameValue / JS_IsSameValueZero ───────────────
+// quickjs-ng 0.17 提供真实导出符号，直接走 C 实现（手写比较无法正确处理
+// bigint / rope string 等新类型）。旧的 JS_StrictEq / JS_SameValue /
+// JS_SameValueZero 在 ng 中已改名，且库中无符号，禁止再引用。
 
-// JS 严格相等（===）
-// 规则：类型相同且值相同。对象/字符串/符号等比较引用。
 pub fn strict_eq(ctx voidptr, op1 JSValue, op2 JSValue) bool {
-	if op1.tag != op2.tag {
-		return false
-	}
-	return match op1.tag {
-		tag_int { op1.get_i32() == op2.get_i32() }
-		tag_bool { op1.get_bool() == op2.get_bool() }
-		tag_float64 {
-			// NaN !== NaN，+0 === -0
-			if js_value_is_nan(op1) || js_value_is_nan(op2) {
-				return false
-			}
-			op1.get_f64() == op2.get_f64()
-		}
-		tag_null, tag_undefined { true }
-		else {
-			// 字符串/对象/符号/BigInt 等有引用计数的类型，比较指针地址
-			op1.get_ptr() == op2.get_ptr()
-		}
-	}
+	return is_strict_equal(ctx, op1, op2)
 }
 
-// JS SameValue（与 Object.is 语义一致）
-// 与 strict_eq 的区别：NaN 与 NaN 相等，+0 与 -0 不相等。
 pub fn same_value(ctx voidptr, op1 JSValue, op2 JSValue) bool {
-	if op1.tag != op2.tag {
-		return false
-	}
-	if op1.tag == tag_float64 {
-		// NaN 与 NaN 相等
-		if js_value_is_nan(op1) && js_value_is_nan(op2) {
-			return true
-		}
-		// +0 与 -0 不相等，需要比较符号位
-		if op1.get_f64() == 0.0 && op2.get_f64() == 0.0 {
-			return math.signbit(op1.get_f64()) == math.signbit(op2.get_f64())
-		}
-		return op1.get_f64() == op2.get_f64()
-	}
-	return strict_eq(ctx, op1, op2)
+	return is_same_value(ctx, op1, op2)
 }
 
-// JS SameValueZero（与 SameValue 类似，但 +0 与 -0 视为相等）
 pub fn same_value_zero(ctx voidptr, op1 JSValue, op2 JSValue) bool {
-	if op1.tag != op2.tag {
-		return false
-	}
-	if op1.tag == tag_float64 {
-		// NaN 与 NaN 相等
-		if js_value_is_nan(op1) && js_value_is_nan(op2) {
-			return true
-		}
-		// +0 与 -0 视为相等，直接比较数值即可
-		return op1.get_f64() == op2.get_f64()
-	}
-	return strict_eq(ctx, op1, op2)
+	return is_same_value_zero(ctx, op1, op2)
 }
 
 // int JS_ToBool(JSContext *, JSValue)
@@ -1368,13 +1340,6 @@ pub fn new_date(ctx voidptr, epoch_ms f64) JSValue {
 }
 
 // ─── 属性读取 ─────────────────────────────────────────────────────────────
-// JSValue JS_GetPropertyInternal(JSContext *, JSValue, JSAtom, JSValue, int)
-fn C.JS_GetPropertyInternal(ctx voidptr, obj C.JSValue, prop u32, receiver C.JSValue, throw_ref_error cint) C.JSValue
-
-// JSValue JS_GetPropertyInternal(JSContext *, JSValue, JSAtom, JSValue, int)
-pub fn get_property_internal(ctx voidptr, obj JSValue, prop u32, receiver JSValue, throw_ref_error cint) JSValue {
-	return C.JS_GetPropertyInternal(ctx, obj, prop, receiver, throw_ref_error)
-}
 
 // JSValue JS_GetProperty(JSContext *, JSValue, JSAtom)
 fn C.JS_GetProperty(ctx voidptr, this_obj C.JSValue, prop u32) C.JSValue
@@ -1401,13 +1366,6 @@ pub fn get_property_uint32(ctx voidptr, this_obj JSValue, idx u32) JSValue {
 }
 
 // ─── 属性写入 ─────────────────────────────────────────────────────────────
-// int JS_SetPropertyInternal(JSContext *, JSValue, JSAtom, JSValue, JSValue, int)
-fn C.JS_SetPropertyInternal(ctx voidptr, obj C.JSValue, prop u32, val C.JSValue, receiver C.JSValue, flags cint) cint
-
-// int JS_SetPropertyInternal(JSContext *, JSValue, JSAtom, JSValue, JSValue, int)
-pub fn set_property_internal(ctx voidptr, obj JSValue, prop u32, val JSValue, receiver JSValue, flags cint) bool {
-	return C.JS_SetPropertyInternal(ctx, obj, prop, val, receiver, flags) != 0
-}
 
 // int JS_SetProperty(JSContext *, JSValue, JSAtom, JSValue)
 fn C.JS_SetProperty(ctx voidptr, this_obj C.JSValue, prop u32, val C.JSValue) cint
@@ -1490,11 +1448,12 @@ pub fn get_prototype(ctx voidptr, val JSValue) JSValue {
 }
 
 // int JS_GetOwnPropertyNames(JSContext *, JSPropertyEnum **, uint32_t *, JSValue, int)
-fn C.JS_GetOwnPropertyNames(ctx voidptr, ptab &&voidptr, plen &u32, obj C.JSValue, flags cint) cint
+fn C.JS_GetOwnPropertyNames(ctx voidptr, ptab voidptr, plen &u32, obj C.JSValue, flags cint) cint
 
 // int JS_GetOwnPropertyNames(JSContext *, JSPropertyEnum **, uint32_t *, JSValue, int)
-pub fn get_own_property_names(ctx voidptr, ptab &&voidptr, plen &u32, obj JSValue, flags cint) bool {
-	return C.JS_GetOwnPropertyNames(ctx, ptab, plen, obj, flags) != 0
+// 用法：mut tab := voidptr(0); get_own_property_names(ctx, &tab, &len, obj, flags)
+pub fn get_own_property_names(ctx voidptr, ptab voidptr, plen &u32, obj JSValue, flags cint) bool {
+	return C.JS_GetOwnPropertyNames(ctx, ptab, plen, obj, flags) == 0 // 0 表示成功
 }
 
 // int JS_GetOwnProperty(JSContext *, JSPropertyDescriptor *, JSValue, JSAtom)
@@ -1502,7 +1461,7 @@ fn C.JS_GetOwnProperty(ctx voidptr, desc voidptr, obj C.JSValue, prop u32) cint
 
 // int JS_GetOwnProperty(JSContext *, JSPropertyDescriptor *, JSValue, JSAtom)
 pub fn get_own_property(ctx voidptr, desc voidptr, obj JSValue, prop u32) bool {
-	return C.JS_GetOwnProperty(ctx, desc, obj, prop) != 0
+	return C.JS_GetOwnProperty(ctx, desc, obj, prop) == 0 // 0 表示成功
 }
 
 // ─── 函数调用 ─────────────────────────────────────────────────────────────
@@ -1662,13 +1621,6 @@ pub fn parse_json(ctx voidptr, buf byteptr, buf_len u64, filename byteptr) JSVal
 	return C.JS_ParseJSON(ctx, buf, buf_len, filename)
 }
 
-// JSValue JS_ParseJSON2(JSContext *, const char *, size_t, const char *, int)
-fn C.JS_ParseJSON2(ctx voidptr, buf byteptr, buf_len u64, filename byteptr, flags cint) C.JSValue
-
-// JSValue JS_ParseJSON2(JSContext *, const char *, size_t, const char *, int)
-pub fn parse_json2(ctx voidptr, buf byteptr, buf_len u64, filename byteptr, flags cint) JSValue {
-	return C.JS_ParseJSON2(ctx, buf, buf_len, filename, flags)
-}
 
 // JSValue JS_JSONStringify(JSContext *, JSValue, JSValue, JSValue)
 fn C.JS_JSONStringify(ctx voidptr, obj C.JSValue, replacer C.JSValue, space0 C.JSValue) C.JSValue
@@ -1785,21 +1737,6 @@ pub fn set_can_block(rt voidptr, can_block cint) {
 	C.JS_SetCanBlock(rt, can_block)
 }
 
-// void JS_SetStripInfo(JSRuntime *, int)
-fn C.JS_SetStripInfo(rt voidptr, flags cint) cvoid
-
-// void JS_SetStripInfo(JSRuntime *, int)
-pub fn set_strip_info(rt voidptr, flags cint) {
-	C.JS_SetStripInfo(rt, flags)
-}
-
-// int JS_GetStripInfo(JSRuntime *)
-fn C.JS_GetStripInfo(rt voidptr) cint
-
-// int JS_GetStripInfo(JSRuntime *)
-pub fn get_strip_info(rt voidptr) cint {
-	return C.JS_GetStripInfo(rt)
-}
 
 // void JS_SetIsHTMLDDA(JSContext *, JSValue)
 fn C.JS_SetIsHTMLDDA(ctx voidptr, obj C.JSValue) cvoid
@@ -2015,3 +1952,566 @@ pub fn set_module_export_list(ctx voidptr, m voidptr, tab voidptr, len cint) boo
 }
 
 // main block end
+
+// ═════════════════════ P0: 属性枚举遍历 + 常量补全 ══════════════════════════
+// 遍历 get_own_property_names 的结果
+pub fn own_property_enum(tab voidptr, i u32) C.JSPropertyEnum {
+	return unsafe { (&C.JSPropertyEnum(tab))[i] }
+}
+
+// void JS_FreePropertyEnum(JSContext *, JSPropertyEnum *, uint32_t)
+fn C.JS_FreePropertyEnum(ctx voidptr, tab voidptr, len u32) cvoid
+
+pub fn free_property_enum(ctx voidptr, tab voidptr, len u32) {
+	C.JS_FreePropertyEnum(ctx, tab, len)
+}
+
+// ═════════════════════ 新增常量（quickjs-ng 0.17）═══════════════════════════
+pub const TAG_STRING_ROPE        = i64(-6)
+pub const TYPED_ARRAY_INT8       = C.JS_TYPED_ARRAY_INT8
+pub const TYPED_ARRAY_UINT8      = C.JS_TYPED_ARRAY_UINT8
+pub const TYPED_ARRAY_UINT8C     = C.JS_TYPED_ARRAY_UINT8C
+pub const TYPED_ARRAY_INT16      = C.JS_TYPED_ARRAY_INT16
+pub const TYPED_ARRAY_UINT16     = C.JS_TYPED_ARRAY_UINT16
+pub const TYPED_ARRAY_INT32      = C.JS_TYPED_ARRAY_INT32
+pub const TYPED_ARRAY_UINT32     = C.JS_TYPED_ARRAY_UINT32
+pub const TYPED_ARRAY_BIG_INT64  = C.JS_TYPED_ARRAY_BIG_INT64
+pub const TYPED_ARRAY_BIG_UINT64 = C.JS_TYPED_ARRAY_BIG_UINT64
+pub const TYPED_ARRAY_FLOAT16    = C.JS_TYPED_ARRAY_FLOAT16
+pub const TYPED_ARRAY_FLOAT32    = C.JS_TYPED_ARRAY_FLOAT32
+pub const TYPED_ARRAY_FLOAT64    = C.JS_TYPED_ARRAY_FLOAT64
+pub const WRITE_OBJ_STRIP_DEBUG  = C.JS_WRITE_OBJ_STRIP_DEBUG
+pub const WRITE_OBJ_STRIP_SOURCE = C.JS_WRITE_OBJ_STRIP_SOURCE
+
+// ═════════════ P1: 缺失导出函数封装补全（76 个）════════════════════════════
+// int JS_AddIntrinsicAToB(JSContext *ctx)
+fn C.JS_AddIntrinsicAToB(ctx voidptr) cint
+
+pub fn add_intrinsic_a_to_b(ctx voidptr) cint {
+	return C.JS_AddIntrinsicAToB(ctx)
+}
+
+// int JS_AddIntrinsicBigInt(JSContext *ctx)
+fn C.JS_AddIntrinsicBigInt(ctx voidptr) cint
+
+pub fn add_intrinsic_big_int(ctx voidptr) cint {
+	return C.JS_AddIntrinsicBigInt(ctx)
+}
+
+// int JS_AddIntrinsicDOMException(JSContext *ctx)
+fn C.JS_AddIntrinsicDOMException(ctx voidptr) cint
+
+pub fn add_intrinsic_dom_exception(ctx voidptr) cint {
+	return C.JS_AddIntrinsicDOMException(ctx)
+}
+
+// int JS_AddPerformance(JSContext *ctx)
+fn C.JS_AddPerformance(ctx voidptr) cint
+
+pub fn add_performance(ctx voidptr) cint {
+	return C.JS_AddPerformance(ctx)
+}
+
+// int JS_AddRuntimeFinalizer(JSRuntime *rt, JSRuntimeFinalizer *finalizer, void *arg)
+fn C.JS_AddRuntimeFinalizer(rt voidptr, finalizer voidptr, arg voidptr) cint
+
+pub fn add_runtime_finalizer(rt voidptr, finalizer voidptr, arg voidptr) cint {
+	return C.JS_AddRuntimeFinalizer(rt, finalizer, arg)
+}
+
+// const char * JS_AtomToCStringLen(JSContext *ctx, size_t *plen, JSAtom atom)
+fn C.JS_AtomToCStringLen(ctx voidptr, plen &u64, atom u32) byteptr
+
+pub fn atom_to_c_string_len(ctx voidptr, plen &u64, atom u32) byteptr {
+	return C.JS_AtomToCStringLen(ctx, plen, atom)
+}
+
+// void JS_ClearUncatchableError(JSContext *ctx, JSValueConst val)
+fn C.JS_ClearUncatchableError(ctx voidptr, val C.JSValue) cvoid
+
+pub fn clear_uncatchable_error(ctx voidptr, val C.JSValue) {
+	C.JS_ClearUncatchableError(ctx, val)
+}
+
+// JSAtom JS_DupAtomRT(JSRuntime *rt, JSAtom v)
+fn C.JS_DupAtomRT(rt voidptr, v u32) u32
+
+pub fn dup_atom_rt(rt voidptr, v u32) u32 {
+	return C.JS_DupAtomRT(rt, v)
+}
+
+// JSValue JS_Eval2(JSContext *ctx, const char *input, size_t input_len, JSEvalOptions *options)
+fn C.JS_Eval2(ctx voidptr, input byteptr, input_len u64, options &C.JSEvalOptions) C.JSValue
+
+pub fn eval2(ctx voidptr, input byteptr, input_len u64, options &C.JSEvalOptions) C.JSValue {
+	return C.JS_Eval2(ctx, input, input_len, options)
+}
+
+// JSValue JS_EvalThis2(JSContext *ctx, JSValueConst this_obj, const char *input, size_t input_len, JSEvalOptions *options)
+fn C.JS_EvalThis2(ctx voidptr, this_obj C.JSValue, input byteptr, input_len u64, options &C.JSEvalOptions) C.JSValue
+
+pub fn eval_this2(ctx voidptr, this_obj C.JSValue, input byteptr, input_len u64, options &C.JSEvalOptions) C.JSValue {
+	return C.JS_EvalThis2(ctx, this_obj, input, input_len, options)
+}
+
+// void JS_FreeCStringRT(JSRuntime *rt, const char *ptr)
+fn C.JS_FreeCStringRT(rt voidptr, ptr byteptr) cvoid
+
+pub fn free_c_string_rt(rt voidptr, ptr byteptr) {
+	C.JS_FreeCStringRT(rt, ptr)
+}
+
+// void JS_FreeCStringRT_UTF16(JSRuntime *rt, const uint16_t *ptr)
+fn C.JS_FreeCStringRT_UTF16(rt voidptr, ptr &u16) cvoid
+
+pub fn free_c_string_rt_utf16(rt voidptr, ptr &u16) {
+	C.JS_FreeCStringRT_UTF16(rt, ptr)
+}
+
+// void JS_FreeCStringUTF16(JSContext *ctx, const uint16_t *ptr)
+fn C.JS_FreeCStringUTF16(ctx voidptr, ptr &u16) cvoid
+
+pub fn free_c_string_utf16(ctx voidptr, ptr &u16) {
+	C.JS_FreeCStringUTF16(ctx, ptr)
+}
+
+// int JS_FreezeObject(JSContext *ctx, JSValueConst obj)
+fn C.JS_FreezeObject(ctx voidptr, obj C.JSValue) cint
+
+pub fn freeze_object(ctx voidptr, obj C.JSValue) bool {
+	return C.JS_FreezeObject(ctx, obj) != 0
+}
+
+// JSAtom JS_GetClassName(JSRuntime *rt, JSClassID class_id)
+fn C.JS_GetClassName(rt voidptr, class_id u32) u32
+
+pub fn get_class_name(rt voidptr, class_id u32) u32 {
+	return C.JS_GetClassName(rt, class_id)
+}
+
+// uint64_t JS_GetDumpFlags(JSRuntime *rt)
+fn C.JS_GetDumpFlags(rt voidptr) u64
+
+pub fn get_dump_flags(rt voidptr) u64 {
+	return C.JS_GetDumpFlags(rt)
+}
+
+// JSValue JS_GetFunctionProto(JSContext *ctx)
+fn C.JS_GetFunctionProto(ctx voidptr) C.JSValue
+
+pub fn get_function_proto(ctx voidptr) C.JSValue {
+	return C.JS_GetFunctionProto(ctx)
+}
+
+// size_t JS_GetGCThreshold(JSRuntime *rt)
+fn C.JS_GetGCThreshold(rt voidptr) u64
+
+pub fn get_gc_threshold(rt voidptr) u64 {
+	return C.JS_GetGCThreshold(rt)
+}
+
+// int JS_GetLength(JSContext *ctx, JSValueConst obj, int64_t *pres)
+fn C.JS_GetLength(ctx voidptr, obj C.JSValue, pres &i64) cint
+
+pub fn get_length(ctx voidptr, obj C.JSValue, pres &i64) cint {
+	return C.JS_GetLength(ctx, obj, pres)
+}
+
+// JSValue JS_GetModulePrivateValue(JSContext *ctx, JSModuleDef *m)
+fn C.JS_GetModulePrivateValue(ctx voidptr, m voidptr) C.JSValue
+
+pub fn get_module_private_value(ctx voidptr, m voidptr) C.JSValue {
+	return C.JS_GetModulePrivateValue(ctx, m)
+}
+
+// JSContext * JS_GetPendingJobContext(JSRuntime *rt)
+fn C.JS_GetPendingJobContext(rt voidptr) voidptr
+
+pub fn get_pending_job_context(rt voidptr) voidptr {
+	return C.JS_GetPendingJobContext(rt)
+}
+
+// JSValue JS_GetPropertyInt64(JSContext *ctx, JSValueConst this_obj, int64_t idx)
+fn C.JS_GetPropertyInt64(ctx voidptr, this_obj C.JSValue, idx i64) C.JSValue
+
+pub fn get_property_int64(ctx voidptr, this_obj C.JSValue, idx i64) C.JSValue {
+	return C.JS_GetPropertyInt64(ctx, this_obj, idx)
+}
+
+// JSValue JS_GetPropertyValue(JSContext *ctx, JSValueConst this_obj, JSValue prop)
+fn C.JS_GetPropertyValue(ctx voidptr, this_obj C.JSValue, prop C.JSValue) C.JSValue
+
+pub fn get_property_value(ctx voidptr, this_obj C.JSValue, prop C.JSValue) C.JSValue {
+	return C.JS_GetPropertyValue(ctx, this_obj, prop)
+}
+
+// JSValue JS_GetProxyHandler(JSContext *ctx, JSValueConst proxy)
+fn C.JS_GetProxyHandler(ctx voidptr, proxy C.JSValue) C.JSValue
+
+pub fn get_proxy_handler(ctx voidptr, proxy C.JSValue) C.JSValue {
+	return C.JS_GetProxyHandler(ctx, proxy)
+}
+
+// JSValue JS_GetProxyTarget(JSContext *ctx, JSValueConst proxy)
+fn C.JS_GetProxyTarget(ctx voidptr, proxy C.JSValue) C.JSValue
+
+pub fn get_proxy_target(ctx voidptr, proxy C.JSValue) C.JSValue {
+	return C.JS_GetProxyTarget(ctx, proxy)
+}
+
+// int JS_GetTypedArrayType(JSValueConst obj)
+fn C.JS_GetTypedArrayType(obj C.JSValue) cint
+
+pub fn get_typed_array_type(obj C.JSValue) cint {
+	return C.JS_GetTypedArrayType(obj)
+}
+
+// uint8_t * JS_GetUint8Array(JSContext *ctx, size_t *psize, JSValueConst obj)
+fn C.JS_GetUint8Array(ctx voidptr, psize &u64, obj C.JSValue) byteptr
+
+pub fn get_uint8_array(ctx voidptr, psize &u64, obj C.JSValue) byteptr {
+	return C.JS_GetUint8Array(ctx, psize, obj)
+}
+
+// bool JS_IsArrayBuffer(JSValueConst obj)
+fn C.JS_IsArrayBuffer(obj C.JSValue) bool
+
+pub fn is_array_buffer(obj C.JSValue) bool {
+	return C.JS_IsArrayBuffer(obj)
+}
+
+// bool JS_IsAsyncFunction(JSValueConst val)
+fn C.JS_IsAsyncFunction(val C.JSValue) bool
+
+pub fn is_async_function(val C.JSValue) bool {
+	return C.JS_IsAsyncFunction(val)
+}
+
+// bool JS_IsDataView(JSValueConst val)
+fn C.JS_IsDataView(val C.JSValue) bool
+
+pub fn is_data_view(val C.JSValue) bool {
+	return C.JS_IsDataView(val)
+}
+
+// bool JS_IsDate(JSValueConst v)
+fn C.JS_IsDate(v C.JSValue) bool
+
+pub fn is_date(v C.JSValue) bool {
+	return C.JS_IsDate(v)
+}
+
+// int JS_IsEqual(JSContext *ctx, JSValueConst op1, JSValueConst op2)
+fn C.JS_IsEqual(ctx voidptr, op1 C.JSValue, op2 C.JSValue) cint
+
+pub fn is_equal(ctx voidptr, op1 C.JSValue, op2 C.JSValue) cint {
+	return C.JS_IsEqual(ctx, op1, op2)
+}
+
+// int JS_IsImmutableArrayBuffer(JSValueConst obj)
+fn C.JS_IsImmutableArrayBuffer(obj C.JSValue) cint
+
+pub fn is_immutable_array_buffer(obj C.JSValue) cint {
+	return C.JS_IsImmutableArrayBuffer(obj)
+}
+
+// bool JS_IsMap(JSValueConst val)
+fn C.JS_IsMap(val C.JSValue) bool
+
+pub fn is_map(val C.JSValue) bool {
+	return C.JS_IsMap(val)
+}
+
+// bool JS_IsPromise(JSValueConst val)
+fn C.JS_IsPromise(val C.JSValue) bool
+
+pub fn is_promise(val C.JSValue) bool {
+	return C.JS_IsPromise(val)
+}
+
+// bool JS_IsProxy(JSValueConst val)
+fn C.JS_IsProxy(val C.JSValue) bool
+
+pub fn is_proxy(val C.JSValue) bool {
+	return C.JS_IsProxy(val)
+}
+
+// bool JS_IsRegExp(JSValueConst val)
+fn C.JS_IsRegExp(val C.JSValue) bool
+
+pub fn is_reg_exp(val C.JSValue) bool {
+	return C.JS_IsRegExp(val)
+}
+
+// bool JS_IsSameValue(JSContext *ctx, JSValueConst op1, JSValueConst op2)
+fn C.JS_IsSameValue(ctx voidptr, op1 C.JSValue, op2 C.JSValue) bool
+
+pub fn is_same_value(ctx voidptr, op1 C.JSValue, op2 C.JSValue) bool {
+	return C.JS_IsSameValue(ctx, op1, op2)
+}
+
+// bool JS_IsSameValueZero(JSContext *ctx, JSValueConst op1, JSValueConst op2)
+fn C.JS_IsSameValueZero(ctx voidptr, op1 C.JSValue, op2 C.JSValue) bool
+
+pub fn is_same_value_zero(ctx voidptr, op1 C.JSValue, op2 C.JSValue) bool {
+	return C.JS_IsSameValueZero(ctx, op1, op2)
+}
+
+// bool JS_IsSet(JSValueConst val)
+fn C.JS_IsSet(val C.JSValue) bool
+
+pub fn is_set(val C.JSValue) bool {
+	return C.JS_IsSet(val)
+}
+
+// bool JS_IsStrictEqual(JSContext *ctx, JSValueConst op1, JSValueConst op2)
+fn C.JS_IsStrictEqual(ctx voidptr, op1 C.JSValue, op2 C.JSValue) bool
+
+pub fn is_strict_equal(ctx voidptr, op1 C.JSValue, op2 C.JSValue) bool {
+	return C.JS_IsStrictEqual(ctx, op1, op2)
+}
+
+// bool JS_IsUncatchableError(JSValueConst val)
+fn C.JS_IsUncatchableError(val C.JSValue) bool
+
+pub fn is_uncatchable_error(val C.JSValue) bool {
+	return C.JS_IsUncatchableError(val)
+}
+
+// bool JS_IsWeakMap(JSValueConst val)
+fn C.JS_IsWeakMap(val C.JSValue) bool
+
+pub fn is_weak_map(val C.JSValue) bool {
+	return C.JS_IsWeakMap(val)
+}
+
+// bool JS_IsWeakRef(JSValueConst val)
+fn C.JS_IsWeakRef(val C.JSValue) bool
+
+pub fn is_weak_ref(val C.JSValue) bool {
+	return C.JS_IsWeakRef(val)
+}
+
+// bool JS_IsWeakSet(JSValueConst val)
+fn C.JS_IsWeakSet(val C.JSValue) bool
+
+pub fn is_weak_set(val C.JSValue) bool {
+	return C.JS_IsWeakSet(val)
+}
+
+// JSValue JS_NewArrayFrom(JSContext *ctx, int count, const JSValue *values)
+fn C.JS_NewArrayFrom(ctx voidptr, count cint, values &C.JSValue) C.JSValue
+
+pub fn new_array_from(ctx voidptr, count cint, values &C.JSValue) C.JSValue {
+	return C.JS_NewArrayFrom(ctx, count, values)
+}
+
+// JSValue JS_NewCClosure(JSContext *ctx, JSCClosure *func, const char *name, JSCClosureFinalizerFunc *opaque_finalize, int length, int magic, void *opaque)
+fn C.JS_NewCClosure(ctx voidptr, func voidptr, name byteptr, opaque_finalize voidptr, length cint, magic cint, opaque voidptr) C.JSValue
+
+pub fn new_c_closure(ctx voidptr, func voidptr, name byteptr, opaque_finalize voidptr, length cint, magic cint, opaque voidptr) C.JSValue {
+	return C.JS_NewCClosure(ctx, func, name, opaque_finalize, length, magic, opaque)
+}
+
+// JSValue JS_NewCFunction3(JSContext *ctx, JSCFunction *func, const char *name, int length, JSCFunctionEnum cproto, int magic, JSValueConst proto_val, int n_fields)
+fn C.JS_NewCFunction3(ctx voidptr, func voidptr, name byteptr, length cint, cproto voidptr, magic cint, proto_val C.JSValue, n_fields cint) C.JSValue
+
+pub fn new_c_function3(ctx voidptr, func voidptr, name byteptr, length cint, cproto voidptr, magic cint, proto_val C.JSValue, n_fields cint) C.JSValue {
+	return C.JS_NewCFunction3(ctx, func, name, length, cproto, magic, proto_val, n_fields)
+}
+
+// JSValue JS_NewCFunctionData2(JSContext *ctx, JSCFunctionData *func, const char *name, int length, int magic, int data_len, JSValueConst *data)
+fn C.JS_NewCFunctionData2(ctx voidptr, func voidptr, name byteptr, length cint, magic cint, data_len cint, data &C.JSValue) C.JSValue
+
+pub fn new_c_function_data2(ctx voidptr, func voidptr, name byteptr, length cint, magic cint, data_len cint, data &C.JSValue) C.JSValue {
+	return C.JS_NewCFunctionData2(ctx, func, name, length, magic, data_len, data)
+}
+
+// JSValue JS_NewNumber(JSContext *ctx, double d)
+fn C.JS_NewNumber(ctx voidptr, d f64) C.JSValue
+
+pub fn new_number(ctx voidptr, d f64) C.JSValue {
+	return C.JS_NewNumber(ctx, d)
+}
+
+// JSValue JS_NewObjectFrom(JSContext *ctx, int count, const JSAtom *props, const JSValue *values)
+fn C.JS_NewObjectFrom(ctx voidptr, count cint, props &u32, values &C.JSValue) C.JSValue
+
+pub fn new_object_from(ctx voidptr, count cint, props &u32, values &C.JSValue) C.JSValue {
+	return C.JS_NewObjectFrom(ctx, count, props, values)
+}
+
+// JSValue JS_NewObjectFromStr(JSContext *ctx, int count, const char **props, const JSValue *values)
+fn C.JS_NewObjectFromStr(ctx voidptr, count cint, props byteptr, values &C.JSValue) C.JSValue
+
+pub fn new_object_from_str(ctx voidptr, count cint, props byteptr, values &C.JSValue) C.JSValue {
+	return C.JS_NewObjectFromStr(ctx, count, props, values)
+}
+
+// JSValue JS_NewPrivateSymbol(JSContext *ctx, const char *description)
+fn C.JS_NewPrivateSymbol(ctx voidptr, description byteptr) C.JSValue
+
+pub fn new_private_symbol(ctx voidptr, description byteptr) C.JSValue {
+	return C.JS_NewPrivateSymbol(ctx, description)
+}
+
+// JSValue JS_NewProxy(JSContext *ctx, JSValueConst target, JSValueConst handler)
+fn C.JS_NewProxy(ctx voidptr, target C.JSValue, handler C.JSValue) C.JSValue
+
+pub fn new_proxy(ctx voidptr, target C.JSValue, handler C.JSValue) C.JSValue {
+	return C.JS_NewProxy(ctx, target, handler)
+}
+
+// JSValue JS_NewSettledPromise(JSContext *ctx, bool is_reject, JSValueConst value)
+fn C.JS_NewSettledPromise(ctx voidptr, is_reject bool, value C.JSValue) C.JSValue
+
+pub fn new_settled_promise(ctx voidptr, is_reject bool, value C.JSValue) C.JSValue {
+	return C.JS_NewSettledPromise(ctx, is_reject, value)
+}
+
+// JSValue JS_NewStringUTF16(JSContext *ctx, const uint16_t *buf, size_t len)
+fn C.JS_NewStringUTF16(ctx voidptr, buf &u16, len_ u64) C.JSValue
+
+pub fn new_string_utf16(ctx voidptr, buf &u16, len_ u64) C.JSValue {
+	return C.JS_NewStringUTF16(ctx, buf, len_)
+}
+
+// JSValue JS_NewSymbol(JSContext *ctx, const char *description, bool is_global)
+fn C.JS_NewSymbol(ctx voidptr, description byteptr, is_global bool) C.JSValue
+
+pub fn new_symbol(ctx voidptr, description byteptr, is_global bool) C.JSValue {
+	return C.JS_NewSymbol(ctx, description, is_global)
+}
+
+// JSValue JS_NewUint8Array(JSContext *ctx, uint8_t *buf, size_t len, JSReallocArrayBufferDataFunc *realloc_func, void *opaque, bool is_shared)
+fn C.JS_NewUint8Array(ctx voidptr, buf byteptr, len_ u64, realloc_func voidptr, opaque voidptr, is_shared bool) C.JSValue
+
+pub fn new_uint8_array(ctx voidptr, buf byteptr, len_ u64, realloc_func voidptr, opaque voidptr, is_shared bool) C.JSValue {
+	return C.JS_NewUint8Array(ctx, buf, len_, realloc_func, opaque, is_shared)
+}
+
+// JSValue JS_NewUint8ArrayCopy(JSContext *ctx, const uint8_t *buf, size_t len)
+fn C.JS_NewUint8ArrayCopy(ctx voidptr, buf byteptr, len_ u64) C.JSValue
+
+pub fn new_uint8_array_copy(ctx voidptr, buf byteptr, len_ u64) C.JSValue {
+	return C.JS_NewUint8ArrayCopy(ctx, buf, len_)
+}
+
+// void JS_PromiseMarkAsHandled(JSContext *ctx, JSValueConst promise)
+fn C.JS_PromiseMarkAsHandled(ctx voidptr, promise C.JSValue) cvoid
+
+pub fn promise_mark_as_handled(ctx voidptr, promise C.JSValue) {
+	C.JS_PromiseMarkAsHandled(ctx, promise)
+}
+
+// JSValue JS_PromiseThen(JSContext *ctx, JSValueConst promise, JSValueConst on_fulfilled, JSValueConst on_rejected)
+fn C.JS_PromiseThen(ctx voidptr, promise C.JSValue, on_fulfilled C.JSValue, on_rejected C.JSValue) C.JSValue
+
+pub fn promise_then(ctx voidptr, promise C.JSValue, on_fulfilled C.JSValue, on_rejected C.JSValue) C.JSValue {
+	return C.JS_PromiseThen(ctx, promise, on_fulfilled, on_rejected)
+}
+
+// JSValue JS_ReadObject2(JSContext *ctx, const uint8_t *buf, size_t buf_len, int flags, JSSABTab *psab_tab)
+fn C.JS_ReadObject2(ctx voidptr, buf byteptr, buf_len u64, flags cint, psab_tab voidptr) C.JSValue
+
+pub fn read_object2(ctx voidptr, buf byteptr, buf_len u64, flags cint, psab_tab voidptr) C.JSValue {
+	return C.JS_ReadObject2(ctx, buf, buf_len, flags, psab_tab)
+}
+
+// int JS_SealObject(JSContext *ctx, JSValueConst obj)
+fn C.JS_SealObject(ctx voidptr, obj C.JSValue) cint
+
+pub fn seal_object(ctx voidptr, obj C.JSValue) bool {
+	return C.JS_SealObject(ctx, obj) != 0
+}
+
+// void JS_SetDumpFlags(JSRuntime *rt, uint64_t flags)
+fn C.JS_SetDumpFlags(rt voidptr, flags u64) cvoid
+
+pub fn set_dump_flags(rt voidptr, flags u64) {
+	C.JS_SetDumpFlags(rt, flags)
+}
+
+// int JS_SetImmutableArrayBuffer(JSValueConst obj, bool immutable)
+fn C.JS_SetImmutableArrayBuffer(obj C.JSValue, immutable bool) cint
+
+pub fn set_immutable_array_buffer(obj C.JSValue, immutable bool) cint {
+	return C.JS_SetImmutableArrayBuffer(obj, immutable)
+}
+
+// int JS_SetLength(JSContext *ctx, JSValueConst obj, int64_t len)
+fn C.JS_SetLength(ctx voidptr, obj C.JSValue, len_ i64) cint
+
+pub fn set_length(ctx voidptr, obj C.JSValue, len_ i64) bool {
+	return C.JS_SetLength(ctx, obj, len_) != 0 // ng: 非 0 表示成功
+}
+
+// void JS_SetModuleLoaderFunc2(JSRuntime *rt, JSModuleNormalizeFunc *module_normalize, JSModuleLoaderFunc2 *module_loader, JSModuleCheckSupportedImportAttributes *module_check_attrs, void *opaque)
+fn C.JS_SetModuleLoaderFunc2(rt voidptr, module_normalize voidptr, module_loader voidptr, module_check_attrs voidptr, opaque voidptr) cvoid
+
+pub fn set_module_loader_func2(rt voidptr, module_normalize voidptr, module_loader voidptr, module_check_attrs voidptr, opaque voidptr) {
+	C.JS_SetModuleLoaderFunc2(rt, module_normalize, module_loader, module_check_attrs, opaque)
+}
+
+// void JS_SetModuleNormalizeFunc2(JSRuntime *rt, JSModuleNormalizeFunc2 *module_normalize)
+fn C.JS_SetModuleNormalizeFunc2(rt voidptr, module_normalize voidptr) cvoid
+
+pub fn set_module_normalize_func2(rt voidptr, module_normalize voidptr) {
+	C.JS_SetModuleNormalizeFunc2(rt, module_normalize)
+}
+
+// int JS_SetModulePrivateValue(JSContext *ctx, JSModuleDef *m, JSValue val)
+fn C.JS_SetModulePrivateValue(ctx voidptr, m voidptr, val C.JSValue) cint
+
+pub fn set_module_private_value(ctx voidptr, m voidptr, val C.JSValue) cint {
+	return C.JS_SetModulePrivateValue(ctx, m, val)
+}
+
+// void JS_SetPromiseHook(JSRuntime *rt, JSPromiseHook promise_hook, void *opaque)
+fn C.JS_SetPromiseHook(rt voidptr, promise_hook voidptr, opaque voidptr) cvoid
+
+pub fn set_promise_hook(rt voidptr, promise_hook voidptr, opaque voidptr) {
+	C.JS_SetPromiseHook(rt, promise_hook, opaque)
+}
+
+// int JS_SetPropertyValue(JSContext *ctx, JSValueConst this_obj, JSValue prop, JSValue val, int flags)
+fn C.JS_SetPropertyValue(ctx voidptr, this_obj C.JSValue, prop C.JSValue, val C.JSValue, flags cint) cint
+
+pub fn set_property_value(ctx voidptr, this_obj C.JSValue, prop C.JSValue, val C.JSValue, flags cint) cint {
+	return C.JS_SetPropertyValue(ctx, this_obj, prop, val, flags)
+}
+
+// int JS_ToBigUint64(JSContext *ctx, uint64_t *pres, JSValueConst val)
+fn C.JS_ToBigUint64(ctx voidptr, pres &u64, val C.JSValue) cint
+
+pub fn to_big_uint64(ctx voidptr, pres &u64, val C.JSValue) cint {
+	return C.JS_ToBigUint64(ctx, pres, val)
+}
+
+// const uint16_t * JS_ToCStringLenUTF16(JSContext *ctx, size_t *plen, JSValueConst val1)
+fn C.JS_ToCStringLenUTF16(ctx voidptr, plen &u64, val1 C.JSValue) &u16
+
+pub fn to_c_string_len_utf16(ctx voidptr, plen &u64, val1 C.JSValue) &u16 {
+	return C.JS_ToCStringLenUTF16(ctx, plen, val1)
+}
+
+// JSValue JS_ToNumber(JSContext *ctx, JSValueConst val)
+fn C.JS_ToNumber(ctx voidptr, val C.JSValue) C.JSValue
+
+pub fn to_number(ctx voidptr, val C.JSValue) C.JSValue {
+	return C.JS_ToNumber(ctx, val)
+}
+
+// JSValue JS_ToObject(JSContext *ctx, JSValueConst val)
+fn C.JS_ToObject(ctx voidptr, val C.JSValue) C.JSValue
+
+pub fn to_object(ctx voidptr, val C.JSValue) C.JSValue {
+	return C.JS_ToObject(ctx, val)
+}
+
+// JSValue JS_ToObjectString(JSContext *ctx, JSValueConst val)
+fn C.JS_ToObjectString(ctx voidptr, val C.JSValue) C.JSValue
+
+pub fn to_object_string(ctx voidptr, val C.JSValue) C.JSValue {
+	return C.JS_ToObjectString(ctx, val)
+}

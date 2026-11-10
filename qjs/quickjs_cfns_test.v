@@ -714,3 +714,144 @@ fn test_bool_return_semantics() {
 	assert !is_registered_class(rt, class_id)
 	close_env(rt, ctx)
 }
+
+// ─── quickjs-ng 新增绑定冒烟测试 ──────────────────────────────────────────
+
+fn test_ng_value_bindings() {
+	rt, ctx := new_env()
+	// JS_NewNumber / JS_ToNumber / JS_ToObject / JS_ToObjectString
+	n := new_number(ctx, 2.5)
+	assert is_number(n)
+	mut f := f64(0)
+	assert to_float64(ctx, &f, n)
+	assert f == 2.5
+	o := to_object(ctx, n)
+	assert is_object(o)
+	s := to_object_string(ctx, n)
+	assert is_string(s)
+	p := to_c_string(ctx, s)
+	assert cs(p) == '[object Number]' // ng: JS_ToObjectString 等价 Object.prototype.toString
+	free_c_string(ctx, p)
+	free_value_safe(ctx, s)
+	free_value_safe(ctx, o)
+	free_value_safe(ctx, n)
+	// JS_GetLength / JS_SetLength
+	arr := new_array(ctx)
+	assert set_property_uint32(ctx, arr, 0, new_int32(ctx, 1))
+	mut len := i64(0)
+	assert get_length(ctx, arr, &len) == 0
+	assert len == 1
+	assert set_length(ctx, arr, 5)
+	assert get_length(ctx, arr, &len) == 0
+	assert len == 5
+	free_value_safe(ctx, arr)
+	// JS_FreezeObject / JS_SealObject
+	obj := new_object(ctx)
+	assert freeze_object(ctx, obj)
+	assert !is_extensible(ctx, obj)
+	obj2 := new_object(ctx)
+	assert seal_object(ctx, obj2)
+	free_value_safe(ctx, obj)
+	free_value_safe(ctx, obj2)
+	// JS_NewSymbol / JS_Is* 类型判断
+	sym := new_symbol(ctx, 'tag'.str, false)
+	assert is_symbol(sym)
+	free_value_safe(ctx, sym)
+	d := ev(ctx, 'new Date()')
+	assert is_date(d)
+	free_value_safe(ctx, d)
+	// JS_IsSameValue / JS_IsSameValueZero / JS_IsStrictEqual 均走 C 实现
+	nz := new_number(ctx, 0.0)
+	pz := new_number(ctx, -0.0)
+	assert !is_same_value(ctx, nz, pz)
+	assert is_same_value_zero(ctx, nz, pz)
+	assert is_strict_equal(ctx, nz, pz)
+	free_value_safe(ctx, nz)
+	free_value_safe(ctx, pz)
+	close_env(rt, ctx)
+}
+
+fn test_ng_collection_and_promise_bindings() {
+	rt, ctx := new_env()
+	m := ev(ctx, 'new Map()')
+	assert is_map(m)
+	free_value_safe(ctx, m)
+	st := ev(ctx, 'new Set()')
+	assert is_set(st)
+	free_value_safe(ctx, st)
+	pr := ev(ctx, 'Promise.resolve(1)')
+	assert is_promise(pr)
+	settled := new_settled_promise(ctx, false, new_int32(ctx, 1))
+	assert is_promise(settled)
+	free_value_safe(ctx, settled)
+	free_value_safe(ctx, pr)
+	wm := ev(ctx, 'new WeakMap()')
+	assert is_weak_map(wm)
+	free_value_safe(ctx, wm)
+	re := ev(ctx, '/a/g')
+	assert is_reg_exp(re)
+	free_value_safe(ctx, re)
+	close_env(rt, ctx)
+}
+
+fn test_ng_buffer_and_proxy_bindings() {
+	rt, ctx := new_env()
+	// Uint8Array
+	mut buf := [u8(1), u8(2), u8(3), u8(4)]
+	ta := new_uint8_array_copy(ctx, buf.data, u64(buf.len))
+	assert is_object(ta)
+	assert get_typed_array_type(ta) == TYPED_ARRAY_UINT8
+	mut size := u64(0)
+	ptr := get_uint8_array(ctx, &size, ta)
+	assert size == 4
+	assert unsafe { ptr[0] } == 1
+	free_value_safe(ctx, ta)
+	// ArrayBuffer
+	ab := new_array_buffer_copy(ctx, buf.data, u64(buf.len))
+	assert is_array_buffer(ab)
+	free_value_safe(ctx, ab)
+	// Proxy
+	target := new_object(ctx)
+	handler := new_object(ctx)
+	proxy := new_proxy(ctx, target, handler)
+	assert is_proxy(proxy)
+	pt := get_proxy_target(ctx, proxy)
+	assert same_value(ctx, pt, target)
+	free_value_safe(ctx, pt)
+	free_value_safe(ctx, proxy)
+	free_value_safe(ctx, handler)
+	free_value_safe(ctx, target)
+	// JS_NewArrayFrom
+	mut vals := [new_int32(ctx, 7), new_int32(ctx, 8)]
+	a := new_array_from(ctx, 2, unsafe { &vals[0] })
+	assert is_array(ctx, a)
+	mut i := i32(0)
+	elem := get_property_uint32(ctx, a, 0)
+	assert to_int32(ctx, &i, elem)
+	assert i == 7
+	free_value_safe(ctx, elem)
+	free_value_safe(ctx, a)
+	close_env(rt, ctx)
+}
+
+fn test_ng_property_enum() {
+	rt, ctx := new_env()
+	obj := new_object(ctx)
+	assert set_property_str(ctx, obj, 'alpha'.str, new_int32(ctx, 1))
+	assert set_property_str(ctx, obj, 'beta'.str, new_int32(ctx, 2))
+	mut tab := voidptr(0)
+	mut n := u32(0)
+	mut flags := cint(GPN_STRING_MASK)
+	flags |= cint(GPN_ENUM_ONLY)
+	assert get_own_property_names(ctx, &tab, &n, obj, flags)
+	assert n == 2
+	a0 := own_property_enum(tab, 0)
+	a1 := own_property_enum(tab, 1)
+	names := [atom_to_c_string(ctx, a0.atom), atom_to_c_string(ctx, a1.atom)]
+	assert cs(names[0]) != '' && cs(names[1]) != ''
+	free_c_string(ctx, names[0])
+	free_c_string(ctx, names[1])
+	free_property_enum(ctx, tab, n)
+	free_value_safe(ctx, obj)
+	close_env(rt, ctx)
+}

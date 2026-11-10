@@ -6,6 +6,7 @@ import log
 // #pkgconfig linux libffi
 #flag -DFFI_GO_CLOSURES=1
 #flag -lffi
+#flag -I@VEXEROOT/thirdparty/tcc/lib/../lib/tcc/include/
 
 $if macos {
     // #flag darwin  -lffi-trampolines //
