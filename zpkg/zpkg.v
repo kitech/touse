@@ -35,6 +35,7 @@ struct PkgManager {
     list_cmd   string
     fetch_tpl  string
     fetch_recursive_tpl string = ''
+    files_tpl  string = ''
     info_parser string = ''
 }
 
@@ -72,6 +73,7 @@ const managers = [
         list_cmd: 'pacman -Q'
         fetch_tpl: 'pacman -Sw {q}'
         fetch_recursive_tpl: 'pacman -Sw --recursive {q}'
+        files_tpl: 'pacman -Ql {q}'
     },
     PkgManager{
         name: 'apt'
@@ -81,6 +83,7 @@ const managers = [
         list_cmd: r'dpkg-query -W -f="${Package}\n"'
         fetch_tpl: 'apt download {q}'
         fetch_recursive_tpl: 'apt-get install --download-only -y {q}'
+        files_tpl: 'dpkg -L {q}'
     },
     PkgManager{
         name: 'vcpkg'
@@ -90,6 +93,7 @@ const managers = [
         list_cmd: 'vcpkg list'
         fetch_tpl: 'vcpkg install --only-downloads {q}'
         fetch_recursive_tpl: 'vcpkg install --only-downloads {q}'
+        files_tpl: ''
         info_parser: 'vcpkg'
     },
     PkgManager{
@@ -100,6 +104,7 @@ const managers = [
         list_cmd: 'brew list'
         fetch_tpl: 'brew fetch {q}'
         fetch_recursive_tpl: 'brew fetch --deps {q}'
+        files_tpl: 'brew list {q}'
     },
     PkgManager{
         name: 'port'
@@ -109,6 +114,7 @@ const managers = [
         list_cmd: 'port installed'
         fetch_tpl: 'port fetch {q}'
         fetch_recursive_tpl: 'port fetch rdepof:{q} {q}'
+        files_tpl: 'port contents {q}'
     },
     PkgManager{
         name: 'rpm'
@@ -118,6 +124,7 @@ const managers = [
         list_cmd: 'rpm -qa'
         fetch_tpl: 'yumdownloader {q}'
         fetch_recursive_tpl: 'yumdownloader --resolve {q}'
+        files_tpl: 'rpm -ql {q}'
     },
     PkgManager{
         name: 'apk'
@@ -127,6 +134,7 @@ const managers = [
         list_cmd: 'apk info'
         fetch_tpl: 'apk fetch {q}'
         fetch_recursive_tpl: ''
+        files_tpl: 'apk info -L {q}'
     },
     PkgManager{
         name: 'pkg (Termux)'
@@ -136,6 +144,7 @@ const managers = [
         list_cmd: 'pkg list-installed | cut -d/ -f1'
         fetch_tpl: 'apt download {q}'
         fetch_recursive_tpl: 'apt-get install --download-only -y {q}'
+        files_tpl: 'pkg files {q}'
     },
     PkgManager{
         name: 'pm (Android)'
@@ -145,6 +154,7 @@ const managers = [
         list_cmd: 'pm list packages | sed s/package://'
         fetch_tpl: ''
         fetch_recursive_tpl: ''
+        files_tpl: ''
     },
 ]
 
@@ -1009,6 +1019,104 @@ fn handle_fetch(args []string) {
     println('--- 汇总: 执行 ${executed} 个, 跳过 ${skipped} 个 (未安装), 不支持 ${unsupported} 个 ---')
 }
 
+// ==================== files 子命令 ====================
+
+fn handle_files(args []string) {
+    if args.len < 1 {
+        eprintln('错误: files 需要一个包名')
+        eprintln('用法: zpkg files <包名>')
+        exit(1)
+    }
+    query := args[0]
+
+    println('')
+    println('========== files ${query} ==========')
+
+    mut executed := 0
+    mut skipped := 0
+    mut unsupported := 0
+
+    for mgr in managers {
+        if !command_exists(mgr.cmd) { skipped++; continue }
+
+        // vcpkg 特殊：无正向 files 命令，遍历安装目录
+        if mgr.name == 'vcpkg' {
+            println('')
+            println('---------- [vcpkg] (遍历安装目录) ----------')
+            vcpkg_files(query)
+            executed++
+            continue
+        }
+
+        if mgr.files_tpl.len == 0 {
+            println('')
+            println('---------- [${mgr.name}] 不支持 files，跳过 ----------')
+            unsupported++
+            continue
+        }
+
+        cmd_str := build_command(mgr.files_tpl, query)
+        executed++
+
+        println('')
+        println('---------- [${mgr.name}] ----------')
+        println('\$ ${cmd_str}')
+        println('---------------------------------------------')
+
+        res := os.execute(cmd_str)
+        out := res.output.trim_space()
+        if res.exit_code == 0 {
+            if out.len > 0 {
+                println(out)
+            } else {
+                println('  (无文件)')
+            }
+        } else {
+            println('  ⚠️ exit code ${res.exit_code}')
+            if out.len > 0 { println(out) }
+        }
+    }
+
+    println('')
+    println('--- 汇总: 执行 ${executed} 个, 跳过 ${skipped} 个 (未安装), 不支持 ${unsupported} 个 ---')
+}
+
+fn vcpkg_files(query string) {
+    root := get_vcpkg_root()
+    if root.len == 0 {
+        println('  未检测到 vcpkg root，跳过')
+        return
+    }
+    installed := '${root}/installed'
+    if !os.exists(installed) {
+        println('  installed 目录不存在')
+        return
+    }
+
+    triplets := os.ls(installed) or { [] }
+    mut found := false
+    for triplet in triplets {
+        if triplet == 'vcpkg' { continue }
+        share_pkg := '${installed}/${triplet}/share/${query}'
+        if !os.exists(share_pkg) { continue }
+        println('  [${triplet}/share/${query}/]')
+        find_cmd := 'find ${escape_shell(share_pkg)} -type f 2>/dev/null'
+        res := os.execute(find_cmd)
+        files := res.output.trim_space()
+        if files.len > 0 {
+            for f in files.split_into_lines() {
+                rel := f.replace(share_pkg, '').trim_left('/')
+                if rel.len > 0 { println('    ${rel}') }
+            }
+        }
+        found = true
+    }
+    if !found {
+        println('  (未在任何 triplet 的 share 目录中找到该包)')
+    }
+    println('  提示: vcpkg 产物合并于 lib/ bin/ 等公共目录，精确文件列表可结合 vcpkg owns <file> 反向查询')
+}
+
 // ==================== vcpkg JSON 解析（search/info 用） ====================
 
 fn extract_json(text string) string {
@@ -1148,13 +1256,14 @@ fn handle_vcpkg_info(query string) string {
 
 fn main() {
     if os.args.len < 2 {
-        eprintln('用法: zpkg <search|info|list|fetch> [参数]')
+        eprintln('用法: zpkg <search|info|list|fetch|files> [参数]')
         eprintln('')
         eprintln('子命令:')
         eprintln('  search <关键词>          在所有包管理器中搜索包')
         eprintln('  info <包名>              查询包详细信息')
         eprintln('  list                     列出已安装的包')
         eprintln('  fetch <包名>             下载包（不安装）')
+        eprintln('  files <包名>             列出包安装的文件')
         eprintln('')
         eprintln('list 参数:')
         eprintln('  --sort <mode>            排序方式（默认: natural）')
@@ -1171,6 +1280,7 @@ fn main() {
         eprintln('  zpkg info curl')
         eprintln('  zpkg list --sort size --max 5')
         eprintln('  zpkg fetch --recursive curl')
+        eprintln('  zpkg files curl')
         exit(1)
     }
 
@@ -1180,6 +1290,7 @@ fn main() {
     match subcmd {
         'list' { handle_list(rest) }
         'fetch' { handle_fetch(rest) }
+        'files' { handle_files(rest) }
         'search', 'info' {
             if rest.len < 1 {
                 eprintln('错误: ${subcmd} 需要一个包名或关键词')
@@ -1217,7 +1328,7 @@ fn main() {
             println('--- 汇总: 执行 ${executed} 个包管理器, 跳过 ${skipped} 个 (未安装) ---')
         }
         else {
-            eprintln('未知子命令: ${subcmd}，可用: search, info, list, fetch')
+            eprintln('未知子命令: ${subcmd}，可用: search, info, list, fetch, files')
             exit(1)
         }
     }
