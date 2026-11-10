@@ -171,6 +171,8 @@ struct Cmdarg {
     excepts      []string @[xdoc: "filter except words, like grep -v"]
 }
 
+// get store path arch: https://stackoverflow.com/questions/71763613/how-does-nix-env-knows-the-store-path-in-advance
+// nix-env -qa go -b --put-path --json, but slow
 // todo temp repack directory
 // todo depends packages resolve
 // linked shared library resolve
