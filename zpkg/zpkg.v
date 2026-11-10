@@ -33,6 +33,8 @@ struct PkgManager {
     search_tpl string
     info_tpl   string
     list_cmd   string
+    fetch_tpl  string
+    fetch_recursive_tpl string = ''
     info_parser string = ''
 }
 
@@ -40,6 +42,11 @@ struct ListConfig {
 mut:
     sort string = 'natural'
     max  int    = 10
+}
+
+struct FetchConfig {
+mut:
+    recursive bool = false
 }
 
 struct PkgEntry {
@@ -63,6 +70,8 @@ const managers = [
         search_tpl: 'pacman -Ss {q}'
         info_tpl: 'pacman -Si {q}'
         list_cmd: 'pacman -Q'
+        fetch_tpl: 'pacman -Sw {q}'
+        fetch_recursive_tpl: 'pacman -Sw --recursive {q}'
     },
     PkgManager{
         name: 'apt'
@@ -70,6 +79,8 @@ const managers = [
         search_tpl: 'apt search {q}'
         info_tpl: 'apt show {q}'
         list_cmd: r'dpkg-query -W -f="${Package}\n"'
+        fetch_tpl: 'apt download {q}'
+        fetch_recursive_tpl: 'apt-get install --download-only -y {q}'
     },
     PkgManager{
         name: 'vcpkg'
@@ -77,6 +88,8 @@ const managers = [
         search_tpl: 'vcpkg search {q}'
         info_tpl: 'vcpkg x-package-info {q} --x-json'
         list_cmd: 'vcpkg list'
+        fetch_tpl: 'vcpkg install --only-downloads {q}'
+        fetch_recursive_tpl: 'vcpkg install --only-downloads {q}'
         info_parser: 'vcpkg'
     },
     PkgManager{
@@ -85,6 +98,8 @@ const managers = [
         search_tpl: 'brew search {q}'
         info_tpl: 'brew info {q}'
         list_cmd: 'brew list'
+        fetch_tpl: 'brew fetch {q}'
+        fetch_recursive_tpl: 'brew fetch --deps {q}'
     },
     PkgManager{
         name: 'port'
@@ -92,6 +107,8 @@ const managers = [
         search_tpl: 'port search {q}'
         info_tpl: 'port info {q}'
         list_cmd: 'port installed'
+        fetch_tpl: 'port fetch {q}'
+        fetch_recursive_tpl: 'port fetch rdepof:{q} {q}'
     },
     PkgManager{
         name: 'rpm'
@@ -99,6 +116,8 @@ const managers = [
         search_tpl: 'rpm -qa | grep -i {q}'
         info_tpl: 'rpm -qi {q}'
         list_cmd: 'rpm -qa'
+        fetch_tpl: 'yumdownloader {q}'
+        fetch_recursive_tpl: 'yumdownloader --resolve {q}'
     },
     PkgManager{
         name: 'apk'
@@ -106,6 +125,8 @@ const managers = [
         search_tpl: 'apk search -v {q}'
         info_tpl: 'apk info -a {q}'
         list_cmd: 'apk info'
+        fetch_tpl: 'apk fetch {q}'
+        fetch_recursive_tpl: ''
     },
     PkgManager{
         name: 'pkg (Termux)'
@@ -113,6 +134,8 @@ const managers = [
         search_tpl: 'pkg search {q}'
         info_tpl: 'pkg show {q}'
         list_cmd: 'pkg list-installed | cut -d/ -f1'
+        fetch_tpl: 'apt download {q}'
+        fetch_recursive_tpl: 'apt-get install --download-only -y {q}'
     },
     PkgManager{
         name: 'pm (Android)'
@@ -120,6 +143,8 @@ const managers = [
         search_tpl: 'pm list packages -f | grep -i {q}'
         info_tpl: 'pm dump {q}'
         list_cmd: 'pm list packages | sed s/package://'
+        fetch_tpl: ''
+        fetch_recursive_tpl: ''
     },
 ]
 
@@ -397,7 +422,6 @@ fn list_apt() []PkgEntry {
         }
         ts := parts[3].trim_space().i64()
         if ts == 0 {
-            // 回退：db-fsys:Last-Modified 可能为空，用 list 文件 mtime 近似
             info_file := '/var/lib/dpkg/info/${name}.list'
             if os.exists(info_file) {
                 if st := os.stat(info_file) { ts = st.mtime }
@@ -440,7 +464,6 @@ fn list_rpm() []PkgEntry {
 }
 
 fn list_apk() []PkgEntry {
-    // apk 不记录安装时间，install-time 字段不存在，不再尝试读取
     raw := os.execute('apk query --installed --format json').output.trim_space()
     if raw.len == 0 { return [] }
     parsed := json2.decode[[]map[string]json2.Any](raw) or { return [] }
@@ -456,14 +479,12 @@ fn list_apk() []PkgEntry {
             size: size
             size_str: human_size(size)
         }
-        // install_date 保持 '-'，apk 无原生安装时间
         entries << e
     }
     return entries
 }
 
 fn list_brew() []PkgEntry {
-    // 优先尝试 brew info --json=v2 --installed 获取版本和时间
     json_raw := os.execute('brew info --json=v2 --installed 2>/dev/null').output.trim_space()
     if json_raw.len > 0 {
         root := json2.decode[map[string]json2.Any](json_raw) or { map[string]json2.Any{} }
@@ -494,7 +515,6 @@ fn list_brew() []PkgEntry {
                     }
                     entries << e
                 }
-                // 补充大小
                 cellar := os.execute('brew --cellar').output.trim_space()
                 if cellar.len == 0 { cellar = '/opt/homebrew/Cellar' }
                 mut size_map := map[string]i64{}
@@ -522,7 +542,6 @@ fn list_brew() []PkgEntry {
         }
     }
 
-    // 回退：brew list --versions + INSTALL_RECEIPT.json
     raw := os.execute('brew list --versions').output.trim_space()
     if raw.len == 0 { return [] }
     cellar := os.execute('brew --cellar').output.trim_space()
@@ -611,7 +630,7 @@ fn list_vcpkg() []PkgEntry {
         parts := line.fields()
         if parts.len < 2 || !parts[0].contains(':') { continue }
         full := parts[0]
-        if full.contains('[') { continue } // 跳过 feature 行
+        if full.contains('[') { continue }
 
         version := parts[1]
         pkg := full.split(':')[0]
@@ -651,7 +670,6 @@ fn list_port() []PkgEntry {
     raw := os.execute('port installed').output.trim_space()
     if raw.len == 0 { return [] }
 
-    // 批量获取安装时间：查询 registry.db
     mut date_map := map[string]i64{}
     reg_db := '/opt/local/var/macports/registry/registry.db'
     if os.exists(reg_db) {
@@ -680,13 +698,11 @@ fn list_port() []PkgEntry {
 
         mut e := PkgEntry{ name: name, version: version }
 
-        // 安装时间
         if ts := date_map[name] {
             e.install_ts = ts
             e.install_date = time.unix(ts).format_ss()
         }
 
-        // 大小
         sp := os.execute('port space ${escape_shell(name)} 2>/dev/null').output
         for sl in sp.split_into_lines() {
             fields := sl.trim_space().fields()
@@ -716,7 +732,6 @@ fn list_pm() []PkgEntry {
         if name.len == 0 { continue }
         mut e := PkgEntry{ name: name }
 
-        // 版本与时间
         dump_out := os.execute('pm dump ${escape_shell(name)} 2>/dev/null').output
         for dl in dump_out.split_into_lines() {
             t := dl.trim_space()
@@ -732,7 +747,6 @@ fn list_pm() []PkgEntry {
             }
         }
 
-        // 大小：pm path 获取 APK 路径，再 stat
         path_out := os.execute('pm path ${escape_shell(name)} 2>/dev/null').output.trim_space()
         if path_out.len > 0 {
             apk_path := path_out.replace('package:', '').trim_space()
@@ -918,6 +932,83 @@ fn handle_list(args []string) {
     }
 }
 
+// ==================== fetch 子命令 ====================
+
+fn handle_fetch(args []string) {
+    mut cfg, no_matches := flag.to_struct[FetchConfig](args, skip: 0, style: .long) or {
+        eprintln('参数错误: ${err}')
+        exit(1)
+    }
+
+    mut query := ''
+    for m in no_matches {
+        if !m.starts_with('-') {
+            query = m
+            break
+        }
+    }
+    if query.len == 0 {
+        eprintln('错误: fetch 需要一个包名')
+        eprintln('用法: zpkg fetch [--recursive] <包名>')
+        exit(1)
+    }
+
+    mode_label := if cfg.recursive { 'recursive' } else { 'single' }
+    println('')
+    println('========== fetch ${query} (mode: ${mode_label}) ==========')
+
+    mut executed := 0
+    mut skipped := 0
+    mut unsupported := 0
+
+    for mgr in managers {
+        if !command_exists(mgr.cmd) { skipped++; continue }
+
+        if mgr.fetch_tpl.len == 0 {
+            println('')
+            println('---------- [${mgr.name}] 不支持 fetch，跳过 ----------')
+            unsupported++
+            continue
+        }
+
+        mut used_tpl := mgr.fetch_tpl
+        mut note := ''
+        if cfg.recursive {
+            if mgr.fetch_recursive_tpl.len > 0 {
+                used_tpl = mgr.fetch_recursive_tpl
+            } else {
+                note = '  (该包管理器不支持 --recursive，已降级为普通 fetch)'
+            }
+        }
+
+        cmd_str := build_command(used_tpl, query)
+        executed++
+
+        println('')
+        println('---------- [${mgr.name}] ----------')
+        println('\$ ${cmd_str}${note}')
+        println('---------------------------------------------')
+
+        res := os.execute(cmd_str)
+        if res.exit_code == 0 {
+            out := res.output.trim_space()
+            if out.len > 0 {
+                println(out)
+            }
+            println('  ✅ 成功')
+        } else {
+            println('  ⚠️ exit code ${res.exit_code}')
+            out := res.output.trim_space()
+            if out.len > 0 {
+                println(out)
+            }
+        }
+    }
+
+    println('')
+    println('--- 汇总: 执行 ${executed} 个, 跳过 ${skipped} 个 (未安装), 不支持 ${unsupported} 个 ---')
+}
+
 // ==================== vcpkg JSON 解析（search/info 用） ====================
 
 fn extract_json(text string) string {
@@ -1057,14 +1148,29 @@ fn handle_vcpkg_info(query string) string {
 
 fn main() {
     if os.args.len < 2 {
-        eprintln('用法: zpkg <search|info|list> [参数]')
-        eprintln('  search <关键词>')
-        eprintln('  info <包名>')
-        eprintln('  list [--sort natural|time|size] [--max N]')
+        eprintln('用法: zpkg <search|info|list|fetch> [参数]')
+        eprintln('')
+        eprintln('子命令:')
+        eprintln('  search <关键词>          在所有包管理器中搜索包')
+        eprintln('  info <包名>              查询包详细信息')
+        eprintln('  list                     列出已安装的包')
+        eprintln('  fetch <包名>             下载包（不安装）')
         eprintln('')
         eprintln('list 参数:')
-        eprintln('  --sort <mode>  排序方式: natural（默认）、time、size')
-        eprintln('  --max <N>      每个包管理器最多显示 N 个包（默认 10，-1 表示不限制）')
+        eprintln('  --sort <mode>            排序方式（默认: natural）')
+        eprintln('                           natural  按包名自然排序（package2 在 package10 前）')
+        eprintln('                           time     按安装时间倒序（最新在前）')
+        eprintln('                           size     按包大小倒序（最大在前）')
+        eprintln('  --max <N>                每个包管理器最多显示 N 个包（默认: 10，-1 表示不限制）')
+        eprintln('')
+        eprintln('fetch 参数:')
+        eprintln('  --recursive              同时下载依赖（默认关闭；部分包管理器不支持时会降级为普通 fetch）')
+        eprintln('')
+        eprintln('示例:')
+        eprintln('  zpkg search curl')
+        eprintln('  zpkg info curl')
+        eprintln('  zpkg list --sort size --max 5')
+        eprintln('  zpkg fetch --recursive curl')
         exit(1)
     }
 
@@ -1073,6 +1179,7 @@ fn main() {
 
     match subcmd {
         'list' { handle_list(rest) }
+        'fetch' { handle_fetch(rest) }
         'search', 'info' {
             if rest.len < 1 {
                 eprintln('错误: ${subcmd} 需要一个包名或关键词')
@@ -1110,7 +1217,7 @@ fn main() {
             println('--- 汇总: 执行 ${executed} 个包管理器, 跳过 ${skipped} 个 (未安装) ---')
         }
         else {
-            eprintln('未知子命令: ${subcmd}，可用: search, info, list')
+            eprintln('未知子命令: ${subcmd}，可用: search, info, list, fetch')
             exit(1)
         }
     }
