@@ -1,6 +1,8 @@
 import os
 import x.json2
 import term
+import flag
+import time
 
 #include <unistd.h>
 
@@ -9,53 +11,47 @@ import term
 fn C.isatty(fd int) int
 
 fn colors_enabled() bool {
-    if os.getenv('NO_COLOR') != '' {
-        return false
-    }
-    if C.isatty(1) == 0 {
-        return false
-    }
+    if os.getenv('NO_COLOR') != '' { return false }
+    if C.isatty(1) == 0 { return false }
     return true
 }
 
 const use_color = colors_enabled()
 
-fn c_bold(s string) string {
-    return if use_color { term.bold(s) } else { s }
-}
-
-fn c_cyan_bold(s string) string {
-    return if use_color { term.bold(term.cyan(s)) } else { s }
-}
-
-fn c_bright_white_bold(s string) string {
-    return if use_color { term.bold(term.bright_white(s)) } else { s }
-}
-
-fn c_green(s string) string {
-    return if use_color { term.green(s) } else { s }
-}
-
-fn c_yellow(s string) string {
-    return if use_color { term.yellow(s) } else { s }
-}
-
-fn c_magenta(s string) string {
-    return if use_color { term.magenta(s) } else { s }
-}
-
-fn c_dim(s string) string {
-    return if use_color { term.dim(s) } else { s }
-}
+fn c_cyan_bold(s string) string { return if use_color { term.bold(term.cyan(s)) } else { s } }
+fn c_bright_white_bold(s string) string { return if use_color { term.bold(term.bright_white(s)) } else { s } }
+fn c_green(s string) string { return if use_color { term.green(s) } else { s } }
+fn c_yellow(s string) string { return if use_color { term.yellow(s) } else { s } }
+fn c_magenta(s string) string { return if use_color { term.magenta(s) } else { s } }
+fn c_dim(s string) string { return if use_color { term.dim(s) } else { s } }
 
 // ==================== 数据结构 ====================
 
 struct PkgManager {
-    name        string
-    cmd         string
-    search_tpl  string
-    info_tpl    string
+    name       string
+    cmd        string
+    search_tpl string
+    info_tpl   string
+    list_cmd   string
     info_parser string = ''
+}
+
+struct ListConfig {
+mut:
+    sort string = 'natural'
+    max  int    = 10
+}
+
+struct PkgEntry {
+    name string
+mut:
+    version      string = '-'
+    size         i64 = 0
+    size_str     string = '-'
+    install_date string = '-'
+    update_date  string = '-'
+    install_ts   i64 = 0
+    update_ts    i64 = 0
 }
 
 // ==================== 包管理器定义 ====================
@@ -66,18 +62,21 @@ const managers = [
         cmd: 'pacman'
         search_tpl: 'pacman -Ss {q}'
         info_tpl: 'pacman -Si {q}'
+        list_cmd: 'pacman -Q'
     },
     PkgManager{
         name: 'apt'
         cmd: 'apt'
         search_tpl: 'apt search {q}'
         info_tpl: 'apt show {q}'
+        list_cmd: r'dpkg-query -W -f="${Package}\n"'
     },
     PkgManager{
         name: 'vcpkg'
         cmd: 'vcpkg'
         search_tpl: 'vcpkg search {q}'
         info_tpl: 'vcpkg x-package-info {q} --x-json'
+        list_cmd: 'vcpkg list'
         info_parser: 'vcpkg'
     },
     PkgManager{
@@ -85,36 +84,42 @@ const managers = [
         cmd: 'brew'
         search_tpl: 'brew search {q}'
         info_tpl: 'brew info {q}'
+        list_cmd: 'brew list'
     },
     PkgManager{
         name: 'port'
         cmd: 'port'
         search_tpl: 'port search {q}'
         info_tpl: 'port info {q}'
+        list_cmd: 'port installed'
     },
     PkgManager{
         name: 'rpm'
         cmd: 'rpm'
         search_tpl: 'rpm -qa | grep -i {q}'
         info_tpl: 'rpm -qi {q}'
+        list_cmd: 'rpm -qa'
     },
     PkgManager{
         name: 'apk'
         cmd: 'apk'
         search_tpl: 'apk search -v {q}'
         info_tpl: 'apk info -a {q}'
+        list_cmd: 'apk info'
     },
     PkgManager{
         name: 'pkg (Termux)'
         cmd: 'pkg'
         search_tpl: 'pkg search {q}'
         info_tpl: 'pkg show {q}'
+        list_cmd: 'pkg list-installed | cut -d/ -f1'
     },
     PkgManager{
         name: 'pm (Android)'
         cmd: 'pm'
         search_tpl: 'pm list packages -f | grep -i {q}'
         info_tpl: 'pm dump {q}'
+        list_cmd: 'pm list packages | sed s/package://'
     },
 ]
 
@@ -142,11 +147,58 @@ fn run_command(cmd_str string) string {
     return output
 }
 
-fn print_header(mgr_name string, subcmd string, cmd_str string) {
-    println('')
-    println('========== [${mgr_name}] ${subcmd} ==========')
-    println('\$ ${cmd_str}')
-    println('---------------------------------------------')
+fn human_size(bytes i64) string {
+    if bytes <= 0 { return '-' }
+    units := ['B', 'KiB', 'MiB', 'GiB', 'TiB']
+    mut v := f64(bytes)
+    mut idx := 0
+    for v >= 1024.0 && idx < units.len - 1 {
+        v /= 1024.0
+        idx++
+    }
+    return '${v:.1f} ${units[idx]}'
+}
+
+fn natural_cmp(a string, b string) int {
+    mut i := 0
+    mut j := 0
+    for i < a.len && j < b.len {
+        if a[i].is_digit() && b[j].is_digit() {
+            mut na := ''
+            for i < a.len && a[i].is_digit() { na += a[i].ascii_str(); i++ }
+            mut nb := ''
+            for j < b.len && b[j].is_digit() { nb += b[j].ascii_str(); j++ }
+            ia := na.int()
+            ib := nb.int()
+            if ia != ib { return if ia < ib { -1 } else { 1 } }
+        } else {
+            if a[i] != b[j] { return if a[i] < b[j] { -1 } else { 1 } }
+            i++
+            j++
+        }
+    }
+    return a.len - b.len
+}
+
+fn sort_natural(mut names []string) {
+    names.sort_with_compare(fn (a &string, b &string) int {
+        return natural_cmp(*a, *b)
+    })
+}
+
+fn parse_human_size(s string) i64 {
+    parts := s.split(' ')
+    if parts.len < 2 { return 0 }
+    val := parts[0].f64()
+    unit := parts[1].to_lower()
+    multiplier := match unit {
+        'b', 'bytes' { i64(1) }
+        'kib', 'kb' { i64(1024) }
+        'mib', 'mb' { i64(1024 * 1024) }
+        'gib', 'gb' { i64(1024 * 1024 * 1024) }
+        else { i64(1) }
+    }
+    return i64(val * multiplier)
 }
 
 // ==================== 通用输出着色 ====================
@@ -156,33 +208,21 @@ fn has_ansi(s string) bool {
 }
 
 fn is_field_key(s string) bool {
-    if s.len == 0 || s.len > 30 {
-        return false
-    }
-    if !s[0].is_letter() {
-        return false
-    }
+    if s.len == 0 || s.len > 30 { return false }
+    if !s[0].is_letter() { return false }
     for c in s {
         if !(c.is_letter() || c.is_digit() || c == ` ` || c == `-` || c == `_` || c == `.`) {
             return false
         }
     }
-    if s.trim_space().len == 0 {
-        return false
-    }
+    if s.trim_space().len == 0 { return false }
     return true
 }
 
 fn is_pkg_token(s string) bool {
-    if s.len == 0 || s.len > 100 {
-        return false
-    }
-    if !(s[0].is_letter() || s[0].is_digit()) {
-        return false
-    }
-    if s.contains('...') || s.contains(':') {
-        return false
-    }
+    if s.len == 0 || s.len > 100 { return false }
+    if !(s[0].is_letter() || s[0].is_digit()) { return false }
+    if s.contains('...') || s.contains(':') { return false }
     for c in s {
         if !(c.is_letter() || c.is_digit() || c == `-` || c == `_` || c == `+` || c == `.` || c == `/` || c == `@`) {
             return false
@@ -191,7 +231,6 @@ fn is_pkg_token(s string) bool {
     return true
 }
 
-// 返回第一个冒号的下标，跳过 "://"；找不到返回 -1
 fn find_kv_colon(line string) int {
     for i := 0; i < line.len; i++ {
         if line[i] == `:` {
@@ -205,12 +244,8 @@ fn find_kv_colon(line string) int {
 }
 
 fn colorize_line(line string, action string) string {
-    if line.len == 0 || has_ansi(line) {
-        return line
-    }
-    if line.trim_space().len == 0 {
-        return line
-    }
+    if line.len == 0 || has_ansi(line) { return line }
+    if line.trim_space().len == 0 { return line }
 
     idx := find_kv_colon(line)
     if idx >= 0 {
@@ -244,9 +279,7 @@ fn colorize_line(line string, action string) string {
 }
 
 fn colorize_output(text string, action string) string {
-    if !use_color {
-        return text
-    }
+    if !use_color { return text }
     mut lines := []string{}
     for line in text.split('\n') {
         lines << colorize_line(line, action)
@@ -254,48 +287,665 @@ fn colorize_output(text string, action string) string {
     return lines.join('\n')
 }
 
-// ==================== vcpkg JSON 解析 & 扁平格式化 ====================
+// ==================== 主命令预览 ====================
+
+fn get_list_cmd(mgr PkgManager) string {
+    return match mgr.name {
+        'pacman' { 'pacman -Qi' }
+        'apt' { r"dpkg-query -W -f='${Package}\t${Version}\t${Installed-Size}\t${db-fsys:Last-Modified}\n'" }
+        'brew' { 'brew info --json=v2 --installed  (fallback: brew list --versions)' }
+        'rpm' { r"rpm -qa --qf '%{NAME}\t%{VERSION}-%{RELEASE}\t%{SIZE}\t%{INSTALLTIME}\n'" }
+        'apk' { 'apk query --installed --format json' }
+        'vcpkg' { 'vcpkg list' }
+        'port' { 'port installed  +  sqlite3 registry.db (SELECT name, date FROM ports)' }
+        'pm (Android)' { 'pm list packages  +  pm path <pkg>' }
+        'pkg (Termux)' { r"dpkg-query -W -f='${Package}\t${Version}\t${Installed-Size}\t${db-fsys:Last-Modified}\n'" }
+        else { mgr.list_cmd }
+    }
+}
+
+// ==================== vcpkg 辅助 ====================
+
+fn get_vcpkg_root() string {
+    r := os.getenv('VCPKG_ROOT')
+    if r.len > 0 { return r }
+
+    out := os.execute('vcpkg root 2>/dev/null').output.trim_space()
+    if out.len > 0 && os.exists('${out}/installed') { return out }
+
+    bin := os.find_abs_path_of_executable('vcpkg') or { '' }
+    if bin.len > 0 {
+        dir := os.dir(bin)
+        candidates := [dir, os.dir(dir)]
+        for c in candidates {
+            if os.exists('${c}/installed') { return c }
+        }
+        share := os.dir(dir) + '/share/vcpkg'
+        if os.exists('${share}/installed') { return share }
+    }
+    return ''
+}
+
+fn get_vcpkg_cache_size() string {
+    mut cache_dir := os.getenv('VCPKG_DEFAULT_BINARY_CACHE')
+    if cache_dir.len == 0 {
+        xdg := os.getenv('XDG_CACHE_HOME')
+        if xdg.len > 0 {
+            cache_dir = '${xdg}/vcpkg/archives'
+        } else {
+            home := os.getenv('HOME')
+            if home.len > 0 {
+                cache_dir = '${home}/.cache/vcpkg/archives'
+            }
+        }
+    }
+    if cache_dir.len == 0 || !os.exists(cache_dir) { return '' }
+
+    cmd := "find ${escape_shell(cache_dir)} -name '*.zip' -type f -printf '%s\\n' 2>/dev/null | awk '{sum+=$1} END {print sum}'"
+    out := os.execute(cmd).output.trim_space()
+    if out.len == 0 || out == '0' { return '' }
+    return human_size(out.i64())
+}
+
+// ==================== 各包管理器的 list 实现 ====================
+
+fn list_pacman() []PkgEntry {
+    raw := os.execute('pacman -Qi').output.trim_space()
+    if raw.len == 0 { return [] }
+    mut entries := []PkgEntry{}
+    mut cur := PkgEntry{ name: '' }
+    mut has := false
+    for line in raw.split_into_lines() {
+        t := line.trim_space()
+        colon := t.index(':') or { -1 }
+        if colon <= 0 { continue }
+        key := t[..colon].trim_space()
+        val := t[colon+1..].trim_space()
+        if key == 'Name' {
+            if has && cur.name.len > 0 { entries << cur }
+            cur = PkgEntry{ name: val }
+            has = true
+        } else if key == 'Version' {
+            cur.version = val
+        } else if key == 'Installed Size' {
+            cur.size_str = val
+            cur.size = parse_human_size(val)
+        } else if key == 'Install Date' {
+            cur.install_date = val
+        }
+    }
+    if has && cur.name.len > 0 { entries << cur }
+    return entries
+}
+
+fn list_apt() []PkgEntry {
+    cmd := r"dpkg-query -W -f='${Package}\t${Version}\t${Installed-Size}\t${db-fsys:Last-Modified}\n'"
+    raw := os.execute(cmd).output.trim_space()
+    if raw.len == 0 { return [] }
+    mut entries := []PkgEntry{}
+    for line in raw.split_into_lines() {
+        parts := line.split('\t')
+        if parts.len < 4 { continue }
+        name := parts[0].trim_space()
+        if name.len == 0 { continue }
+        size_kib := parts[2].trim_space().i64()
+        mut e := PkgEntry{
+            name: name
+            version: parts[1].trim_space()
+            size: size_kib * 1024
+            size_str: human_size(size_kib * 1024)
+        }
+        ts := parts[3].trim_space().i64()
+        if ts == 0 {
+            // 回退：db-fsys:Last-Modified 可能为空，用 list 文件 mtime 近似
+            info_file := '/var/lib/dpkg/info/${name}.list'
+            if os.exists(info_file) {
+                if st := os.stat(info_file) { ts = st.mtime }
+            }
+        }
+        if ts > 0 {
+            e.install_ts = ts
+            e.install_date = time.unix(ts).format_ss()
+        }
+        entries << e
+    }
+    return entries
+}
+
+fn list_rpm() []PkgEntry {
+    cmd := r"rpm -qa --qf '%{NAME}\t%{VERSION}-%{RELEASE}\t%{SIZE}\t%{INSTALLTIME}\n'"
+    raw := os.execute(cmd).output.trim_space()
+    if raw.len == 0 { return [] }
+    mut entries := []PkgEntry{}
+    for line in raw.split_into_lines() {
+        parts := line.split('\t')
+        if parts.len < 4 { continue }
+        name := parts[0].trim_space()
+        if name.len == 0 { continue }
+        size := parts[2].trim_space().i64()
+        ts := parts[3].trim_space().i64()
+        mut e := PkgEntry{
+            name: name
+            version: parts[1].trim_space()
+            size: size
+            size_str: human_size(size)
+        }
+        if ts > 0 {
+            e.install_ts = ts
+            e.install_date = time.unix(ts).format_ss()
+        }
+        entries << e
+    }
+    return entries
+}
+
+fn list_apk() []PkgEntry {
+    // apk 不记录安装时间，install-time 字段不存在，不再尝试读取
+    raw := os.execute('apk query --installed --format json').output.trim_space()
+    if raw.len == 0 { return [] }
+    parsed := json2.decode[[]map[string]json2.Any](raw) or { return [] }
+    mut entries := []PkgEntry{}
+    for item in parsed {
+        name := if n := item['name'] { n.str() } else { '' }
+        if name.len == 0 { continue }
+        version := if v := item['version'] { v.str() } else { '-' }
+        size := if s := item['installed-size'] { s.i64() } else { 0 }
+        e := PkgEntry{
+            name: name
+            version: version
+            size: size
+            size_str: human_size(size)
+        }
+        // install_date 保持 '-'，apk 无原生安装时间
+        entries << e
+    }
+    return entries
+}
+
+fn list_brew() []PkgEntry {
+    // 优先尝试 brew info --json=v2 --installed 获取版本和时间
+    json_raw := os.execute('brew info --json=v2 --installed 2>/dev/null').output.trim_space()
+    if json_raw.len > 0 {
+        root := json2.decode[map[string]json2.Any](json_raw) or { map[string]json2.Any{} }
+        if formulae := root['formulae'] {
+            arr := formulae.arr()
+            if arr.len > 0 {
+                mut entries := []PkgEntry{}
+                for item in arr {
+                    mp := item.as_map()
+                    name := if n := mp['name'] { n.str() } else { '' }
+                    if name.len == 0 { continue }
+                    mut e := PkgEntry{ name: name }
+                    if installed := mp['installed'] {
+                        inst_arr := installed.arr()
+                        if inst_arr.len > 0 {
+                            inst := inst_arr[0].as_map()
+                            if ver := inst['version'] { e.version = ver.str() }
+                            if t := inst['time'] {
+                                ts := t.i64()
+                                if ts > 0 {
+                                    e.install_ts = ts
+                                    e.install_date = time.unix(ts).format_ss()
+                                    e.update_date = e.install_date
+                                    e.update_ts = ts
+                                }
+                            }
+                        }
+                    }
+                    entries << e
+                }
+                // 补充大小
+                cellar := os.execute('brew --cellar').output.trim_space()
+                if cellar.len == 0 { cellar = '/opt/homebrew/Cellar' }
+                mut size_map := map[string]i64{}
+                du_cmd := 'du -sk ${cellar}/*/* 2>/dev/null'
+                println('\$ ${du_cmd}')
+                du_raw := os.execute(du_cmd).output
+                for line in du_raw.split_into_lines() {
+                    fields := line.fields()
+                    if fields.len < 2 { continue }
+                    kib := fields[0].i64()
+                    parts := fields[1].split('/')
+                    if parts.len >= 2 {
+                        pkg := parts[parts.len - 2]
+                        size_map[pkg] = (size_map[pkg] or { i64(0) }) + kib * 1024
+                    }
+                }
+                for mut e in entries {
+                    if s := size_map[e.name] {
+                        e.size = s
+                        e.size_str = human_size(s)
+                    }
+                }
+                return entries
+            }
+        }
+    }
+
+    // 回退：brew list --versions + INSTALL_RECEIPT.json
+    raw := os.execute('brew list --versions').output.trim_space()
+    if raw.len == 0 { return [] }
+    cellar := os.execute('brew --cellar').output.trim_space()
+    if cellar.len == 0 { cellar = '/opt/homebrew/Cellar' }
+
+    mut versions := map[string]string{}
+    for line in raw.split_into_lines() {
+        parts := line.fields()
+        if parts.len < 2 { continue }
+        name := parts[0]
+        versions[name] = if parts.len >= 3 { parts[parts.len - 1] } else { parts[1] }
+    }
+
+    mut size_map := map[string]i64{}
+    du_cmd := 'du -sk ${cellar}/*/* 2>/dev/null'
+    println('\$ ${du_cmd}')
+    du_raw := os.execute(du_cmd).output
+    for line in du_raw.split_into_lines() {
+        fields := line.fields()
+        if fields.len < 2 { continue }
+        kib := fields[0].i64()
+        parts := fields[1].split('/')
+        if parts.len >= 2 {
+            pkg := parts[parts.len - 2]
+            size_map[pkg] = (size_map[pkg] or { i64(0) }) + kib * 1024
+        }
+    }
+
+    mut time_map := map[string]i64{}
+    stat_cmd := 'stat -c "%Y %n" ${cellar}/*/*/INSTALL_RECEIPT.json 2>/dev/null'
+    println('\$ ${stat_cmd}')
+    stat_raw := os.execute(stat_cmd).output
+    for line in stat_raw.split_into_lines() {
+        fields := line.fields()
+        if fields.len < 2 { continue }
+        ts := fields[0].i64()
+        parts := fields[1].split('/')
+        if parts.len >= 3 {
+            pkg := parts[parts.len - 3]
+            if ts > (time_map[pkg] or { i64(0) }) { time_map[pkg] = ts }
+        }
+    }
+
+    mut entries := []PkgEntry{}
+    mut names := []string{}
+    for n, _ in versions { names << n }
+    sort_natural(mut names)
+    for name in names {
+        mut e := PkgEntry{ name: name }
+        e.version = versions[name]
+        if s := size_map[name] {
+            e.size = s
+            e.size_str = human_size(s)
+        }
+        if ts := time_map[name] {
+            e.install_ts = ts
+            e.install_date = time.unix(ts).format_ss()
+            e.update_date = e.install_date
+            e.update_ts = ts
+        }
+        entries << e
+    }
+    return entries
+}
+
+fn list_vcpkg() []PkgEntry {
+    raw := os.execute('vcpkg list').output.trim_space()
+    if raw.len == 0 { return [] }
+
+    root := get_vcpkg_root()
+    println('  vcpkg root: ${if root.len > 0 { root } else { '(未检测到)' }}')
+
+    cache := get_vcpkg_cache_size()
+    if cache.len > 0 { println('  binary cache: ${cache}') }
+
+    mut global_ts := i64(0)
+    if root.len > 0 {
+        status_file := '${root}/installed/vcpkg/status'
+        if os.exists(status_file) {
+            if st := os.stat(status_file) { global_ts = st.mtime }
+        }
+    }
+
+    mut entries := []PkgEntry{}
+    for line in raw.split_into_lines() {
+        parts := line.fields()
+        if parts.len < 2 || !parts[0].contains(':') { continue }
+        full := parts[0]
+        if full.contains('[') { continue } // 跳过 feature 行
+
+        version := parts[1]
+        pkg := full.split(':')[0]
+        triplet := full.split(':')[1]
+
+        mut e := PkgEntry{ name: full, version: version }
+
+        if root.len > 0 {
+            share_dir := '${root}/installed/${triplet}/share/${pkg}'
+            if os.exists(share_dir) {
+                du := os.execute('du -sk ${escape_shell(share_dir)} 2>/dev/null').output
+                ps := du.fields()
+                if ps.len >= 1 {
+                    e.size = ps[0].i64() * 1024
+                    e.size_str = human_size(e.size)
+                }
+                if st := os.stat(share_dir) { e.install_ts = st.mtime }
+            }
+
+            info_file := '${root}/installed/vcpkg/info/${pkg}_${triplet}.list'
+            if os.exists(info_file) {
+                if st := os.stat(info_file) { e.install_ts = st.mtime }
+            }
+
+            if e.install_ts == 0 { e.install_ts = global_ts }
+            if e.install_ts > 0 {
+                e.install_date = time.unix(e.install_ts).format_ss()
+            }
+        }
+
+        entries << e
+    }
+    return entries
+}
+
+fn list_port() []PkgEntry {
+    raw := os.execute('port installed').output.trim_space()
+    if raw.len == 0 { return [] }
+
+    // 批量获取安装时间：查询 registry.db
+    mut date_map := map[string]i64{}
+    reg_db := '/opt/local/var/macports/registry/registry.db'
+    if os.exists(reg_db) {
+        sql_cmd := "sqlite3 ${escape_shell(reg_db)} \"SELECT name, date FROM ports;\" 2>/dev/null"
+        println('\$ sqlite3 ${reg_db} "SELECT name, date FROM ports;"')
+        sql_raw := os.execute(sql_cmd).output
+        for line in sql_raw.split_into_lines() {
+            parts := line.split('|')
+            if parts.len >= 2 {
+                name := parts[0].trim_space()
+                ts := parts[1].trim_space().i64()
+                if name.len > 0 && ts > 0 { date_map[name] = ts }
+            }
+        }
+    }
+
+    mut entries := []PkgEntry{}
+    for line in raw.split_into_lines() {
+        t := line.trim_space()
+        if t.len == 0 || t.starts_with('The following') || t.starts_with('None of the') { continue }
+        parts := t.fields()
+        if parts.len < 2 { continue }
+        name := parts[0]
+        version_raw := parts[1]
+        version := if version_raw.starts_with('@') { version_raw[1..] } else { version_raw }
+
+        mut e := PkgEntry{ name: name, version: version }
+
+        // 安装时间
+        if ts := date_map[name] {
+            e.install_ts = ts
+            e.install_date = time.unix(ts).format_ss()
+        }
+
+        // 大小
+        sp := os.execute('port space ${escape_shell(name)} 2>/dev/null').output
+        for sl in sp.split_into_lines() {
+            fields := sl.trim_space().fields()
+            for i, p in fields {
+                low := p.to_lower()
+                if low in ['bytes', 'b', 'kib', 'kb', 'mib', 'mb', 'gib', 'gb'] && i > 0 {
+                    size_bytes := parse_human_size('${fields[i-1]} ${p}')
+                    if size_bytes > 0 {
+                        e.size = size_bytes
+                        e.size_str = human_size(size_bytes)
+                        break
+                    }
+                }
+            }
+        }
+        entries << e
+    }
+    return entries
+}
+
+fn list_pm() []PkgEntry {
+    raw := os.execute('pm list packages').output.trim_space()
+    if raw.len == 0 { return [] }
+    mut entries := []PkgEntry{}
+    for line in raw.split_into_lines() {
+        name := line.replace('package:', '').trim_space()
+        if name.len == 0 { continue }
+        mut e := PkgEntry{ name: name }
+
+        // 版本与时间
+        dump_out := os.execute('pm dump ${escape_shell(name)} 2>/dev/null').output
+        for dl in dump_out.split_into_lines() {
+            t := dl.trim_space()
+            if t.contains('versionName') {
+                eq := t.index('=') or { -1 }
+                if eq >= 0 { e.version = t[eq+1..].trim_space() }
+            } else if t.contains('firstInstallTime') {
+                eq := t.index('=') or { -1 }
+                if eq >= 0 { e.install_date = t[eq+1..].trim_space() }
+            } else if t.contains('lastUpdateTime') {
+                eq := t.index('=') or { -1 }
+                if eq >= 0 { e.update_date = t[eq+1..].trim_space() }
+            }
+        }
+
+        // 大小：pm path 获取 APK 路径，再 stat
+        path_out := os.execute('pm path ${escape_shell(name)} 2>/dev/null').output.trim_space()
+        if path_out.len > 0 {
+            apk_path := path_out.replace('package:', '').trim_space()
+            if os.exists(apk_path) {
+                if st := os.stat(apk_path) {
+                    e.size = st.size
+                    e.size_str = human_size(st.size)
+                }
+            }
+        }
+
+        entries << e
+    }
+    return entries
+}
+
+fn list_generic(cmd_str string) []PkgEntry {
+    raw := os.execute(cmd_str).output.trim_space()
+    if raw.len == 0 { return [] }
+    mut entries := []PkgEntry{}
+    for line in raw.split_into_lines() {
+        t := line.trim_space()
+        if t.len > 0 { entries << PkgEntry{ name: t } }
+    }
+    return entries
+}
+
+fn execute_list(mgr PkgManager) []PkgEntry {
+    return match mgr.name {
+        'pacman' { list_pacman() }
+        'apt' { list_apt() }
+        'brew' { list_brew() }
+        'rpm' { list_rpm() }
+        'apk' { list_apk() }
+        'vcpkg' { list_vcpkg() }
+        'port' { list_port() }
+        'pm (Android)' { list_pm() }
+        'pkg (Termux)' { list_apt() }
+        else { list_generic(mgr.list_cmd) }
+    }
+}
+
+// ==================== 排序 ====================
+
+fn sort_entries(mut entries []PkgEntry, mode string) {
+    if mode == 'natural' {
+        mut names := []string{}
+        for e in entries { names << e.name }
+        sort_natural(mut names)
+        mut ordered := []PkgEntry{cap: entries.len}
+        for n in names {
+            for e in entries {
+                if e.name == n { ordered << e; break }
+            }
+        }
+        entries = ordered.clone()
+    } else if mode == 'size' {
+        entries.sort_with_compare(fn (a &PkgEntry, b &PkgEntry) int {
+            if a.size != b.size { return if a.size > b.size { -1 } else { 1 } }
+            return natural_cmp(a.name, b.name)
+        })
+    } else if mode == 'time' {
+        entries.sort_with_compare(fn (a &PkgEntry, b &PkgEntry) int {
+            if a.install_ts != b.install_ts {
+                return if a.install_ts > b.install_ts { -1 } else { 1 }
+            }
+            return natural_cmp(a.name, b.name)
+        })
+    }
+}
+
+// ==================== 预处理 --max -1 ====================
+
+fn preprocess_max_arg(args []string) []string {
+    mut result := []string{}
+    mut i := 0
+    for i < args.len {
+        a := args[i]
+        if a == '--max' && i + 1 < args.len {
+            nxt := args[i + 1]
+            if nxt.starts_with('-') && nxt.len > 1 && nxt[1].is_digit() {
+                result << '${a}=${nxt}'
+                i += 2
+                continue
+            }
+        }
+        result << a
+        i++
+    }
+    return result
+}
+
+// ==================== list 子命令 ====================
+
+fn handle_list(args []string) {
+    sanitized := preprocess_max_arg(args)
+    mut cfg, no_matches := flag.to_struct[ListConfig](sanitized, skip: 0, style: .long) or {
+        eprintln('参数错误: ${err}')
+        exit(1)
+    }
+    if no_matches.len > 0 {
+        eprintln('警告: 以下参数未被识别: ${no_matches}')
+    }
+
+    valid := ['natural', 'time', 'size']
+    if cfg.sort !in valid {
+        eprintln('无效的排序方式: ${cfg.sort}，可选: natural, time, size')
+        exit(1)
+    }
+    if cfg.max < -1 {
+        eprintln('无效的 max: ${cfg.max}，必须 >= -1')
+        exit(1)
+    }
+
+    mut total := 0
+    mut shown_total := 0
+
+    for mgr in managers {
+        if !command_exists(mgr.cmd) { continue }
+
+        main_cmd := get_list_cmd(mgr)
+        max_label := if cfg.max < 0 { 'all' } else { cfg.max.str() }
+
+        println('')
+        println('========== [${mgr.name}] list (sort: ${cfg.sort}, max: ${max_label}) ==========')
+        println('\$ ${main_cmd}')
+        println('---------------------------------------------')
+
+        mut entries := execute_list(mgr)
+        if entries.len == 0 {
+            println('  (无结果)')
+            continue
+        }
+
+        sort_entries(mut entries, cfg.sort)
+
+        total_for_mgr := entries.len
+        total += total_for_mgr
+
+        mut shown := entries.clone()
+        if cfg.max >= 0 && shown.len > cfg.max {
+            shown = shown[..cfg.max]
+        }
+        shown_total += shown.len
+
+        idx_w := shown.len.str().len
+        mut name_w := 4
+        mut ver_w := 4
+        for e in shown {
+            if e.name.len > name_w { name_w = e.name.len }
+            if e.version.len > ver_w { ver_w = e.version.len }
+        }
+        name_w += 2
+        ver_w += 2
+
+        for i, e in shown {
+            num := '${i + 1}'
+            idx := ' '.repeat(idx_w - num.len) + num
+            name_pad := e.name + ' '.repeat(name_w - e.name.len)
+            ver_pad := e.version + ' '.repeat(ver_w - e.version.len)
+            mut line := '${idx}. ${name_pad}${ver_pad}'
+            if e.size_str != '-' && e.size_str.len > 0 {
+                line += '[${e.size_str}]  '
+            }
+            if e.install_date != '-' && e.install_date.len > 0 {
+                line += '安装: ${e.install_date}  '
+            }
+            if e.update_date != '-' && e.update_date.len > 0 {
+                line += '更新: ${e.update_date}'
+            }
+            println(line.trim_right(' '))
+        }
+        if shown.len < total_for_mgr {
+            println('  ${c_dim('... (还有 ${total_for_mgr - shown.len} 个，使用 --max=-1 显示全部)')}')
+        }
+    }
+
+    println('')
+    if cfg.max < 0 {
+        println('--- 汇总: 共 ${total} 个包 ---')
+    } else {
+        println('--- 汇总: 共 ${total} 个包，已显示 ${shown_total} 个（--max=${cfg.max}，-1 表示不限制） ---')
+    }
+}
+
+// ==================== vcpkg JSON 解析（search/info 用） ====================
 
 fn extract_json(text string) string {
     t := text.trim_space()
     for i, c in t {
-        if c == `[` || c == `{` {
-            return t[i..]
-        }
+        if c == `[` || c == `{` { return t[i..] }
     }
     return t
 }
 
 fn pretty_key(k string) string {
     known := {
-        'name':             'Name'
-        'version':          'Version'
-        'port-version':     'Port Version'
-        'description':      'Description'
-        'homepage':         'Homepage'
-        'license':          'License'
-        'supports':         'Supports'
-        'dependencies':     'Dependencies'
-        'default-features': 'Default Features'
-        'features':         'Features'
-        'type':             'Type'
+        'name': 'Name', 'version': 'Version', 'port-version': 'Port Version',
+        'description': 'Description', 'homepage': 'Homepage', 'license': 'License',
+        'supports': 'Supports', 'dependencies': 'Dependencies',
+        'default-features': 'Default Features', 'features': 'Features', 'type': 'Type'
     }
-    if v := known[k] {
-        return v
-    }
+    if v := known[k] { return v }
     return k.replace('-', ' ')
 }
 
 fn format_value(v json2.Any) string {
-    if v is string {
-        return v
-    }
+    if v is string { return v }
     if v is []json2.Any {
         mut parts := []string{}
         for item in v {
-            if item is string {
-                parts << item
-            } else {
+            if item is string { parts << item }
+            else {
                 mp := item.as_map()
                 if n := mp['name'] {
                     mut s := n.str()
@@ -303,21 +953,13 @@ fn format_value(v json2.Any) string {
                         farr := feats.arr()
                         if farr.len > 0 {
                             mut fparts := []string{}
-                            for x in farr {
-                                fparts << x.str()
-                            }
+                            for x in farr { fparts << x.str() }
                             s += '[' + fparts.join(',') + ']'
                         }
                     }
-                    if h := mp['host'] {
-                        if h.bool() {
-                            s += ' ' + c_yellow('[host]')
-                        }
-                    }
+                    if h := mp['host'] { if h.bool() { s += ' ' + c_yellow('[host]') } }
                     parts << s
-                } else {
-                    parts << item.str()
-                }
+                } else { parts << item.str() }
             }
         }
         return parts.join('  ')
@@ -325,9 +967,7 @@ fn format_value(v json2.Any) string {
     if v is map[string]json2.Any {
         mp := v.clone()
         mut keys := []string{}
-        for k, _ in mp {
-            keys << k
-        }
+        for k, _ in mp { keys << k }
         keys.sort()
         return keys.join(', ')
     }
@@ -336,183 +976,142 @@ fn format_value(v json2.Any) string {
 
 fn format_field(key string, value json2.Any) string {
     val_str := format_value(value)
-    if val_str.len == 0 {
-        return ''
-    }
+    if val_str.len == 0 { return '' }
     pretty := pretty_key(key)
     mut padded := pretty
-    for padded.len < 16 {
-        padded += ' '
-    }
-
+    for padded.len < 16 { padded += ' ' }
     colored_key := c_cyan_bold(padded)
-
     colored_val := match key {
-        'name' { c_bright_white_bold(val_str) }
-        'version' { c_bright_white_bold(val_str) }
+        'name', 'version' { c_bright_white_bold(val_str) }
         'dependencies' { c_green(val_str) }
-        'features' { c_magenta(val_str) }
-        'default-features' { c_magenta(val_str) }
+        'features', 'default-features' { c_magenta(val_str) }
         'port-version' { if val_str == '0' { c_dim(val_str) } else { val_str } }
         else { val_str }
     }
-
     return '${colored_key}: ${colored_val}'
 }
 
 fn format_vcpkg_port(p map[string]json2.Any) string {
-    priority := [
-        'name', 'version', 'port-version', 'description', 'homepage',
-        'license', 'supports', 'dependencies', 'default-features',
-        'features', 'type',
-    ]
-
+    priority := ['name', 'version', 'port-version', 'description', 'homepage',
+        'license', 'supports', 'dependencies', 'default-features', 'features', 'type']
     mut lines := []string{}
     mut shown := map[string]bool{}
-
     for key in priority {
         if v := p[key] {
             line := format_field(key, v)
-            if line.len > 0 {
-                lines << line
-            }
+            if line.len > 0 { lines << line }
             shown[key] = true
         }
     }
-
     mut extras := []string{}
-    for k, _ in p {
-        if k !in shown {
-            extras << k
-        }
-    }
+    for k, _ in p { if k !in shown { extras << k } }
     extras.sort()
     for k in extras {
         if v := p[k] {
             line := format_field(k, v)
-            if line.len > 0 {
-                lines << line
-            }
+            if line.len > 0 { lines << line }
         }
     }
-
-    if lines.len == 0 {
-        return '(无有效字段)'
-    }
-    return lines.join('\n')
+    return if lines.len == 0 { '(无有效字段)' } else { lines.join('\n') }
 }
 
 fn parse_vcpkg_json(text string) string {
     t := extract_json(text)
-    if t.len == 0 {
-        return '(无数据)'
-    }
-
+    if t.len == 0 { return '(无数据)' }
     mut out := []string{}
-
     if t[0] == `[` {
         ports := json2.decode[[]map[string]json2.Any](t) or { return text }
-        if ports.len == 0 {
-            return '(无匹配端口)'
-        }
         for i, p in ports {
             if i > 0 { out << '' }
             out << format_vcpkg_port(p)
         }
     } else if t[0] == `{` {
         top := json2.decode[map[string]json2.Any](t) or { return text }
-
         if results_any := top['results'] {
             results := results_any.as_map()
-            if results.len > 0 {
-                mut names := []string{}
-                for k, _ in results {
-                    names << k
-                }
-                names.sort()
-                for i, name in names {
-                    if i > 0 { out << '' }
-                    port_any := results[name]
-                    port := port_any.as_map()
-                    out << format_vcpkg_port(port)
-                }
-                return out.join('\n')
+            mut names := []string{}
+            for k, _ in results { names << k }
+            names.sort()
+            for i, name in names {
+                if i > 0 { out << '' }
+                out << format_vcpkg_port(results[name].as_map())
             }
-            return '(results 为空)'
-        }
-
-        out << format_vcpkg_port(top)
-    } else {
-        return text
-    }
-
+        } else { out << format_vcpkg_port(top) }
+    } else { return text }
     return out.join('\n')
 }
 
 fn handle_vcpkg_info(query string) string {
     safe := escape_shell(query)
-    info_cmd := 'vcpkg x-package-info ${safe} --x-json'
-    info_res := os.execute(info_cmd)
-
+    cmd := 'vcpkg x-package-info ${safe} --x-json'
+    res := os.execute(cmd)
     mut out := []string{}
-    out << '\$ ${info_cmd}'
+    out << '\$ ${cmd}'
     out << '---------------------------------------------'
-
-    info_text := info_res.output.trim_space()
-    if info_text.len == 0 {
-        out << '(包信息无输出)'
-    } else {
-        out << parse_vcpkg_json(info_text)
-    }
-
+    if res.output.trim_space().len == 0 { out << '(包信息无输出)' }
+    else { out << parse_vcpkg_json(res.output) }
     return out.join('\n')
 }
 
 // ==================== 主逻辑 ====================
 
 fn main() {
-    if os.args.len < 3 {
-        eprintln('用法: zpkg <search|info> <包名或关键词>')
-        eprintln('示例: zpkg search curl')
-        eprintln('      zpkg info curl')
+    if os.args.len < 2 {
+        eprintln('用法: zpkg <search|info|list> [参数]')
+        eprintln('  search <关键词>')
+        eprintln('  info <包名>')
+        eprintln('  list [--sort natural|time|size] [--max N]')
+        eprintln('')
+        eprintln('list 参数:')
+        eprintln('  --sort <mode>  排序方式: natural（默认）、time、size')
+        eprintln('  --max <N>      每个包管理器最多显示 N 个包（默认 10，-1 表示不限制）')
         exit(1)
     }
 
-    action := os.args[1].to_lower()
-    query := os.args[2]
+    subcmd := os.args[1]
+    rest := os.args[2..]
 
-    if action !in ['search', 'info'] {
-        eprintln('错误: 子命令必须是 search 或 info，收到: ${action}')
-        exit(1)
-    }
-
-    mut executed := 0
-    mut skipped := 0
-
-    for mgr in managers {
-        if !command_exists(mgr.cmd) {
-            skipped++
-            continue
-        }
-        executed++
-
-        if mgr.info_parser == 'vcpkg' && action == 'info' {
-            println('')
-            println('========== [${mgr.name}] ${action} ==========')
-            println(handle_vcpkg_info(query))
-        } else {
-            tpl := if action == 'search' { mgr.search_tpl } else { mgr.info_tpl }
-            cmd_str := build_command(tpl, query)
-            print_header(mgr.name, action, cmd_str)
-            output := run_command(cmd_str)
-            if output.len > 0 {
-                println(colorize_output(output, action))
-            } else {
-                println('  (无输出)')
+    match subcmd {
+        'list' { handle_list(rest) }
+        'search', 'info' {
+            if rest.len < 1 {
+                eprintln('错误: ${subcmd} 需要一个包名或关键词')
+                exit(1)
             }
+            action := subcmd.to_lower()
+            query := rest[0]
+
+            mut executed := 0
+            mut skipped := 0
+            for mgr in managers {
+                if !command_exists(mgr.cmd) { skipped++; continue }
+                executed++
+
+                if mgr.info_parser == 'vcpkg' && action == 'info' {
+                    println('')
+                    println('========== [${mgr.name}] ${action} ==========')
+                    println(handle_vcpkg_info(query))
+                } else {
+                    tpl := if action == 'search' { mgr.search_tpl } else { mgr.info_tpl }
+                    cmd_str := build_command(tpl, query)
+                    println('')
+                    println('========== [${mgr.name}] ${action} ==========')
+                    println('\$ ${cmd_str}')
+                    println('---------------------------------------------')
+                    output := run_command(cmd_str)
+                    if output.len > 0 {
+                        println(colorize_output(output, action))
+                    } else {
+                        println('  (无输出)')
+                    }
+                }
+            }
+            println('')
+            println('--- 汇总: 执行 ${executed} 个包管理器, 跳过 ${skipped} 个 (未安装) ---')
+        }
+        else {
+            eprintln('未知子命令: ${subcmd}，可用: search, info, list')
+            exit(1)
         }
     }
-
-    println('')
-    println('--- 汇总: 执行 ${executed} 个包管理器, 跳过 ${skipped} 个 (未安装) ---')
 }
