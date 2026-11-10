@@ -33,10 +33,12 @@ struct PkgManager {
     search_tpl string
     info_tpl   string
     list_cmd   string
+    installed_cmd string
     fetch_tpl  string
     fetch_recursive_tpl string = ''
     files_tpl  string = ''
     info_parser string = ''
+    has_native_installed_mark bool = false
 }
 
 struct ListConfig {
@@ -71,9 +73,11 @@ const managers = [
         search_tpl: 'pacman -Ss {q}'
         info_tpl: 'pacman -Si {q}'
         list_cmd: 'pacman -Q'
+        installed_cmd: 'pacman -Qq'
         fetch_tpl: 'pacman -Sw {q}'
         fetch_recursive_tpl: 'pacman -Sw --recursive {q}'
         files_tpl: 'pacman -Ql {q}'
+        has_native_installed_mark: true
     },
     PkgManager{
         name: 'apt'
@@ -81,9 +85,11 @@ const managers = [
         search_tpl: 'apt search {q}'
         info_tpl: 'apt show {q}'
         list_cmd: r'dpkg-query -W -f="${Package}\n"'
+        installed_cmd: r'dpkg-query -W -f="${Package}\n"'
         fetch_tpl: 'apt download {q}'
         fetch_recursive_tpl: 'apt-get install --download-only -y {q}'
         files_tpl: 'dpkg -L {q}'
+        has_native_installed_mark: true
     },
     PkgManager{
         name: 'vcpkg'
@@ -91,10 +97,12 @@ const managers = [
         search_tpl: 'vcpkg search {q}'
         info_tpl: 'vcpkg x-package-info {q} --x-json'
         list_cmd: 'vcpkg list'
+        installed_cmd: 'vcpkg list'
         fetch_tpl: 'vcpkg install --only-downloads {q}'
         fetch_recursive_tpl: 'vcpkg install --only-downloads {q}'
         files_tpl: ''
         info_parser: 'vcpkg'
+        has_native_installed_mark: false
     },
     PkgManager{
         name: 'brew'
@@ -102,9 +110,11 @@ const managers = [
         search_tpl: 'brew search {q}'
         info_tpl: 'brew info {q}'
         list_cmd: 'brew list'
+        installed_cmd: 'brew list -1'
         fetch_tpl: 'brew fetch {q}'
         fetch_recursive_tpl: 'brew fetch --deps {q}'
         files_tpl: 'brew list {q}'
+        has_native_installed_mark: true
     },
     PkgManager{
         name: 'port'
@@ -112,9 +122,11 @@ const managers = [
         search_tpl: 'port search {q}'
         info_tpl: 'port info {q}'
         list_cmd: 'port installed'
+        installed_cmd: 'port installed'
         fetch_tpl: 'port fetch {q}'
         fetch_recursive_tpl: 'port fetch rdepof:{q} {q}'
         files_tpl: 'port contents {q}'
+        has_native_installed_mark: false
     },
     PkgManager{
         name: 'rpm'
@@ -122,9 +134,11 @@ const managers = [
         search_tpl: 'rpm -qa | grep -i {q}'
         info_tpl: 'rpm -qi {q}'
         list_cmd: 'rpm -qa'
+        installed_cmd: 'rpm -qa'
         fetch_tpl: 'yumdownloader {q}'
         fetch_recursive_tpl: 'yumdownloader --resolve {q}'
         files_tpl: 'rpm -ql {q}'
+        has_native_installed_mark: false
     },
     PkgManager{
         name: 'apk'
@@ -132,9 +146,11 @@ const managers = [
         search_tpl: 'apk search -v {q}'
         info_tpl: 'apk info -a {q}'
         list_cmd: 'apk info'
+        installed_cmd: 'apk info'
         fetch_tpl: 'apk fetch {q}'
         fetch_recursive_tpl: ''
         files_tpl: 'apk info -L {q}'
+        has_native_installed_mark: false
     },
     PkgManager{
         name: 'pkg (Termux)'
@@ -142,9 +158,11 @@ const managers = [
         search_tpl: 'pkg search {q}'
         info_tpl: 'pkg show {q}'
         list_cmd: 'pkg list-installed | cut -d/ -f1'
+        installed_cmd: 'pkg list-installed | cut -d/ -f1'
         fetch_tpl: 'apt download {q}'
         fetch_recursive_tpl: 'apt-get install --download-only -y {q}'
         files_tpl: 'pkg files {q}'
+        has_native_installed_mark: false
     },
     PkgManager{
         name: 'pm (Android)'
@@ -152,9 +170,11 @@ const managers = [
         search_tpl: 'pm list packages -f | grep -i {q}'
         info_tpl: 'pm dump {q}'
         list_cmd: 'pm list packages | sed s/package://'
+        installed_cmd: 'pm list packages | sed s/package://'
         fetch_tpl: ''
         fetch_recursive_tpl: ''
         files_tpl: ''
+        has_native_installed_mark: false
     },
 ]
 
@@ -234,6 +254,102 @@ fn parse_human_size(s string) i64 {
         else { i64(1) }
     }
     return i64(val * multiplier)
+}
+
+// ==================== 获取已安装包集合 ====================
+
+fn get_installed_set(mgr PkgManager) map[string]bool {
+    mut set := map[string]bool{}
+    if mgr.installed_cmd.len == 0 { return set }
+
+    raw := os.execute(mgr.installed_cmd).output.trim_space()
+    if raw.len == 0 { return set }
+
+    for line in raw.split_into_lines() {
+        t := line.trim_space()
+        if t.len == 0 { continue }
+
+        name := match mgr.name {
+            'pacman', 'apk', 'brew', 'rpm' {
+                t.fields()[0]
+            }
+            'apt' {
+                t
+            }
+            'vcpkg' {
+                parts := t.fields()
+                if parts.len > 0 && parts[0].contains(':') { parts[0] } else { t }
+            }
+            'port' {
+                t.fields()[0]
+            }
+            'pkg (Termux)' {
+                t.split('/')[0]
+            }
+            'pm (Android)' {
+                t
+            }
+            else { t }
+        }
+
+        if name.len > 0 {
+            set[name] = true
+        }
+    }
+
+    return set
+}
+
+// ==================== 行尾标注：保持对齐 ====================
+
+fn annotate_search_with_installed(output string, mgr PkgManager, query string) string {
+    if mgr.has_native_installed_mark {
+        return colorize_output(output, 'search')
+    }
+
+    if mgr.name in ['rpm', 'pm (Android)'] {
+        return colorize_output(output, 'search')
+    }
+
+    installed := get_installed_set(mgr)
+    if installed.len == 0 {
+        return colorize_output(output, 'search')
+    }
+
+    mut lines := []string{}
+    for line in output.split('\n') {
+        trimmed := line.trim_space()
+        if trimmed.len == 0 {
+            lines << line
+            continue
+        }
+
+        first_token := ''
+        sp := trimmed.index(' ') or { -1 }
+        if sp > 0 {
+            first_token = trimmed[..sp]
+        } else {
+            first_token = trimmed
+        }
+
+        lookup := first_token
+        if mgr.name == 'vcpkg' && lookup.contains(':') {
+            lookup = lookup.split(':')[0]
+        }
+
+        is_installed := installed[lookup] or { installed[first_token] or { false } }
+
+        // 关键：先着色，再在整行末尾追加标记
+        colored_line := colorize_line(line, 'search')
+        if is_installed {
+            marker := if use_color { ' ' + term.green('[installed]') } else { ' [installed]' }
+            colored_line += marker
+        }
+
+        lines << colored_line
+    }
+
+    return lines.join('\n')
 }
 
 // ==================== 通用输出着色 ====================
@@ -1039,7 +1155,6 @@ fn handle_files(args []string) {
     for mgr in managers {
         if !command_exists(mgr.cmd) { skipped++; continue }
 
-        // vcpkg 特殊：无正向 files 命令，遍历安装目录
         if mgr.name == 'vcpkg' {
             println('')
             println('---------- [vcpkg] (遍历安装目录) ----------')
@@ -1259,7 +1374,7 @@ fn main() {
         eprintln('用法: zpkg <search|info|list|fetch|files> [参数]')
         eprintln('')
         eprintln('子命令:')
-        eprintln('  search <关键词>          在所有包管理器中搜索包')
+        eprintln('  search <关键词>          在所有包管理器中搜索包（已安装的会在行尾标记 [installed]）')
         eprintln('  info <包名>              查询包详细信息')
         eprintln('  list                     列出已安装的包')
         eprintln('  fetch <包名>             下载包（不安装）')
@@ -1318,7 +1433,11 @@ fn main() {
                     println('---------------------------------------------')
                     output := run_command(cmd_str)
                     if output.len > 0 {
-                        println(colorize_output(output, action))
+                        if action == 'search' {
+                            println(annotate_search_with_installed(output, mgr, query))
+                        } else {
+                            println(colorize_output(output, action))
+                        }
                     } else {
                         println('  (无输出)')
                     }
