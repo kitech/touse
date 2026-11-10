@@ -61,19 +61,16 @@ fn ev(ctx voidptr, code string) JSValue {
 fn new_env() (voidptr, voidptr) {
     rt := new_runtime()
     assert rt != 0
-    ctx := new_context(rt) // JS_NewContext 已包含基础对象
+    ctx := new_context(rt) // JS_NewContext 已含全部 intrinsics（base/Date/RegExp/JSON/…）
     assert ctx != 0
-    // 移除 add_intrinsic_base_objects(ctx) 的调用
-    // add_intrinsic_json(ctx)
-    add_intrinsic_date(ctx)
-    add_intrinsic_reg_exp(ctx)
-    // 根据测试需要，可能还需要添加其他 intrinsic
+    // 注意：不要再 add_intrinsic_date/reg_exp/json —— quickjs-ng 里 new_context
+    // 已自动添加，二次 add 会产生悬挂对象，JS_FreeRuntime 断言崩溃
     return rt, ctx
 }
 
 fn close_env(rt voidptr, ctx voidptr) {
 	free_context(ctx)
-//	free_runtime(rt) // why crash???
+	free_runtime(rt)
 }
 
 // ─── JSValue 布局 / 辅助函数 ─────────────────────────────────────────────
@@ -177,7 +174,7 @@ fn test_context_raw_and_intrinsics() {
     add_intrinsic_eval(ctx)           // 关键：Eval 必须添加
 //    add_intrinsic_string_normalize(ctx)
     add_intrinsic_reg_exp(ctx)
-  //  add_intrinsic_json(ctx)
+    add_intrinsic_json(ctx)
     // 根据测试范围，可能还需要添加 Proxy, MapSet, TypedArrays, Promise, BigInt 等
     // add_intrinsic_proxy(ctx)
     // add_intrinsic_map_set(ctx)
@@ -615,7 +612,11 @@ fn test_detect_module() {
 	m2 := 'export default 1'
 	assert detect_module(m2.str, u64(m2.len))
 	plain := 'var x = 1; function f(){return x}'
-	assert !detect_module(plain.str, u64(plain.len))
+	// quickjs-ng 的 JS_DetectModule = "能否作为 module 解析"，任何合法脚本(包括普通脚本)
+	// 都返回 true；只有语法非法才返回 false（与 Bellard 版语义不同）
+	assert detect_module(plain.str, u64(plain.len))
+	invalid := '1 +'
+	assert !detect_module(invalid.str, u64(invalid.len))
 	close_env(rt, ctx)
 }
 
@@ -634,7 +635,7 @@ fn test_eval_compile_only() {
 	assert to_int32(ctx, &i, r)
 	assert i == 3
 	free_value_safe(ctx, r)
-	free_value_safe(ctx, v)
+	// JS_EvalFunction 成功时已接管/释放 fun_obj（v），不能再 free
 	close_env(rt, ctx)
 }
 

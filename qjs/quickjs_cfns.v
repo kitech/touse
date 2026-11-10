@@ -109,30 +109,19 @@ fn value_has_ref_count(v JSValue) bool {
 	return u32(v.tag) >= u32(i32(tag_first))
 }
 
-// JSValue JS_DupValue(JSContext *, JSValue)
+// JSValue JS_DupValue(JSContext *, JSValueConst)
 pub fn dup_value(ctx voidptr, v JSValue) JSValue {
-	if value_has_ref_count(v) {
-		p := refcount_ptr(v)
-		unsafe {
-			*p = *p + 1
-		}
-	}
-	return v
+	// quickjs-ng 0.17 起是真实导出符号（对象头布局已变，不能手动加减首4字节）
+	return C.JS_DupValue(ctx, v)
 }
 
-// JSValue JS_DupValueRT(JSRuntime *, JSValue)
+// JSValue JS_DupValueRT(JSRuntime *, JSValueConst)
 pub fn dup_value_rt(rt voidptr, v JSValue) JSValue {
-	if value_has_ref_count(v) {
-		p := refcount_ptr(v)
-		unsafe {
-			*p = *p + 1
-		}
-	}
-	return v
+	return C.JS_DupValueRT(rt, v)
 }
 
 // ─── 常用 JS_TAG_* 常量（补全，配合 tag 字段使用）─────────────────────────
-pub const tag_short_big_int       = i64(-10)
+pub const tag_short_big_int       = i64(7)
 pub const tag_first               = i64(-9)
 pub const tag_big_int             = i64(-9)
 pub const tag_symbol              = i64(-8)
@@ -147,7 +136,7 @@ pub const tag_undefined           = i64(3)
 pub const tag_uninitialized       = i64(4)
 pub const tag_catch_offset        = i64(5)
 pub const tag_exception           = i64(6)
-pub const tag_float64             = i64(7)
+pub const tag_float64             = i64(8)
 
 // ─── 原始常量（全部保留）──────────────────────────────────────────────────
 // todo // pub const QUICKJS_H =
@@ -358,36 +347,21 @@ pub fn __js_new_short_big_int(ctx voidptr, d i64) JSValue {
 // fn C.__JS_NewFloat64(ctx voidptr, d f64) C.JSValue
 // fn C.__JS_NewShortBigInt(ctx voidptr, d i64) C.JSValue
 
-// 声明真正的外部释放函数（RT 版本在 quickjs.c 里是非 static 的）
+// 声明真正的外部符号（quickjs-ng 0.17 均为导出符号）
 fn C.JS_FreeValueRT(rt voidptr, v C.JSValue) cvoid
 fn C.JS_FreeValue(ctx voidptr, v C.JSValue) cvoid
+fn C.JS_DupValue(ctx voidptr, v C.JSValue) C.JSValue
+fn C.JS_DupValueRT(rt voidptr, v C.JSValue) C.JSValue
 
 // void JS_FreeValue(JSContext *, JSValue)
 pub fn free_value(ctx voidptr, v JSValue) {
-	if value_has_ref_count(v) {
-		p := refcount_ptr(v)
-		unsafe {
-			*p = *p - 1
-			if *p == 0 {
-				// 用 RT 版本释放，ctx 可以通过 JS_GetRuntime 拿到
-				rt := C.JS_GetRuntime(ctx)
-				C.JS_FreeValue(rt, v)
-			}
-		}
-	}
+	// quickjs-ng 0.17 起是真实导出符号，内部自带 refcount 判断（非引用类型是 no-op）
+	C.JS_FreeValue(ctx, v)
 }
 
 // void JS_FreeValueRT(JSRuntime *, JSValue)
 pub fn free_value_rt(rt voidptr, v JSValue) {
-	if value_has_ref_count(v) {
-		p := refcount_ptr(v)
-		unsafe {
-			*p = *p - 1
-			if *p == 0 {
-				C.JS_FreeValueRT(rt, v)
-			}
-		}
-	}
+	C.JS_FreeValueRT(rt, v)
 }
 
 
