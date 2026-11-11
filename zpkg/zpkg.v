@@ -1143,6 +1143,48 @@ fn sort_entries(mut entries []PkgEntry, mode string) {
 	}
 }
 
+// ==================== 短选项展开 ====================
+
+// 将短选项展开为长选项，供 flag.to_struct(style: .long) 使用
+// 支持：-s <val> → --sort=<val>；-m <val> → --max=<val>；-m -1 → --max=-1；-r → --recursive
+fn normalize_args(args []string) []string {
+	mut result := []string{}
+	mut i := 0
+	for i < args.len {
+		a := args[i]
+		match a {
+			'-s' {
+				if i + 1 < args.len {
+					result << '--sort=${args[i + 1]}'
+					i += 2
+				} else {
+					result << '--sort'
+					i += 1
+				}
+			}
+			'-m' {
+				if i + 1 < args.len {
+					// 负数（-1 等）必须用 = 形式，否则 flag 会把它当成独立选项
+					result << '--max=${args[i + 1]}'
+					i += 2
+				} else {
+					result << '--max'
+					i += 1
+				}
+			}
+			'-r' {
+				result << '--recursive'
+				i += 1
+			}
+			else {
+				result << a
+				i += 1
+			}
+		}
+	}
+	return result
+}
+
 // ==================== 预处理 --max -1 ====================
 
 fn preprocess_max_arg(args []string) []string {
@@ -1167,7 +1209,7 @@ fn preprocess_max_arg(args []string) []string {
 // ==================== list 子命令 ====================
 
 fn handle_list(args []string) {
-	sanitized := preprocess_max_arg(args)
+	sanitized := preprocess_max_arg(normalize_args(args))
 	mut cfg, no_matches := flag.to_struct[ListConfig](sanitized, skip: 0, style: .long) or {
 		eprintln('参数错误: ${err}')
 		exit(1)
@@ -1498,7 +1540,7 @@ fn get_upable_cmd_label(mgr PkgManager) string {
 }
 
 fn handle_upable(args []string) {
-	sanitized := preprocess_max_arg(args)
+	sanitized := preprocess_max_arg(normalize_args(args))
 	mut cfg, no_matches := flag.to_struct[UpableConfig](sanitized, skip: 0, style: .long) or {
 		eprintln('参数错误: ${err}')
 		exit(1)
@@ -1581,7 +1623,7 @@ fn handle_upable(args []string) {
 // ==================== fetch 子命令 ====================
 
 fn handle_fetch(args []string) {
-	mut cfg, no_matches := flag.to_struct[FetchConfig](args, skip: 0, style: .long) or {
+	mut cfg, no_matches := flag.to_struct[FetchConfig](normalize_args(args), skip: 0, style: .long) or {
 		eprintln('参数错误: ${err}')
 		exit(1)
 	}
@@ -1595,7 +1637,7 @@ fn handle_fetch(args []string) {
 	}
 	if query.len == 0 {
 		eprintln('错误: fetch 需要一个包名')
-		eprintln('用法: zpkg fetch [--recursive] <包名>')
+		eprintln('用法: zpkg fetch [-r|--recursive] <包名>')
 		exit(1)
 	}
 
@@ -1902,26 +1944,29 @@ fn main() {
 		eprintln('  files <包名>             列出包安装的文件')
 		eprintln('')
 		eprintln('list 参数:')
-		eprintln('  --sort <mode>            排序方式（默认: natural）')
+		eprintln('  -s, --sort <mode>        排序方式（默认: natural）')
 		eprintln('                           natural  按包名自然排序（package2 在 package10 前）')
 		eprintln('                           time     按安装时间倒序（最新在前）')
 		eprintln('                           size     按包大小倒序（最大在前）')
-		eprintln('  --max <N>                每个包管理器最多显示 N 个包（默认: 10，-1 表示不限制）')
+		eprintln('  -m, --max <N>            每个包管理器最多显示 N 个包（默认: 10，-1 表示不限制）')
 		eprintln('')
 		eprintln('upable 参数:')
-		eprintln('  --max <N>                每个包管理器最多显示 N 个可更新包（默认: 10，-1 表示不限制）')
+		eprintln('  -m, --max <N>            每个包管理器最多显示 N 个可更新包（默认: 10，-1 表示不限制）')
 		eprintln('')
 		eprintln('fetch 参数:')
-		eprintln('  --recursive              同时下载依赖（默认关闭；部分包管理器不支持时会降级为普通 fetch）')
+		eprintln('  -r, --recursive          同时下载依赖（默认关闭；部分包管理器不支持时会降级为普通 fetch）')
 		eprintln('')
 		eprintln('示例:')
 		eprintln('  zpkg search curl')
 		eprintln('  zpkg info curl')
 		eprintln('  zpkg list --sort size --max 5')
+		eprintln('  zpkg list -s size -m 5')
 		eprintln('  zpkg upable')
 		eprintln('  zpkg upable --max 5')
 		eprintln('  zpkg upable --max=-1')
+		eprintln('  zpkg upable -m 5')
 		eprintln('  zpkg fetch --recursive curl')
+		eprintln('  zpkg fetch -r curl')
 		eprintln('  zpkg files curl')
 		exit(1)
 	}
