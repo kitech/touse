@@ -1919,6 +1919,94 @@ fn handle_deln(args []string) {
 	println(summary)
 }
 
+// ==================== upgraden 子命令（模拟全量更新） ====================
+
+// 返回模拟全量更新命令；空字符串表示不支持。
+// 依据各包管理器文档核对：
+//   pacman  : pacman -Sup                       (print, 不执行)
+//   apt     : apt upgrade --dry-run             (dry-run)
+//   dnf/yum : dnf upgrade --assumeno            (自动回答 "no")
+//   zypper  : zypper update -D                  (dry-run)
+//   apk     : apk upgrade --simulate            (模拟模式)
+//   brew    : brew upgrade --dry-run            (dry-run)
+//   vcpkg   : vcpkg upgrade                     (默认即 dry-run)
+//   port    : port -y upgrade outdated          (全局 dry-run 选项)
+fn get_upgrade_simulate_cmd(mgr PkgManager) string {
+	return match mgr.name {
+		'pacman' { 'pacman -Sup' }
+		'apt', 'pkg (Termux)' { 'apt upgrade --dry-run' }
+		'rpm' {
+			if (os.find_abs_path_of_executable('dnf') or { '' }).len > 0 {
+				'dnf upgrade --assumeno 2>&1'
+			} else if (os.find_abs_path_of_executable('yum') or { '' }).len > 0 {
+				'yum upgrade --assumeno 2>&1'
+			} else if (os.find_abs_path_of_executable('zypper') or { '' }).len > 0 {
+				'zypper update -D'
+			} else {
+				''
+			}
+		}
+		'apk' { 'apk upgrade --simulate' }
+		'brew' { 'brew upgrade --dry-run' }
+		'vcpkg' { 'vcpkg upgrade' }
+		'port' { 'port -y upgrade outdated' }
+		else { '' }
+	}
+}
+
+fn handle_upgraden(args []string) {
+	_ = args
+
+	println('')
+	println('========== 模拟全量更新 (不会实际修改系统) ==========')
+
+	mut executed := 0
+	mut skipped := 0
+	mut unsupported_names := []string{}
+
+	for mgr in get_ordered_managers() {
+		if !command_exists(mgr.cmd) { continue }
+
+		cmd_str := get_upgrade_simulate_cmd(mgr)
+		if cmd_str.len == 0 {
+			println('')
+			println('---------- [${mgr.name}] 该包管理器不支持模拟全量更新，跳过 ----------')
+			skipped++
+			unsupported_names << mgr.name
+			continue
+		}
+
+		executed++
+		println('')
+		println('---------- [${mgr.name}] ----------')
+		println('\$ ${cmd_str}')
+		println('---------------------------------------------')
+
+		res := os.execute(cmd_str)
+		out := res.output.trim_space()
+		if out.len > 0 {
+			println(out)
+		} else {
+			println('  (无输出)')
+		}
+
+		// dnf/yum upgrade --assumeno 在取消时退出码可能非 0，视为正常
+		if res.exit_code != 0 && mgr.name != 'rpm' {
+			println('  ⚠️ exit code ${res.exit_code}')
+		}
+	}
+
+	println('')
+	mut summary := '--- 汇总: 执行 ${executed} 个包管理器'
+	if unsupported_names.len > 0 {
+		summary += '，跳过 ${skipped} 个（${unsupported_names.join(', ')} 不支持模拟）'
+	} else if skipped > 0 {
+		summary += '，跳过 ${skipped} 个'
+	}
+	summary += ' ---'
+	println(summary)
+}
+
 // ==================== fetch 子命令 ====================
 
 fn handle_fetch(args []string) {
@@ -2232,7 +2320,7 @@ fn handle_vcpkg_info(query string) string {
 
 fn main() {
 	if os.args.len < 2 {
-		eprintln('用法: zpkg <search|info|list|upable|syncn|addn|deln|fetch|files> [参数]')
+		eprintln('用法: zpkg <search|info|list|upable|syncn|addn|deln|upgraden|fetch|files> [参数]')
 		eprintln('')
 		eprintln('子命令:')
 		eprintln('  search <关键词>          在所有包管理器中搜索包（已安装的会在行尾标记 [installed]）')
@@ -2242,6 +2330,7 @@ fn main() {
 		eprintln('  syncn                    模拟同步软件仓库（只显示将要更新的内容，不实际修改系统）')
 		eprintln('  addn <包名>              模拟安装包，预览影响而不实际执行')
 		eprintln('  deln <包名>              模拟删除包，预览影响而不实际执行')
+		eprintln('  upgraden                 模拟全量更新所有可升级包，预览影响而不实际执行')
 		eprintln('  fetch <包名>             下载包（不安装）')
 		eprintln('  files <包名>             列出包安装的文件')
 		eprintln('')
@@ -2274,6 +2363,7 @@ fn main() {
 		eprintln('  zpkg addn curl')
 		eprintln('  zpkg deln curl')
 		eprintln('  zpkg deln -r curl')
+		eprintln('  zpkg upgraden')
 		eprintln('  zpkg fetch --recursive curl')
 		eprintln('  zpkg fetch -r curl')
 		eprintln('  zpkg files curl')
@@ -2289,6 +2379,7 @@ fn main() {
 		'syncn' { handle_syncn(rest) }
 		'addn' { handle_addn(rest) }
 		'deln' { handle_deln(rest) }
+		'upgraden' { handle_upgraden(rest) }
 		'fetch' { handle_fetch(rest) }
 		'files' { handle_files(rest) }
 		'search', 'info' {
@@ -2352,7 +2443,7 @@ fn main() {
 			println(summary)
 		}
 		else {
-			eprintln('未知子命令: ${subcmd}，可用: search, info, list, upable, syncn, addn, deln, fetch, files')
+			eprintln('未知子命令: ${subcmd}，可用: search, info, list, upable, syncn, addn, deln, upgraden, fetch, files')
 			exit(1)
 		}
 	}
