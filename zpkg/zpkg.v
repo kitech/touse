@@ -1620,6 +1620,92 @@ fn handle_upable(args []string) {
 	}
 }
 
+// ==================== syncn 子命令 ====================
+
+// 返回模拟同步命令；空字符串表示该包管理器不支持模拟。
+// 依据各包管理器文档核对：
+//   pacman  : pacman -Sy -p         (打印将要同步的内容，不实际执行)
+//   apt     : apt-get update --print-uris  (只打印 URI，不下载)
+//   dnf/yum : check-update -q       (只检查更新，不做实际更改)
+//   zypper  : refresh -D            (dry-run)
+//   apk     : update --simulate     (模拟模式)
+//   brew/port/vcpkg : 无 dry-run 支持
+fn get_sync_simulate_cmd(mgr PkgManager) string {
+	return match mgr.name {
+		'pacman' { 'pacman -Sy -p' }
+		'apt', 'pkg (Termux)' { 'apt-get update --print-uris' }
+		'rpm' {
+			if (os.find_abs_path_of_executable('dnf') or { '' }).len > 0 {
+				'dnf check-update -q'
+			} else if (os.find_abs_path_of_executable('yum') or { '' }).len > 0 {
+				'yum check-update -q'
+			} else if (os.find_abs_path_of_executable('zypper') or { '' }).len > 0 {
+				'zypper refresh -D'
+			} else {
+				''
+			}
+		}
+		'apk' { 'apk update --simulate' }
+		else { '' }
+	}
+}
+
+fn handle_syncn(args []string) {
+	_ = args
+
+	mut executed := 0
+	mut skipped := 0
+	mut unsupported_names := []string{}
+
+	println('')
+	println('========== 模拟同步软件仓库 (不会实际修改系统) ==========')
+
+	for mgr in get_ordered_managers() {
+		if !command_exists(mgr.cmd) { continue }
+
+		cmd_str := get_sync_simulate_cmd(mgr)
+		if cmd_str.len == 0 {
+			println('')
+			println('---------- [${mgr.name}] 该包管理器不支持模拟同步，跳过 ----------')
+			skipped++
+			unsupported_names << mgr.name
+			continue
+		}
+
+		executed++
+		println('')
+		println('---------- [${mgr.name}] ----------')
+		println('\$ ${cmd_str}')
+		println('---------------------------------------------')
+
+		res := os.execute(cmd_str)
+		out := res.output.trim_space()
+		if out.len > 0 {
+			println(out)
+		} else {
+			println('  (无输出)')
+		}
+
+		// dnf/yum check-update: 100 表示有可用更新，视为正常
+		// apt-get update --print-uris: 0 表示正常
+		// pacman -Sy -p: 0 表示正常
+		// apk update --simulate: 0 表示正常
+		if res.exit_code != 0 && res.exit_code != 100 {
+			println('  ⚠️ exit code ${res.exit_code}')
+		}
+	}
+
+	println('')
+	mut summary := '--- 汇总: 执行 ${executed} 个包管理器'
+	if unsupported_names.len > 0 {
+		summary += '，跳过 ${skipped} 个（${unsupported_names.join(', ')} 不支持模拟）'
+	} else if skipped > 0 {
+		summary += '，跳过 ${skipped} 个'
+	}
+	summary += ' ---'
+	println(summary)
+}
+
 // ==================== fetch 子命令 ====================
 
 fn handle_fetch(args []string) {
@@ -1933,13 +2019,14 @@ fn handle_vcpkg_info(query string) string {
 
 fn main() {
 	if os.args.len < 2 {
-		eprintln('用法: zpkg <search|info|list|upable|fetch|files> [参数]')
+		eprintln('用法: zpkg <search|info|list|upable|syncn|fetch|files> [参数]')
 		eprintln('')
 		eprintln('子命令:')
 		eprintln('  search <关键词>          在所有包管理器中搜索包（已安装的会在行尾标记 [installed]）')
 		eprintln('  info <包名>              查询包详细信息')
 		eprintln('  list                     列出已安装的包')
 		eprintln('  upable                   列出已安装的可更新包（默认显示 10 个）')
+		eprintln('  syncn                    模拟同步软件仓库（只显示将要更新的内容，不实际修改系统）')
 		eprintln('  fetch <包名>             下载包（不安装）')
 		eprintln('  files <包名>             列出包安装的文件')
 		eprintln('')
@@ -1965,6 +2052,7 @@ fn main() {
 		eprintln('  zpkg upable --max 5')
 		eprintln('  zpkg upable --max=-1')
 		eprintln('  zpkg upable -m 5')
+		eprintln('  zpkg syncn')
 		eprintln('  zpkg fetch --recursive curl')
 		eprintln('  zpkg fetch -r curl')
 		eprintln('  zpkg files curl')
@@ -1977,6 +2065,7 @@ fn main() {
 	match subcmd {
 		'list' { handle_list(rest) }
 		'upable' { handle_upable(rest) }
+		'syncn' { handle_syncn(rest) }
 		'fetch' { handle_fetch(rest) }
 		'files' { handle_files(rest) }
 		'search', 'info' {
@@ -2040,7 +2129,7 @@ fn main() {
 			println(summary)
 		}
 		else {
-			eprintln('未知子命令: ${subcmd}，可用: search, info, list, upable, fetch, files')
+			eprintln('未知子命令: ${subcmd}，可用: search, info, list, upable, syncn, fetch, files')
 			exit(1)
 		}
 	}
