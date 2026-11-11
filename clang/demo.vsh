@@ -1,4 +1,4 @@
-import mkuse.clang
+import clang
 import vcp.tcchf
 
 ver := clang.get_clang_version()
