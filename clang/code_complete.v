@@ -25,9 +25,9 @@ pub fn code_complete_get_contexts(results &CodeCompleteResultsStruct) u64 {
 	return C.clang_codeCompleteGetContexts(results)
 }
 
-fn C.clang_getCompletionStringNumChunks(cs CompletionString) u32
+fn C.clang_getNumCompletionChunks(cs CompletionString) u32
 pub fn get_completion_string_num_chunks(cs CompletionString) u32 {
-	return C.clang_getCompletionStringNumChunks(cs)
+	return C.clang_getNumCompletionChunks(cs)
 }
 
 fn C.clang_getCompletionChunkKind(cs CompletionString, chunk_number u32) u32

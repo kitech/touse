@@ -78,3 +78,33 @@ pub fn get_diagnostic_option(diag Diagnostic) (string, string) {
 	opt := cxstring_to_string(C.clang_getDiagnosticOption(diag, &disable))
 	return opt, cxstring_to_string(disable)
 }
+
+fn C.clang_disposeDiagnosticSet(diags DiagnosticSet)
+pub fn dispose_diagnostic_set(diags DiagnosticSet) {
+	C.clang_disposeDiagnosticSet(diags)
+}
+
+fn C.clang_getChildDiagnostics(d Diagnostic) DiagnosticSet
+pub fn get_child_diagnostics(d Diagnostic) DiagnosticSet {
+	return C.clang_getChildDiagnostics(d)
+}
+
+fn C.clang_getDiagnosticCategoryName(category u32) String
+pub fn get_diagnostic_category_name(category u32) string {
+	return cxstring_to_string(C.clang_getDiagnosticCategoryName(category))
+}
+
+fn C.clang_getDiagnosticInSet(diags DiagnosticSet, index u32) Diagnostic
+pub fn get_diagnostic_in_set(diags DiagnosticSet, index u32) Diagnostic {
+	return C.clang_getDiagnosticInSet(diags, index)
+}
+
+fn C.clang_getNumDiagnosticsInSet(diags DiagnosticSet) u32
+pub fn get_num_diagnostics_in_set(diags DiagnosticSet) u32 {
+	return C.clang_getNumDiagnosticsInSet(diags)
+}
+
+fn C.clang_loadDiagnostics(file &char, error &int, errorString_ &String) DiagnosticSet
+pub fn load_diagnostics(file &char, error &int, errorString_ &String) DiagnosticSet {
+	return C.clang_loadDiagnostics(file, error, errorString_)
+}

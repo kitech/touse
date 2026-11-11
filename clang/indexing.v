@@ -5,9 +5,9 @@ module clang
 
 pub type IndexerCallbacks = voidptr  // 具体结构体按需建模
 
-fn C.clang_indexTranslationUnit(index Index, client_data ClientData, callbacks IndexerCallbacks, index_options u32, tu TranslationUnit) int
-pub fn index_translation_unit(index Index, client_data ClientData, callbacks IndexerCallbacks, index_options u32, tu TranslationUnit) int {
-	return C.clang_indexTranslationUnit(index, client_data, callbacks, index_options, tu)
+fn C.clang_indexTranslationUnit(index_action IndexAction, client_data ClientData, callbacks IndexerCallbacks, cb_size u32, index_options u32, out_tu &TranslationUnit) int
+pub fn index_translation_unit(index_action IndexAction, client_data ClientData, callbacks IndexerCallbacks, cb_size u32, index_options u32, out_tu &TranslationUnit) int {
+	return C.clang_indexTranslationUnit(index_action, client_data, callbacks, cb_size, index_options, out_tu)
 }
 
 fn C.clang_indexLoc_getFileLocation(loc IdxLoc, indexFile &IdxClientFile, file &File, line &u32, column &u32, offset &u32) voidptr

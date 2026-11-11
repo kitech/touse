@@ -56,3 +56,30 @@ fn C.clang_CompileCommand_getArg(cmd CompileCommand, i u32) String
 pub fn compile_command_get_arg(cmd CompileCommand, i u32) string {
 	return cxstring_to_string(C.clang_CompileCommand_getArg(cmd, i))
 }
+
+fn C.clang_CompileCommand_getMappedSourceContent(arg0 CompileCommand, i u32) String
+pub fn compile_command_get_mapped_source_content(arg0 CompileCommand, i u32) string {
+	if has_major(16) {
+		return cxstring_to_string(C.clang_CompileCommand_getMappedSourceContent(arg0, i))
+	}
+
+	return ''
+}
+
+fn C.clang_CompileCommand_getMappedSourcePath(arg0 CompileCommand, i u32) String
+pub fn compile_command_get_mapped_source_path(arg0 CompileCommand, i u32) string {
+	if has_major(16) {
+		return cxstring_to_string(C.clang_CompileCommand_getMappedSourcePath(arg0, i))
+	}
+
+	return ''
+}
+
+fn C.clang_CompileCommand_getNumMappedSources(arg0 CompileCommand) u32
+pub fn compile_command_get_num_mapped_sources(arg0 CompileCommand) u32 {
+	if has_major(16) {
+		return C.clang_CompileCommand_getNumMappedSources(arg0)
+	}
+
+	return 0
+}

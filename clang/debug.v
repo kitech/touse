@@ -38,3 +38,17 @@ fn C.clang_enableStackTraces()
 pub fn enable_stack_traces() {
 	C.clang_enableStackTraces()
 }
+
+fn C.clang_install_aborting_llvm_fatal_error_handler()
+pub fn install_aborting_llvm_fatal_error_handler() {
+	if has_major(16) {
+		C.clang_install_aborting_llvm_fatal_error_handler()
+	}
+}
+
+fn C.clang_uninstall_llvm_fatal_error_handler()
+pub fn uninstall_llvm_fatal_error_handler() {
+	if has_major(16) {
+		C.clang_uninstall_llvm_fatal_error_handler()
+	}
+}

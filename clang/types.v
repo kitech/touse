@@ -1,6 +1,10 @@
 module clang
 
 #include <clang-c/Index.h>
+#include <clang-c/CXCompilationDatabase.h>
+#include <clang-c/Documentation.h>
+#include <clang-c/Rewrite.h>
+#include <clang-c/FatalErrorHandler.h>
 
 // ============================================================================
 // Opaque 句柄
@@ -354,3 +358,36 @@ pub enum TypeKind {
 // ============================================================================
 pub type CXCursorVisitor = fn (cursor Cursor, parent Cursor, client_data ClientData) ChildVisitResult
 pub type CXInclusionVisitor = fn (included_file File, inclusion_stack &SourceLocation, include_len u32, client_data ClientData) voidptr
+// ═══ 生成器产出：类型补充（types.v 追加）═══
+
+// CXComment = { const void *ASTNode; CXTranslationUnit TranslationUnit; }
+@[typedef]
+pub struct C.CXComment {
+pub mut:
+	ASTNode         voidptr
+	TranslationUnit TranslationUnit
+}
+
+pub type Comment = C.CXComment
+
+pub type FieldVisitor        = voidptr // C: enum CXVisitorResult (*)(CXCursor, CXClientData)
+pub type ApiSet              = voidptr
+pub type SymbolGraph         = voidptr
+pub type VirtualFileOverlay  = voidptr
+pub type ModuleMapDescriptor = voidptr
+pub type Rewriter            = voidptr
+
+pub type DiagnosticSet = voidptr
+
+// CXIdx* 信息结构体（index API 的入参/出参，全部 opaque 透传）
+pub type IdxDeclInfo                   = voidptr // const CXIdxDeclInfo
+pub type IdxContainerInfo              = voidptr // const CXIdxContainerInfo
+pub type IdxEntityInfo                 = voidptr // const CXIdxEntityInfo
+pub type IdxAttrInfo                   = voidptr // const CXIdxAttrInfo
+pub type IdxObjCCategoryDeclInfo       = voidptr // const CXIdxObjCCategoryDeclInfo
+pub type IdxObjCContainerDeclInfo      = voidptr // const CXIdxObjCContainerDeclInfo
+pub type IdxObjCInterfaceDeclInfo      = voidptr // const CXIdxObjCInterfaceDeclInfo
+pub type IdxObjCPropertyDeclInfo       = voidptr // const CXIdxObjCPropertyDeclInfo
+pub type IdxObjCProtocolRefListInfo    = voidptr // const CXIdxObjCProtocolRefListInfo
+pub type IdxIBOutletCollectionAttrInfo = voidptr // const CXIdxIBOutletCollectionAttrInfo
+pub type IdxCXXClassDeclInfo           = voidptr // const CXIdxCXXClassDeclInfo
