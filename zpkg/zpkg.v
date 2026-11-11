@@ -76,6 +76,18 @@ mut:
 	desc    string
 }
 
+struct UpableEntry {
+	name    string
+mut:
+	old_ver string = '-'
+	new_ver string = '-'
+}
+
+struct UpableConfig {
+mut:
+	max int = 10
+}
+
 // ==================== 包管理器定义 ====================
 
 const managers = [
@@ -1245,6 +1257,327 @@ fn handle_list(args []string) {
 	}
 }
 
+// ==================== upable 子命令 ====================
+
+// pacman -Qu: "name old_ver -> new_ver"
+fn upable_pacman() []UpableEntry {
+	raw := os.execute('pacman -Qu 2>/dev/null').output.trim_space()
+	if raw.len == 0 { return [] }
+	mut entries := []UpableEntry{}
+	for line in raw.split_into_lines() {
+		t := line.trim_space()
+		if t.len == 0 { continue }
+		idx := t.index(' -> ') or { -1 }
+		if idx < 0 { continue }
+		left := t[..idx].trim_space()
+		right := t[idx + 4..].trim_space()
+		lf := left.fields()
+		if lf.len < 1 { continue }
+		name := lf[0]
+		old_v := if lf.len >= 2 { lf[lf.len - 1] } else { '-' }
+		entries << UpableEntry{ name: name, old_ver: old_v, new_ver: right }
+	}
+	return entries
+}
+
+// apt list --upgradable: "name/suite new_ver arch [upgradable from: old_ver]"
+// pkg (Termux) 底层也是 apt，复用此逻辑
+fn upable_apt() []UpableEntry {
+	raw := os.execute('apt list --upgradable 2>/dev/null').output.trim_space()
+	if raw.len == 0 { return [] }
+	mut entries := []UpableEntry{}
+	for line in raw.split_into_lines() {
+		t := line.trim_space()
+		if t.len == 0 || t.starts_with('Listing') { continue }
+		idx := t.index(' [upgradable from: ') or { -1 }
+		head := if idx > 0 { t[..idx].trim_space() } else { t }
+		hf := head.fields()
+		if hf.len < 2 { continue }
+		first := hf[0]
+		slash := first.index('/') or { -1 }
+		name := if slash > 0 { first[..slash] } else { first }
+		new_v := hf[1]
+		mut old_v := '-'
+		if idx > 0 {
+			from_part := t[idx + ' [upgradable from: '.len..]
+			old_v = from_part.trim_right(']').trim_space()
+		}
+		entries << UpableEntry{ name: name, old_ver: old_v, new_ver: new_v }
+	}
+	return entries
+}
+
+// brew outdated --json=v2（结构最稳）；回退到文本 "name (old) < new"
+fn upable_brew() []UpableEntry {
+	mut entries := []UpableEntry{}
+	json_raw := os.execute('brew outdated --json=v2 2>/dev/null').output.trim_space()
+	if json_raw.len > 0 {
+		root := json2.decode[map[string]json2.Any](json_raw) or { map[string]json2.Any{} }
+		if f := root['formulae'] {
+			for item in f.arr() {
+				mp := item.as_map()
+				name := if n := mp['name'] { n.str() } else { '' }
+				if name.len == 0 { continue }
+				mut old_v := '-'
+				if iv := mp['installed_versions'] {
+					arr := iv.arr()
+					if arr.len > 0 { old_v = arr[0].str() }
+				}
+				new_v := if cv := mp['current_version'] { cv.str() } else { '-' }
+				entries << UpableEntry{ name: name, old_ver: old_v, new_ver: new_v }
+			}
+		}
+		if c := root['casks'] {
+			for item in c.arr() {
+				mp := item.as_map()
+				name := if n := mp['name'] { n.str() } else { '' }
+				if name.len == 0 { continue }
+				mut old_v := '-'
+				if iv := mp['installed_versions'] {
+					if iv.arr().len > 0 { old_v = iv.arr()[0].str() }
+				}
+				new_v := if cv := mp['current_version'] { cv.str() } else { '-' }
+				entries << UpableEntry{ name: name + ' [cask]', old_ver: old_v, new_ver: new_v }
+			}
+		}
+		return entries
+	}
+	raw := os.execute('brew outdated 2>/dev/null').output.trim_space()
+	if raw.len == 0 { return [] }
+	for line in raw.split_into_lines() {
+		t := line.trim_space()
+		if t.len == 0 { continue }
+		sp := t.index(' (') or { -1 }
+		lt := t.index(' < ') or { -1 }
+		if sp < 0 || lt < 0 { continue }
+		name := t[..sp]
+		old_part := t[sp + 2..lt].trim_right(')').trim_space()
+		new_v := t[lt + 3..].trim_space()
+		entries << UpableEntry{ name: name, old_ver: old_part, new_ver: new_v }
+	}
+	return entries
+}
+
+// port outdated: "name old < new"
+fn upable_port() []UpableEntry {
+	raw := os.execute('port outdated 2>/dev/null').output.trim_space()
+	if raw.len == 0 { return [] }
+	mut entries := []UpableEntry{}
+	for line in raw.split_into_lines() {
+		t := line.trim_space()
+		if t.len == 0 || t.starts_with('The following') || t.starts_with('None of the') { continue }
+		lt := t.index(' < ') or { -1 }
+		if lt < 0 { continue }
+		left := t[..lt].trim_space()
+		right := t[lt + 3..].trim_space()
+		lf := left.fields()
+		if lf.len < 2 { continue }
+		name := lf[0]
+		old_v := lf[lf.len - 1]
+		entries << UpableEntry{ name: name, old_ver: old_v, new_ver: right }
+	}
+	return entries
+}
+
+// apk version -l '<' : "name-version < new_version"
+// 版本号以 -<digit> 开头，从左边第一个 "-数字" 处切分 name
+fn upable_apk() []UpableEntry {
+	raw := os.execute("apk version -l '<' 2>/dev/null").output.trim_space()
+	if raw.len == 0 { return [] }
+	mut entries := []UpableEntry{}
+	for line in raw.split_into_lines() {
+		t := line.trim_space()
+		if t.len == 0 || t.starts_with('Installed') { continue }
+		lt := t.index(' < ') or { -1 }
+		if lt < 0 { continue }
+		left := t[..lt].trim_space()
+		right := t[lt + 3..].trim_space()
+		rf := right.fields()
+		new_v := if rf.len > 0 { rf[0] } else { right }
+		mut name := left
+		mut old_v := '-'
+		for i := 0; i < left.len - 1; i++ {
+			if left[i] == `-` && left[i + 1].is_digit() {
+				name = left[..i]
+				old_v = left[i + 1..]
+				break
+			}
+		}
+		entries << UpableEntry{ name: name, old_ver: old_v, new_ver: new_v }
+	}
+	return entries
+}
+
+// rpm：需要 dnf/yum；check-update 退出码 100 表示有更新
+fn upable_rpm() []UpableEntry {
+	mut tool := ''
+	if (os.find_abs_path_of_executable('dnf') or { '' }).len > 0 { tool = 'dnf' }
+	else if (os.find_abs_path_of_executable('yum') or { '' }).len > 0 { tool = 'yum' }
+	else { return [] }
+	res := os.execute('${tool} check-update -q 2>/dev/null')
+	if res.exit_code != 100 { return [] }
+	raw := res.output.trim_space()
+	if raw.len == 0 { return [] }
+	mut entries := []UpableEntry{}
+	for line in raw.split_into_lines() {
+		t := line.trim_space()
+		if t.len == 0 { continue }
+		if t.starts_with('Last metadata') || t.starts_with('Obsoleting') || t.starts_with('Security:') { continue }
+		f := t.fields()
+		if f.len < 2 { continue }
+		full := f[0]
+		dot := full.last_index('.') or { -1 }
+		name := if dot > 0 { full[..dot] } else { full }
+		new_v := f[1]
+		mut old_v := '-'
+		qv := os.execute('rpm -q --qf "%{VERSION}-%{RELEASE}" ${escape_shell(name)} 2>/dev/null').output.trim_space()
+		if qv.len > 0 && !qv.starts_with('package') {
+			old_v = qv
+		}
+		entries << UpableEntry{ name: name, old_ver: old_v, new_ver: new_v }
+	}
+	return entries
+}
+
+// vcpkg update：解析 "will be rebuilt or updated" 段
+fn upable_vcpkg() []UpableEntry {
+	res := os.execute('vcpkg update 2>/dev/null')
+	raw := res.output.trim_space()
+	if raw.len == 0 { return [] }
+	mut entries := []UpableEntry{}
+	mut in_updatable := false
+	for line in raw.split_into_lines() {
+		t := line.trim_space()
+		if t.contains('will be rebuilt or updated') {
+			in_updatable = true
+			continue
+		}
+		if t.contains('up-to-date') || t.contains('No packages') {
+			in_updatable = false
+			continue
+		}
+		if !in_updatable { continue }
+		arrow := t.index(' -> ') or { -1 }
+		if arrow < 0 { continue }
+		left := t[..arrow].trim_space()
+		right := t[arrow + 4..].trim_space()
+		at := left.index('@') or { -1 }
+		if at < 0 { continue }
+		name_part := left[..at]
+		old_v := left[at + 1..]
+		entries << UpableEntry{ name: name_part, old_ver: old_v, new_ver: right }
+	}
+	return entries
+}
+
+fn execute_upable(mgr PkgManager) []UpableEntry {
+	return match mgr.name {
+		'pacman' { upable_pacman() }
+		'apt' { upable_apt() }
+		'brew' { upable_brew() }
+		'port' { upable_port() }
+		'apk' { upable_apk() }
+		'rpm' { upable_rpm() }
+		'vcpkg' { upable_vcpkg() }
+		'pkg (Termux)' { upable_apt() }
+		else { [] }
+	}
+}
+
+fn get_upable_cmd_label(mgr PkgManager) string {
+	return match mgr.name {
+		'pacman' { 'pacman -Qu' }
+		'apt', 'pkg (Termux)' { 'apt list --upgradable' }
+		'brew' { 'brew outdated --json=v2' }
+		'port' { 'port outdated' }
+		'apk' { "apk version -l '<'" }
+		'rpm' { 'dnf check-update -q  (或 yum check-update -q)' }
+		'vcpkg' { 'vcpkg update' }
+		else { '' }
+	}
+}
+
+fn handle_upable(args []string) {
+	sanitized := preprocess_max_arg(args)
+	mut cfg, no_matches := flag.to_struct[UpableConfig](sanitized, skip: 0, style: .long) or {
+		eprintln('参数错误: ${err}')
+		exit(1)
+	}
+	if no_matches.len > 0 {
+		eprintln('警告: 以下参数未被识别: ${no_matches}')
+	}
+	if cfg.max < -1 {
+		eprintln('无效的 max: ${cfg.max}，必须 >= -1')
+		exit(1)
+	}
+
+	mut total := 0
+	mut shown_total := 0
+
+	for mgr in get_ordered_managers() {
+		if !command_exists(mgr.cmd) { continue }
+
+		label := get_upable_cmd_label(mgr)
+		if label.len == 0 { continue }
+
+		max_label := if cfg.max < 0 { 'all' } else { cfg.max.str() }
+
+		println('')
+		println('========== [${mgr.name}] upable (max: ${max_label}) ==========')
+		println('\$ ${label}')
+		println('---------------------------------------------')
+
+		mut entries := execute_upable(mgr)
+		if entries.len == 0 {
+			println('  (无更新)')
+			continue
+		}
+
+		entries.sort_with_compare(fn (a &UpableEntry, b &UpableEntry) int {
+			return natural_cmp(a.name, b.name)
+		})
+
+		total_for_mgr := entries.len
+		total += total_for_mgr
+
+		mut shown := entries.clone()
+		if cfg.max >= 0 && shown.len > cfg.max {
+			shown = shown[..cfg.max]
+		}
+		shown_total += shown.len
+
+		idx_w := shown.len.str().len
+		mut name_w := 4
+		for e in shown {
+			if e.name.len > name_w { name_w = e.name.len }
+		}
+		name_w += 2
+
+		for i, e in shown {
+			num := '${i + 1}'
+			idx := ' '.repeat(idx_w - num.len) + num
+			name_pad := e.name + ' '.repeat(name_w - e.name.len)
+			mut line := '${idx}. ${name_pad}'
+			if e.old_ver != '-' && e.old_ver.len > 0 {
+				line += '${e.old_ver} -> ${e.new_ver}'
+			} else {
+				line += '-> ${e.new_ver}'
+			}
+			println(line)
+		}
+		if shown.len < total_for_mgr {
+			println('  ${c_dim('... (还有 ${total_for_mgr - shown.len} 个，使用 --max=-1 显示全部)')}')
+		}
+	}
+
+	println('')
+	if cfg.max < 0 {
+		println('--- 汇总: 共 ${total} 个可更新包 ---')
+	} else {
+		println('--- 汇总: 共 ${total} 个可更新包，已显示 ${shown_total} 个（--max=${cfg.max}，-1 表示不限制） ---')
+	}
+}
+
 // ==================== fetch 子命令 ====================
 
 fn handle_fetch(args []string) {
@@ -1558,12 +1891,13 @@ fn handle_vcpkg_info(query string) string {
 
 fn main() {
 	if os.args.len < 2 {
-		eprintln('用法: zpkg <search|info|list|fetch|files> [参数]')
+		eprintln('用法: zpkg <search|info|list|upable|fetch|files> [参数]')
 		eprintln('')
 		eprintln('子命令:')
 		eprintln('  search <关键词>          在所有包管理器中搜索包（已安装的会在行尾标记 [installed]）')
 		eprintln('  info <包名>              查询包详细信息')
 		eprintln('  list                     列出已安装的包')
+		eprintln('  upable                   列出已安装的可更新包（默认显示 10 个）')
 		eprintln('  fetch <包名>             下载包（不安装）')
 		eprintln('  files <包名>             列出包安装的文件')
 		eprintln('')
@@ -1574,6 +1908,9 @@ fn main() {
 		eprintln('                           size     按包大小倒序（最大在前）')
 		eprintln('  --max <N>                每个包管理器最多显示 N 个包（默认: 10，-1 表示不限制）')
 		eprintln('')
+		eprintln('upable 参数:')
+		eprintln('  --max <N>                每个包管理器最多显示 N 个可更新包（默认: 10，-1 表示不限制）')
+		eprintln('')
 		eprintln('fetch 参数:')
 		eprintln('  --recursive              同时下载依赖（默认关闭；部分包管理器不支持时会降级为普通 fetch）')
 		eprintln('')
@@ -1581,6 +1918,9 @@ fn main() {
 		eprintln('  zpkg search curl')
 		eprintln('  zpkg info curl')
 		eprintln('  zpkg list --sort size --max 5')
+		eprintln('  zpkg upable')
+		eprintln('  zpkg upable --max 5')
+		eprintln('  zpkg upable --max=-1')
 		eprintln('  zpkg fetch --recursive curl')
 		eprintln('  zpkg files curl')
 		exit(1)
@@ -1591,6 +1931,7 @@ fn main() {
 
 	match subcmd {
 		'list' { handle_list(rest) }
+		'upable' { handle_upable(rest) }
 		'fetch' { handle_fetch(rest) }
 		'files' { handle_files(rest) }
 		'search', 'info' {
@@ -1654,7 +1995,7 @@ fn main() {
 			println(summary)
 		}
 		else {
-			eprintln('未知子命令: ${subcmd}，可用: search, info, list, fetch, files')
+			eprintln('未知子命令: ${subcmd}，可用: search, info, list, upable, fetch, files')
 			exit(1)
 		}
 	}
