@@ -1706,6 +1706,219 @@ fn handle_syncn(args []string) {
 	println(summary)
 }
 
+// ==================== addn 子命令（模拟安装） ====================
+
+// 返回模拟安装命令；空字符串表示不支持。
+// 依据各包管理器文档核对：
+//   pacman  : pacman -Sp <pkg>                    (print, 不执行)
+//   apt     : apt install --dry-run <pkg>          (dry-run)
+//   dnf/yum : install --setopt=tsflags=test <pkg>  (test 事务)
+//   zypper  : install --dry-run <pkg>
+//   apk     : add --simulate <pkg>
+//   brew    : install --dry-run <pkg>
+//   port    : -y install <pkg>                    (-y = dry-run)
+//   vcpkg   : install --dry-run <pkg>
+fn get_add_simulate_cmd(mgr PkgManager, query string) string {
+	safe_q := escape_shell(query)
+	return match mgr.name {
+		'pacman' { 'pacman -Sp ${safe_q}' }
+		'apt', 'pkg (Termux)' { 'apt install --dry-run ${safe_q}' }
+		'rpm' {
+			if (os.find_abs_path_of_executable('dnf') or { '' }).len > 0 {
+				'dnf install --setopt=tsflags=test ${safe_q}'
+			} else if (os.find_abs_path_of_executable('yum') or { '' }).len > 0 {
+				'yum install --setopt=tsflags=test ${safe_q}'
+			} else if (os.find_abs_path_of_executable('zypper') or { '' }).len > 0 {
+				'zypper install --dry-run ${safe_q}'
+			} else {
+				''
+			}
+		}
+		'apk' { 'apk add --simulate ${safe_q}' }
+		'brew' { 'brew install --dry-run ${safe_q}' }
+		'port' { 'port -y install ${safe_q}' }
+		'vcpkg' { 'vcpkg install --dry-run ${safe_q}' }
+		else { '' }
+	}
+}
+
+fn handle_addn(args []string) {
+	mut query := ''
+	for a in args {
+		if !a.starts_with('-') {
+			query = a
+		}
+	}
+
+	if query.len == 0 {
+		eprintln('错误: addn 需要一个包名')
+		eprintln('用法: zpkg addn <包名>')
+		exit(1)
+	}
+
+	println('')
+	println('========== 模拟安装 ${query} (不会实际修改系统) ==========')
+
+	mut executed := 0
+	mut skipped := 0
+	mut unsupported_names := []string{}
+
+	for mgr in get_ordered_managers() {
+		if !command_exists(mgr.cmd) { continue }
+
+		cmd_str := get_add_simulate_cmd(mgr, query)
+		if cmd_str.len == 0 {
+			println('')
+			println('---------- [${mgr.name}] 该包管理器不支持模拟安装，跳过 ----------')
+			skipped++
+			unsupported_names << mgr.name
+			continue
+		}
+
+		executed++
+		println('')
+		println('---------- [${mgr.name}] ----------')
+		println('\$ ${cmd_str}')
+		println('---------------------------------------------')
+
+		res := os.execute(cmd_str)
+		out := res.output.trim_space()
+		if out.len > 0 {
+			println(out)
+		} else {
+			println('  (无输出)')
+		}
+
+		if res.exit_code != 0 {
+			println('  ⚠️ exit code ${res.exit_code}')
+		}
+	}
+
+	println('')
+	mut summary := '--- 汇总: 执行 ${executed} 个包管理器'
+	if unsupported_names.len > 0 {
+		summary += '，跳过 ${skipped} 个（${unsupported_names.join(', ')} 不支持模拟）'
+	} else if skipped > 0 {
+		summary += '，跳过 ${skipped} 个'
+	}
+	summary += ' ---'
+	println(summary)
+}
+
+// ==================== deln 子命令（模拟删除） ====================
+
+// 返回模拟删除命令；空字符串表示不支持。
+// 依据各包管理器文档核对：
+//   pacman  : pacman -Rsp <pkg>                        (print, 不执行)
+//   apt     : apt remove --dry-run <pkg>               (dry-run)
+//   dnf/yum : remove --assumeno <pkg>                  (自动回答 "no")
+//   zypper  : remove --dry-run <pkg>
+//   apk     : del --simulate <pkg>
+//   brew    : rm --dry-run <pkg>
+//   port    : -y uninstall <pkg>                       (-y = dry-run)
+//   vcpkg   : remove --dry-run <pkg>
+fn get_del_simulate_cmd(mgr PkgManager, query string) string {
+	safe_q := escape_shell(query)
+	return match mgr.name {
+		'pacman' { 'pacman -Rsp ${safe_q}' }
+		'apt', 'pkg (Termux)' { 'apt remove --dry-run ${safe_q}' }
+		'rpm' {
+			if (os.find_abs_path_of_executable('dnf') or { '' }).len > 0 {
+				'dnf remove --assumeno ${safe_q} 2>&1'
+			} else if (os.find_abs_path_of_executable('yum') or { '' }).len > 0 {
+				'yum remove --assumeno ${safe_q} 2>&1'
+			} else if (os.find_abs_path_of_executable('zypper') or { '' }).len > 0 {
+				'zypper remove --dry-run ${safe_q}'
+			} else {
+				''
+			}
+		}
+		'apk' { 'apk del --simulate ${safe_q}' }
+		'brew' { 'brew rm --dry-run ${safe_q}' }
+		'port' { 'port -y uninstall ${safe_q}' }
+		'vcpkg' { 'vcpkg remove --dry-run ${safe_q}' }
+		else { '' }
+	}
+}
+
+fn handle_deln(args []string) {
+	mut query := ''
+	mut recursive := false
+
+	for a in args {
+		if a in ['--recursive', '-r'] {
+			recursive = true
+		} else if !a.starts_with('-') {
+			query = a
+		}
+	}
+
+	if query.len == 0 {
+		eprintln('错误: deln 需要一个包名')
+		eprintln('用法: zpkg deln [-r|--recursive] <包名>')
+		exit(1)
+	}
+
+	println('')
+	println('========== 模拟删除 ${query} (不会实际修改系统) ==========')
+
+	mut executed := 0
+	mut skipped := 0
+	mut unsupported_names := []string{}
+
+	for mgr in get_ordered_managers() {
+		if !command_exists(mgr.cmd) { continue }
+
+		base_cmd := get_del_simulate_cmd(mgr, query)
+		if base_cmd.len == 0 {
+			println('')
+			println('---------- [${mgr.name}] 该包管理器不支持模拟删除，跳过 ----------')
+			skipped++
+			unsupported_names << mgr.name
+			continue
+		}
+
+		mut final_cmd := base_cmd
+		if recursive {
+			match mgr.name {
+				'pacman' { final_cmd = 'pacman -Rsp --recursive ${escape_shell(query)}' }
+				'apt', 'pkg (Termux)' { final_cmd = 'apt remove --dry-run --auto-remove ${escape_shell(query)}' }
+				'apk' { final_cmd = 'apk del --simulate --recursive ${escape_shell(query)}' }
+				else { /* 其他包管理器不追加递归参数 */ }
+			}
+		}
+
+		executed++
+		println('')
+		println('---------- [${mgr.name}] ----------')
+		println('\$ ${final_cmd}')
+		println('---------------------------------------------')
+
+		res := os.execute(final_cmd)
+		out := res.output.trim_space()
+		if out.len > 0 {
+			println(out)
+		} else {
+			println('  (无输出)')
+		}
+
+		// dnf/yum remove --assumeno 在取消时退出码可能非 0，视为正常
+		if res.exit_code != 0 && mgr.name != 'rpm' {
+			println('  ⚠️ exit code ${res.exit_code}')
+		}
+	}
+
+	println('')
+	mut summary := '--- 汇总: 执行 ${executed} 个包管理器'
+	if unsupported_names.len > 0 {
+		summary += '，跳过 ${skipped} 个（${unsupported_names.join(', ')} 不支持模拟）'
+	} else if skipped > 0 {
+		summary += '，跳过 ${skipped} 个'
+	}
+	summary += ' ---'
+	println(summary)
+}
+
 // ==================== fetch 子命令 ====================
 
 fn handle_fetch(args []string) {
@@ -2019,7 +2232,7 @@ fn handle_vcpkg_info(query string) string {
 
 fn main() {
 	if os.args.len < 2 {
-		eprintln('用法: zpkg <search|info|list|upable|syncn|fetch|files> [参数]')
+		eprintln('用法: zpkg <search|info|list|upable|syncn|addn|deln|fetch|files> [参数]')
 		eprintln('')
 		eprintln('子命令:')
 		eprintln('  search <关键词>          在所有包管理器中搜索包（已安装的会在行尾标记 [installed]）')
@@ -2027,6 +2240,8 @@ fn main() {
 		eprintln('  list                     列出已安装的包')
 		eprintln('  upable                   列出已安装的可更新包（默认显示 10 个）')
 		eprintln('  syncn                    模拟同步软件仓库（只显示将要更新的内容，不实际修改系统）')
+		eprintln('  addn <包名>              模拟安装包，预览影响而不实际执行')
+		eprintln('  deln <包名>              模拟删除包，预览影响而不实际执行')
 		eprintln('  fetch <包名>             下载包（不安装）')
 		eprintln('  files <包名>             列出包安装的文件')
 		eprintln('')
@@ -2039,6 +2254,9 @@ fn main() {
 		eprintln('')
 		eprintln('upable 参数:')
 		eprintln('  -m, --max <N>            每个包管理器最多显示 N 个可更新包（默认: 10，-1 表示不限制）')
+		eprintln('')
+		eprintln('deln 参数:')
+		eprintln('  -r, --recursive          模拟递归删除（对 pacman/apt/apk 生效）')
 		eprintln('')
 		eprintln('fetch 参数:')
 		eprintln('  -r, --recursive          同时下载依赖（默认关闭；部分包管理器不支持时会降级为普通 fetch）')
@@ -2053,6 +2271,9 @@ fn main() {
 		eprintln('  zpkg upable --max=-1')
 		eprintln('  zpkg upable -m 5')
 		eprintln('  zpkg syncn')
+		eprintln('  zpkg addn curl')
+		eprintln('  zpkg deln curl')
+		eprintln('  zpkg deln -r curl')
 		eprintln('  zpkg fetch --recursive curl')
 		eprintln('  zpkg fetch -r curl')
 		eprintln('  zpkg files curl')
@@ -2066,6 +2287,8 @@ fn main() {
 		'list' { handle_list(rest) }
 		'upable' { handle_upable(rest) }
 		'syncn' { handle_syncn(rest) }
+		'addn' { handle_addn(rest) }
+		'deln' { handle_deln(rest) }
 		'fetch' { handle_fetch(rest) }
 		'files' { handle_files(rest) }
 		'search', 'info' {
@@ -2129,7 +2352,7 @@ fn main() {
 			println(summary)
 		}
 		else {
-			eprintln('未知子命令: ${subcmd}，可用: search, info, list, upable, syncn, fetch, files')
+			eprintln('未知子命令: ${subcmd}，可用: search, info, list, upable, syncn, addn, deln, fetch, files')
 			exit(1)
 		}
 	}
