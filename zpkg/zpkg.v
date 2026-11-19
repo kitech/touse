@@ -167,7 +167,7 @@ const managers = [
 	PkgManager{
 		name: 'apk'
 		cmd: 'apk'
-		search_tpl: 'apk search -v {q}'
+		search_tpl: 'apk search -v --allow-untrusted {q}'
 		info_tpl: 'apk info -a {q}'
 		list_cmd: 'apk info'
 		installed_cmd: 'apk info'
