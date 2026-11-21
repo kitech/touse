@@ -1,3 +1,4 @@
+import vcp.tcchf
 import vcp
 import touse.xml
 import mkuse.feedut
@@ -15,7 +16,7 @@ fn create_xmldoc() {
 
 fn create_opmldoc() {
     op := feedut.Opml.new('demooo')
-    op.add('text111', 'title111', 'bookmark111', 'https://111')
+    op.add('text111', 'title111', 'bookmark111', 'https://111', 'wtt')
     dump(op.dump(true))
 
     op.save('hehhe.opml') or {vcp.error(err.str())}
@@ -32,7 +33,7 @@ fn create_opmldoc() {
     // op.save('hehhe.opml') or {vcp.error(err.str())}
 }
 fn parse_cjkxml() {
-    o := feedut.opml_file('../xpimerge/xpibmrss.opml')
+    o := feedut.opml_file('../../xpimerge/xpibmrss.opml')
     assert o!= vnil
 }
 
