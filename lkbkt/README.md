@@ -15,8 +15,12 @@
 | `leakybucket.c` | 实现 |
 | `example.c` | 演示：10 r/s + burst=5，逐请求打印 PASS/DELAY/REJECT |
 | `lkbkt_test.c` | 行为测试 |
+| `lkbkt.v` | V 绑定（`module lkbkt`，无 `main`） |
+| `demo.vsh` | V 测试脚本 |
+| `lkbkt.zig` | Zig 绑定（单文件，含 `test`） |
+| `lkbkt.c3` | C3 绑定（单文件，含自测） |
 | `ALTERNATIVES.md` | ≥2★ 备选实现清单 |
-| `Makefile` | 构建 / 测试 / sanitizer |
+| `Makefile` | 构建 / 测试 / sanitizer / 语言绑定 |
 
 ## 算法（与 nginx 一致）
 
@@ -86,6 +90,34 @@ make test     # 运行断言
 ./example     # 查看 PASS/DELAY/REJECT 序列
 make asan     # AddressSanitizer + UBSan
 ```
+
+## 语言绑定
+
+根目录提供三份**单文件**绑定，不引入任何语言工程文件（无 `v.mod`、`build.zig`、`project.json`），由 Makefile 统一驱动：
+
+| 文件 | 语言 | 内容 |
+|---|---|---|
+| `lkbkt.v` | V 0.5+ | `module lkbkt`：`Bucket` / `Decision` / `now_ms()` |
+| `demo.vsh` | V 0.5+ | 测试脚本，`import lkbkt` 后断言 |
+| `lkbkt.zig` | Zig 0.17+ | `Bucket`（`deinit`）/ `Decision` / `test` |
+| `lkbkt.c3` | C3 0.8+ | `Bucket` / `Decision` / `now_ms()`，`main` 自测 |
+
+```sh
+make bindings   # 有哪个编译器就跑哪个；缺的打印 skip 并继续
+make v-check    # 仅 V
+make zig-check  # 仅 Zig
+make c3-check   # 仅 C3
+make c-only     # 仅 C 的 example + tests
+```
+
+三份绑定都是安全封装：参数校验、句柄判空、幂等释放、`now_ms()` 辅助、`check` 返回 `Decision{ result, delay_ms }`。
+
+集成细节：
+
+- **V**：`lkbkt.v` 是 `module lkbkt`（与 C3 同名），测试放在同目录 `demo.vsh`。`v-check` 先把 `leakybucket.c` 编成 `liblkbkt.a`，再从父目录执行 `v run lkbkt/demo.vsh`，通过 `-ldflags` 链接，不新增源码目录。
+- **Zig**：命令行直接混编 `leakybucket.c`（`-cflags -std=c11 --`），不需要 `@cImport` 或头文件。
+- **C3**：先用 `cc` 编出 `build/c3/liblkbkt.a`，再用 `c3c -L/-l` 链接。
+- 三份绑定的 demo（V 用 `demo.vsh`）使用同一场景（10 r/s、burst=5），断言 `PASS → DELAY 100/200ms → REJECT → 1s 后恢复`。
 
 ## 与 nginx 的差异
 
