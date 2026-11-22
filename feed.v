@@ -51,6 +51,16 @@ pub fn parse_feed(body string) !ParsedFeed {
 			}
 			return pf
 		}
+		'rdf:RDF', 'RDF' {
+			mut pf := ParsedFeed{}
+			if channel := child_node(root, 'channel') {
+				pf.title = node_text(channel, 'title')
+			}
+			for item in children_by_tag(root, 'item') {
+				pf.items << parse_rdf_item(item)
+			}
+			return pf
+		}
 		else {
 			return error('unsupported feed root: ${root.name()}')
 		}
@@ -135,7 +145,7 @@ fn node_attr(node &xml.Node2, tag string, attr string) string {
 fn attr_of(node &xml.Node2, key string) string {
 	for i in 0 .. node.attr_count() {
 		if node.attr_name(i) == key {
-			return node.attr_value(i)
+			return unescape_xml_text(node.attr_value(i))
 		}
 	}
 	return ''
@@ -145,7 +155,7 @@ fn xml_inner_text(node &xml.Node2) string {
 	mut sb := strings.new_builder(64)
 	direct := node.content()
 	if direct != '' {
-		sb.write_string(direct)
+		sb.write_string(unescape_xml_text(direct))
 	}
 	for i in 0 .. node.count() {
 		sb.write_string(xml_inner_text(node.at(i)))
@@ -164,6 +174,9 @@ fn parse_rss_item(node &xml.Node2) FeedItem {
 		comments:    node_text(node, 'comments')
 		source_url:  node_attr(node, 'source', 'url')
 		source_text: node_text(node, 'source')
+	}
+	if it.description == '' {
+		it.description = node_text(node, 'content:encoded')
 	}
 	if it.author == '' {
 		it.author = node_text(node, 'dc:creator')
@@ -193,4 +206,112 @@ fn parse_atom_entry(node &xml.Node2) FeedItem {
 		}
 	}
 	return it
+}
+
+fn parse_rdf_item(node &xml.Node2) FeedItem {
+	mut it := FeedItem{
+		title:       node_text(node, 'title')
+		link:        node_text(node, 'link')
+		description: node_text(node, 'description')
+		guid:        node_text(node, 'guid')
+		pub_date:    node_text(node, 'dc:date')
+		author:      node_text(node, 'dc:creator')
+	}
+	if it.description == '' {
+		it.description = node_text(node, 'content:encoded')
+	}
+	for cat in children_by_tag(node, 'category') {
+		it.category << xml_inner_text(cat)
+	}
+	return it
+}
+
+// xmlc returns raw text; decode entities and numeric references here.
+fn unescape_xml_text(s string) string {
+	if !s.contains('&') {
+		return s
+	}
+	mut sb := strings.new_builder(s.len)
+	mut i := 0
+	for i < s.len {
+		if s[i] != `&` {
+			sb.write_u8(s[i])
+			i++
+			continue
+		}
+		semi := s.index_after(';', i + 1) or {
+			sb.write_string(s[i..])
+			break
+		}
+		ent := s[i + 1..semi]
+		mut known := true
+		mut rep := ''
+		match ent {
+			'amp' {
+				rep = '&'
+			}
+			'lt' {
+				rep = '<'
+			}
+			'gt' {
+				rep = '>'
+			}
+			'quot' {
+				rep = '"'
+			}
+			'apos' {
+				rep = "'"
+			}
+			'nbsp' {
+				rep = ' '
+			}
+			else {
+				if ent.starts_with('#') {
+					code := xml_entity_code(ent[1..])
+					if code > 0 {
+						rep = rune(code).str()
+					} else {
+						known = false
+					}
+				} else {
+					known = false
+				}
+			}
+		}
+		if known {
+			sb.write_string(rep)
+		} else {
+			sb.write_string(s[i..semi + 1])
+		}
+		i = semi + 1
+	}
+	return sb.str()
+}
+
+fn xml_entity_code(s string) int {
+	if s == '' {
+		return 0
+	}
+	mut base := 10
+	mut digits := s
+	if s.starts_with('x') || s.starts_with('X') {
+		base = 16
+		digits = s[1..]
+	}
+	mut code := 0
+	for c in digits {
+		mut d := -1
+		if c >= `0` && c <= `9` {
+			d = int(c - `0`)
+		} else if c >= `a` && c <= `f` {
+			d = int(c - `a`) + 10
+		} else if c >= `A` && c <= `F` {
+			d = int(c - `A`) + 10
+		}
+		if d < 0 || d >= base {
+			return 0
+		}
+		code = code * base + d
+	}
+	return code
 }

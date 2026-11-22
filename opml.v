@@ -2,8 +2,6 @@ module feedut
 
 import os
 import time
-import vcp
-import tcchf
 import touse.xml
 
 @[markused]
