@@ -21,22 +21,23 @@
 ## 构建（Linux/macOS）
 
 ```sh
-make -C /home/gzleo/aprog/touse/ntipc OUTDIR=/tmp/opencode
-/tmp/opencode/ntipc-test
+make
+./ntipc-test
 ```
 
 或 CMake：
 
 ```sh
-cmake -S /home/gzleo/aprog/touse/ntipc -B /tmp/opencode/ntipc-build -DBUILD_TESTING=ON
-cmake --build /tmp/opencode/ntipc-build
-ctest --test-dir /tmp/opencode/ntipc-build --output-on-failure
+cmake -S . -B build -DBUILD_TESTING=ON
+cmake --build build
+ctest --test-dir build --output-on-failure
 ```
 
 ## Windows
 
-- 目标最低：WinXP SP3 / Server 2003+ API 集（`CreateNamedPipeA`, `PIPE_REJECT_REMOTE_CLIENTS`, `_Interlocked*` intrinsic, QPC）。
-- 不使用 `GetTickCount64`、`Interlocked*64` API 函数形式。
+- 目标最低：WinXP SP3 / Server 2003+ API 集（`CreateNamedPipeA`, `PIPE_REJECT_REMOTE_CLIENTS`, `InterlockedIncrement`, QPC）。
+- Windows 分支不包含 pthread；连接 id 计数使用 32 位 `InterlockedIncrement`（XP+）。POSIX 分支使用 pthread mutex，以兼容 V 默认的 TCC。
+- 不使用 `GetTickCount64`、`Interlocked*64` / `_Interlocked*64`。
 - 当前环境未做 Windows 编译/运行实测；Linux 已实测。
 
 ## 许可

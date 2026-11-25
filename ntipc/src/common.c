@@ -4,6 +4,7 @@
 #include <string.h>
 
 #if !defined(_WIN32)
+#include <pthread.h>
 #include <time.h>
 #include <unistd.h>
 #endif
@@ -86,21 +87,29 @@ bool n_read_hello(const unsigned char* in, uint64_t* id)
 
 uint64_t n_new_connection_id(void)
 {
-	static uint64_t counter = 0;
+	uint32_t sequence;
 #if defined(_WIN32)
 	uint64_t process = (uint64_t)GetCurrentProcessId();
-	// _InterlockedExchangeAdd64 is an intrinsic, available on XP; the
-	// function form InterlockedExchangeAdd64 needs Vista.
-	counter = (uint64_t)_InterlockedExchangeAdd64((volatile LONG64*)&counter, 1) + 1;
+	static volatile LONG counter = 0;
+	// InterlockedIncrement is available on XP/Server 2003. The 64-bit
+	// Interlocked*64 APIs require Vista on the client. The sequence only
+	// feeds mix(), so a 32-bit counter is enough.
+	sequence = (uint32_t)InterlockedIncrement(&counter);
 #else
 	uint64_t process = (uint64_t)getpid();
-	counter = __atomic_add_fetch(&counter, 1, __ATOMIC_RELAXED);
+	// A mutex, not a compiler atomic: V embeds this source into its generated
+	// C, whose default compiler (tcc) has neither __atomic_* nor __sync_*.
+	static uint32_t counter = 0;
+	static pthread_mutex_t counter_lock = PTHREAD_MUTEX_INITIALIZER;
+	pthread_mutex_lock(&counter_lock);
+	sequence = ++counter;
+	pthread_mutex_unlock(&counter_lock);
 #endif
 	uint64_t now = (uint64_t)n_now_ms();
 	uint64_t id = 0;
 	while (id == 0)
 	{
-		id = mix(now ^ (process << 32) ^ mix(counter));
+		id = mix(now ^ (process << 32) ^ mix(sequence));
 	}
 	return id;
 }
