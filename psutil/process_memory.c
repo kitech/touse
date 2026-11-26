@@ -7,6 +7,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <errno.h>  // 添加errno头文件
+#include <limits.h>
 
 #ifdef _WIN32
     #include <windows.h>
@@ -25,6 +26,10 @@ typedef struct {
     unsigned long long virtual_memory;   // 虚拟内存大小 (字节)
     unsigned long long resident_memory;  // 常驻内存大小 (字节)
     unsigned long long shared_memory;    // 共享内存大小 (字节) (Linux only)
+    unsigned long long text_memory;      // pypi pmem.text
+    unsigned long long lib_memory;       // pypi pmem.lib
+    unsigned long long data_memory;      // pypi pmem.data
+    unsigned long long dirty_memory;     // pypi pmem.dirty
     int pid;                             // 进程ID
     int error_code;                      // 错误代码
     char error_msg[256];                 // 错误信息
@@ -38,6 +43,10 @@ typedef struct {
 psutil_memory_info_t psutil_get_process_memory(int pid) {
     psutil_memory_info_t mem_info = {0};
     mem_info.pid = pid;
+    mem_info.text_memory = ULLONG_MAX;
+    mem_info.lib_memory = ULLONG_MAX;
+    mem_info.data_memory = ULLONG_MAX;
+    mem_info.dirty_memory = ULLONG_MAX;
     
 #ifdef _WIN32
     // Windows 实现
@@ -118,6 +127,7 @@ psutil_memory_info_t psutil_get_process_memory(int pid) {
     FILE *fp;
     char line[256];
     unsigned long long vmsize = 0, rss = 0, shared = 0;
+    unsigned long long text = 0, lib = 0, data = 0, dirty = 0;
     
     // 读取/proc/[pid]/statm文件
     snprintf(path, sizeof(path), "/proc/%d/statm", pid);
@@ -132,19 +142,25 @@ psutil_memory_info_t psutil_get_process_memory(int pid) {
     
     if (fgets(line, sizeof(line), fp)) {
         // statm文件格式: size resident shared text lib data dt
-        if (sscanf(line, "%llu %llu %llu", &vmsize, &rss, &shared) >= 2) {
+        int got = sscanf(line, "%llu %llu %llu %llu %llu %llu %llu",
+                         &vmsize, &rss, &shared, &text, &lib, &data, &dirty);
+        if (got >= 2) {
             long page_size = sysconf(_SC_PAGESIZE);
             if (page_size <= 0) {
                 page_size = 4096; // 默认页大小
             }
             
-            mem_info.virtual_memory = vmsize * page_size;
-            mem_info.resident_memory = rss * page_size;
-            if (sscanf(line, "%llu %llu %llu", &vmsize, &rss, &shared) == 3) {
-                mem_info.shared_memory = shared * page_size;
+            mem_info.virtual_memory = vmsize * (unsigned long long)page_size;
+            mem_info.resident_memory = rss * (unsigned long long)page_size;
+            if (got >= 3) {
+                mem_info.shared_memory = shared * (unsigned long long)page_size;
             } else {
                 mem_info.shared_memory = 0;
             }
+            mem_info.text_memory = got > 3 ? text * (unsigned long long)page_size : ULLONG_MAX;
+            mem_info.lib_memory = got > 4 ? lib * (unsigned long long)page_size : ULLONG_MAX;
+            mem_info.data_memory = got > 5 ? data * (unsigned long long)page_size : ULLONG_MAX;
+            mem_info.dirty_memory = got > 6 ? dirty * (unsigned long long)page_size : ULLONG_MAX;
             mem_info.error_code = 0;
             mem_info.error_msg[0] = '\0';
         } else {
@@ -219,11 +235,19 @@ int psutil_format_memory_info_json(const psutil_memory_info_t *mem_info,
             "\"virtual_memory\":%llu,"
             "\"resident_memory\":%llu,"
             "\"shared_memory\":%llu,"
+            "\"text_memory\":%llu,"
+            "\"lib_memory\":%llu,"
+            "\"data_memory\":%llu,"
+            "\"dirty_memory\":%llu,"
             "\"error\":false}",
             mem_info->pid,
             mem_info->virtual_memory,
             mem_info->resident_memory,
-            mem_info->shared_memory);
+            mem_info->shared_memory,
+            mem_info->text_memory,
+            mem_info->lib_memory,
+            mem_info->data_memory,
+            mem_info->dirty_memory);
     
     return 0;
 }

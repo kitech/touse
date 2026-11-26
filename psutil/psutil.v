@@ -110,3 +110,13 @@ pub fn wkdir(pid int) string {
     file := "/proc/$pid/cwd"
     return os.real_path(file)
 }
+
+// process_from_pid 对齐 pypi psutil.Process(pid)。
+pub fn process_from_pid(pid int) Process {
+    return new_process(pid)
+}
+
+// current_process 返回当前进程对应的 Process。
+pub fn current_process() Process {
+    return new_process(os.getpid())
+}

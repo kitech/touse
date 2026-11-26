@@ -16,19 +16,27 @@ pub fn my_threads_count() int {
 
 pub struct MemoryInfo {
     pub:
-    vms    u64 // rss/vms/shared 使用 pypi psutil 字段名；顺序保持 C ABI
+    vms    u64 // 字段对齐 pypi pmem；不可用的平台为 none
     rss    u64
     shared u64
+    text   ?u64
+    lib    ?u64
+    data   ?u64
+    dirty  ?u64
 }
 
 pub fn (i MemoryInfo) str1() string {
-    return 'MemoryInfo{rss: ${i.rss} vms: ${i.vms} shared: ${i.shared}}'
+    return 'MemoryInfo{rss: ${i.rss} vms: ${i.vms} shared: ${i.shared} text: ${i.text} lib: ${i.lib} data: ${i.data} dirty: ${i.dirty}}'
 }
 
 struct MemoryInfoRaw {
     vms     u64
     rss     u64
     shared  u64
+    text    u64
+    lib     u64
+    data    u64
+    dirty   u64
     pid     int
     errcode int
     errmsg  [256]char
@@ -45,9 +53,13 @@ pub fn memory_info(pid int) !MemoryInfo {
         return error(msg)
     }
     return MemoryInfo{
-        vms:    raw.vms
-        rss:    raw.rss
+        vms: raw.vms
+        rss: raw.rss
         shared: raw.shared
+        text: opt_u64(raw.text)
+        lib: opt_u64(raw.lib)
+        data: opt_u64(raw.data)
+        dirty: opt_u64(raw.dirty)
     }
 }
 
