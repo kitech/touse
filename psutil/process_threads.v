@@ -16,28 +16,45 @@ pub fn my_threads_count() int {
 
 pub struct MemoryInfo {
     pub:
-    virt u64 // )unsigned long long virtual_memory;   // 虚拟内存大小 (字节)
-    res  u64 // unsigned long long resident_memory;  // 常驻内存大小 (字节)
-    shrd u64 // unsigned long long shared_memory;    // 共享内存大小 (字节) (Linux only)
-    pid  int // int pid;                             // 进程ID
-    errcode int // int error_code;                      // 错误代码
-    errmsg [256]i8 // char error_msg[256];                 // 错误信息
+    vms    u64 // rss/vms/shared 使用 pypi psutil 字段名；顺序保持 C ABI
+    rss    u64
+    shared u64
 }
 
 pub fn (i MemoryInfo) str1() string {
-    return 'MemoryInfo{res: ${i.res} virt: ${i.virt} shrd: ${i.shrd}}'
+    return 'MemoryInfo{rss: ${i.rss} vms: ${i.vms} shared: ${i.shared}}'
 }
 
-// @[importc: "psutil_get_process_memory"]
-// pub fn process_memory(pid int) MemoryInfo
-
-fn C.psutil_get_process_memory_2(int, & MemoryInfo)
-pub fn process_memory(pid int) MemoryInfo {
-    mi := MemoryInfo{}
-    C.psutil_get_process_memory_2(pid, &mi)
-    return mi
-    // return process_memory(os.getpid())
+struct MemoryInfoRaw {
+    vms     u64
+    rss     u64
+    shared  u64
+    pid     int
+    errcode int
+    errmsg  [256]char
 }
-pub fn my_process_memory() MemoryInfo {
-    return process_memory(os.getpid())
+
+fn C.psutil_get_process_memory_2(int, &MemoryInfoRaw)
+
+// memory_info 对齐 pypi Process.memory_info()。
+pub fn memory_info(pid int) !MemoryInfo {
+    mut raw := MemoryInfoRaw{}
+    C.psutil_get_process_memory_2(pid, &raw)
+    if raw.errcode != 0 {
+        msg := unsafe { cstring_to_vstring(&raw.errmsg[0]) }
+        return error(msg)
+    }
+    return MemoryInfo{
+        vms:    raw.vms
+        rss:    raw.rss
+        shared: raw.shared
+    }
+}
+
+pub fn process_memory(pid int) !MemoryInfo {
+    return memory_info(pid)
+}
+
+pub fn my_process_memory() !MemoryInfo {
+    return memory_info(os.getpid())
 }

@@ -3,11 +3,17 @@ import vcp
 import time
 
 btime := time.now()
-pids := psutil.pids()
+pids := psutil.pids() or {
+    vcp.error(err.str())
+    return
+}
 vcp.info(pids.len, pids.str().elide_right(80), time.since(btime))
 
 btime = time.now()
-subpids := psutil.children(1, false)
+subpids := psutil.children(1, false) or {
+    vcp.error(err.str())
+    return
+}
 vcp.info(subpids.len, subpids.str().elide_right(80), time.since(btime))
 
 // reproc
