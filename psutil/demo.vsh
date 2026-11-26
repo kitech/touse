@@ -77,3 +77,29 @@ boot := psutil.boot_time() or { vcp.error(err.str()); return }
 sysusers := psutil.users() or { vcp.error(err.str()); return }
 vcp.info('P2 other', boot.str(), sysusers.len.str(),
     sysusers.str().elide_right(120))
+
+// P3: oneshot / rlimit / environ / sensors / heap / win_service
+snap := me.oneshot() or { vcp.error(err.str()); return }
+ident := me.identity() or { vcp.error(err.str()); return }
+vcp.info('P3 process', snap.str(), ident.str())
+
+nofile := me.rlimit(psutil.rlimit_nofile) or { vcp.error(err.str()); return }
+vcp.info('P3 rlimit', nofile.str())
+
+env := me.environ() or { vcp.error(err.str()); return }
+vcp.info('P3 environ', env.len.str())
+
+temps := psutil.sensors_temperatures(false) or { vcp.error(err.str()); return }
+fans := psutil.sensors_fans() or { vcp.error(err.str()); return }
+bats := psutil.sensors_battery() or { vcp.error(err.str()); return }
+vcp.info('P3 sensors', temps.len.str(), fans.len.str(), bats.str())
+
+heap := psutil.heap_info() or { vcp.error(err.str()); return }
+psutil.heap_trim() or { vcp.error(err.str()); return }
+vcp.info('P3 heap', heap.str())
+
+services := psutil.win_service_iter() or {
+    vcp.info('P3 win_service', err.str())
+    []psutil.WindowsService{}
+}
+vcp.info('P3 win_service', services.len.str())

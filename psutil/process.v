@@ -254,6 +254,37 @@ pub fn (p Process) as_dict(attrs []string, ad_value string) map[string]string {
     return res
 }
 
+// P3: 一次性快照、资源限制、环境变量与扩展标识。
+pub fn (p Process) oneshot() !OneShot {
+    return oneshot(p.pid)
+}
+
+pub fn (p Process) rlimit(resource int) !Rlimit {
+    return rlimit_of(p.pid, resource)
+}
+
+pub fn (p Process) set_rlimit(resource int, soft i64, hard i64) ! {
+    return set_rlimit_of(p.pid, resource, soft, hard)
+}
+
+pub fn (p Process) environ() !map[string]string {
+    return process_environ(p.pid)
+}
+
+pub fn (p Process) identity() !ProcessIdentity {
+    ct := p.create_time() or { return err }
+    return ProcessIdentity{pid: p.pid, create_time: ct}
+}
+
+// description / start_type 是 pypi WindowsService 方法；本机未实现，返回 unsupported。
+pub fn (p Process) description() !string {
+    return proc_err(p.pid, err_unsupported, 'description')
+}
+
+pub fn (p Process) start_type() !int {
+    return proc_err(p.pid, err_unsupported, 'start_type')
+}
+
 pub fn process_iter() ![]Process {
     ids := pids() or { return err }
     mut res := []Process{cap: ids.len}

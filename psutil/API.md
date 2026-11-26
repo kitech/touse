@@ -102,8 +102,48 @@
 - macOS / Windows 保留同名入口，但未在本机验证，统一返回 `err_unsupported`，
   不伪造 0 / 空值；需在 CI / 实机补齐后再声明支持。
 
-## 仍不做
+## P3: 补充 API
 
-- `oneshot()` / `rlimit()`：V 无 `with` 语义，留后续适配。
-- Windows 专属 `environ` / `description` / `identity` / `start_type`。
-- `sensors_*`、`win_service_*`、`heap_*`。
+新增 `extra.h` / `extra.c` / `extra.v` 与 `p3api.v`，补齐 pypi psutil 7.2.x
+的剩余公共入口；Linux 实现用 `/proc`、sysfs、`prlimit()`、`mallinfo2()`，
+其余平台保留同名入口并返回 `err_unsupported`，不伪造 0 / 空值。
+
+- 进程快照：`Process.oneshot()` / `oneshot(pid) !OneShot`。V 无 `with`
+  语义，改为一次性按值快照；Linux 只读一次 `/proc/<pid>/stat`、
+  `/proc/<pid>/status`、`/proc/<pid>/statm`。字段与逐方法一致：`name`、
+  `ppid`、`uids`、`gids`、`status`、`create_time`、`cpu_times`、`terminal`、
+  `num_threads`、`memory_info`。
+- 资源限制：`Process.rlimit(resource)`、`Process.set_rlimit(resource, soft, hard)`、
+  `rlimit_of(pid, resource)`、`set_rlimit_of(...)`。Linux 用 `prlimit()`，
+  `RLIM_INFINITY` 映射为 `-1`；`rlimit_cpu` 到 `rlimit_rttime` 常量对齐
+  `/usr/include/bits/resource.h`。
+- 环境变量：`Process.environ()` / `process_environ(pid) !map[string]string`。
+  `environ()` 是 pypi 的跨平台方法，Linux 读 `/proc/<pid>/environ`，
+  按 pypi 规则跳过无 `=` 的段，遇到空段停止；C 侧返回 key/value 数组，
+  避免 V 侧处理内嵌 NUL。
+- 扩展标识：`ProcessIdentity{pid, create_time}` 与 `Process.identity()`。
+  pypi 私有 `_get_ident()` 返回相同的 `(pid, create_time)`，这里作为 V 扩展封装，
+  不宣称为 pypi 公共 API。
+- WindowsService 方法：`Process.description()` / `Process.start_type()` 在
+  非 Windows 返回 `err_unsupported`；`WindowsService` 提供 `name`、
+  `display_name`、`binpath`、`username`、`start_type`、`pid`、`status`、
+  `description`、`as_dict`。`win_service_iter()` / `win_service_get(name)`
+  在本机返回 `err_unsupported`，不会用空列表伪装成“无服务”。
+- 传感器：`Shwtemp{name, label, current, high, critical}`、
+  `sensors_temperatures(fahrenheit bool) !map[string][]Shwtemp`；`name` 是
+  sysfs 传感器编号（如 `temp1`），`label` 是 `_label`，map 的 key 是芯片名。
+  `Sfan{name, speed}` 与 `sensors_fans()` 同理。`Battery{percent, secsleft,
+  power_plugged}` 与 `sensors_battery() ![]Battery` 返回长度 0 或 1，常
+  量 `power_time_unknown=-1`、`power_time_unlimited=-2`。
+- 堆：`HeapInfo{heap_used, mmap_used, heap_count}`、`heap_info()`、
+  `heap_trim()`。Linux glibc 用 `mallinfo2()` 的 `uordblks` / `hblkhd`，
+  `malloc_trim(0)`；`heap_count` 固定为 0，表示无法从 glibc 得到独立堆数量。
+
+签名边界：
+
+- 可空字段使用 `?f64` / `?bool` / `?u64`；例如 `Shwtemp.high`、
+  `Battery.power_plugged`、`MemoryInfo.text`。
+- C shim 数组上限：环境变量 1024 项、温度/风扇各 512 项、Windows 服务 1024 项；
+  超出部分截断，不返回错误。
+- `sensors_temperatures(true)` 同时转换 `current`、`high`、`critical`；
+  pypi 中 high/critical 缺失时互相补位的行为也保留。
