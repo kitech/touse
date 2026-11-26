@@ -122,6 +122,14 @@ pub fn (p Process) num_threads() !int {
     return process_num_threads(p.pid)
 }
 
+pub fn (p Process) cpu_num() !int {
+    return process_cpu_num(p.pid)
+}
+
+pub fn (p Process) threads() ![]ThreadInfo {
+    return process_threads(p.pid)
+}
+
 pub fn (p Process) num_fds() !int {
     return process_num_fds(p.pid)
 }

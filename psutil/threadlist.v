@@ -17,6 +17,7 @@ pub struct C.psutil_ThreadInfo {
 }
 
 fn C.psutil_list_threads(&C.psutil_ThreadInfo, int, &int) int
+fn C.psutil_list_threads_pid(int, &C.psutil_ThreadInfo, int, &int) int
 
 const max_thread_list = 256
 
@@ -68,4 +69,25 @@ pub fn thread_list_ex() !ThreadList {
 		items: list
 		truncated: truncated != 0
 	}
+}
+
+// process_threads 对齐 pypi Process.threads()，按 pid 列出线程。
+pub fn process_threads(pid int) ![]ThreadInfo {
+	mut raw := []C.psutil_ThreadInfo{len: max_thread_list}
+	mut truncated := 0
+	n := unsafe { C.psutil_list_threads_pid(pid, &raw[0], max_thread_list, &truncated) }
+	if n < 0 { return map_proc_err(pid, n, 'threads') }
+	mut list := []ThreadInfo{cap: n}
+	for i in 0 .. n {
+		list << ThreadInfo{
+			id: raw[i].id
+			tid: raw[i].tid
+			name: unsafe { cstring_to_vstring(&raw[i].name[0]) }
+			state: unsafe { cstring_to_vstring(&raw[i].state[0]) }
+			is_current: raw[i].is_current != 0
+			user_time: raw[i].user_time
+			system_time: raw[i].system_time
+		}
+	}
+	return list
 }

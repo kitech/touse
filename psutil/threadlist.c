@@ -1,6 +1,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include "threadlist.h"
+#include "psproc_query.h"
 
 static int psutil_tl_cmp(const void* a, const void* b) {
     const psutil_ThreadInfo* x = (const psutil_ThreadInfo*)a;
@@ -22,11 +23,14 @@ static void psutil_tl_copy(char* dst, size_t cap, const char* src) {
 #include <sys/syscall.h>
 #include <unistd.h>
 
-int psutil_list_threads(psutil_ThreadInfo* out, int cap, int* truncated) {
+static int psutil_tl_list(int pid, psutil_ThreadInfo* out, int cap, int* truncated) {
     if (truncated) *truncated = 0;
-    DIR* d = opendir("/proc/self/task");
-    if (!d) return -1;
+    char taskdir[128];
+    snprintf(taskdir, sizeof(taskdir), "/proc/%d/task", pid);
+    DIR* d = opendir(taskdir);
+    if (!d) return PSUTIL_NO_PROC;
     long self = (long)syscall(SYS_gettid);
+    if (pid != (int)getpid()) self = -1;
     long hz = sysconf(_SC_CLK_TCK);
     if (hz <= 0) hz = 100;
     char path[256];
@@ -46,7 +50,7 @@ int psutil_list_threads(psutil_ThreadInfo* out, int cap, int* truncated) {
         item->id = (unsigned long long)tid;
         item->tid = (unsigned long long)tid;
         item->is_current = (tid == self);
-        snprintf(path, sizeof(path), "/proc/self/task/%ld/comm", tid);
+        snprintf(path, sizeof(path), "/proc/%d/task/%ld/comm", pid, tid);
         FILE* f = fopen(path, "r");
         if (f) {
             if (fgets(line, sizeof(line), f)) {
@@ -56,7 +60,7 @@ int psutil_list_threads(psutil_ThreadInfo* out, int cap, int* truncated) {
             }
             fclose(f);
         }
-        snprintf(path, sizeof(path), "/proc/self/task/%ld/stat", tid);
+        snprintf(path, sizeof(path), "/proc/%d/task/%ld/stat", pid, tid);
         f = fopen(path, "r");
         if (f) {
             if (fgets(line, sizeof(line), f)) {
@@ -87,11 +91,20 @@ int psutil_list_threads(psutil_ThreadInfo* out, int cap, int* truncated) {
     return n;
 }
 
+int psutil_list_threads(psutil_ThreadInfo* out, int cap, int* truncated) {
+    return psutil_tl_list((int)getpid(), out, cap, truncated);
+}
+int psutil_list_threads_pid(int pid, psutil_ThreadInfo* out, int cap,
+                            int* truncated) {
+    return psutil_tl_list(pid, out, cap, truncated);
+}
+
 #elif defined(__APPLE__)
 #include <AvailabilityMacros.h>
 #include <mach/mach.h>
 #include <pthread.h>
 #include <stdint.h>
+#include <unistd.h>
 
 static char psutil_tl_state(int run_state) {
     switch (run_state) {
@@ -104,13 +117,21 @@ static char psutil_tl_state(int run_state) {
     }
 }
 
-int psutil_list_threads(psutil_ThreadInfo* out, int cap, int* truncated) {
+static int psutil_tl_list(int pid, psutil_ThreadInfo* out, int cap, int* truncated) {
     if (truncated) *truncated = 0;
     thread_act_array_t list = NULL;
     mach_msg_type_number_t cnt = 0;
-    if (task_threads(mach_task_self(), &list, &cnt) != KERN_SUCCESS) return -1;
+    mach_port_t task = mach_task_self();
+    if (pid != (int)getpid()) {
+        if (task_for_pid(mach_task_self(), (pid_t)pid, &task) != KERN_SUCCESS)
+            return PSUTIL_ACCESS_DENIED;
+    }
+    if (task_threads(task, &list, &cnt) != KERN_SUCCESS) {
+        return pid == (int)getpid() ? PSUTIL_NO_PROC : PSUTIL_ACCESS_DENIED;
+    }
     uint64_t self = 0;
-    pthread_threadid_np(NULL, &self);
+    if (pid == (int)getpid()) pthread_threadid_np(NULL, &self);
+    else self = (uint64_t)-1;
     int n = 0;
     for (mach_msg_type_number_t i = 0; i < cnt; i++) {
         if (n >= cap) {
@@ -150,6 +171,14 @@ int psutil_list_threads(psutil_ThreadInfo* out, int cap, int* truncated) {
     return n;
 }
 
+int psutil_list_threads(psutil_ThreadInfo* out, int cap, int* truncated) {
+    return psutil_tl_list((int)getpid(), out, cap, truncated);
+}
+int psutil_list_threads_pid(int pid, psutil_ThreadInfo* out, int cap,
+                            int* truncated) {
+    return psutil_tl_list(pid, out, cap, truncated);
+}
+
 #elif defined(_WIN32)
 #include <windows.h>
 #include <tlhelp32.h>
@@ -160,18 +189,18 @@ static double psutil_tl_filetime(FILETIME ft) {
     return (double)v / 10000000.0;
 }
 
-int psutil_list_threads(psutil_ThreadInfo* out, int cap, int* truncated) {
+static int psutil_tl_list(int pid, psutil_ThreadInfo* out, int cap, int* truncated) {
     if (truncated) *truncated = 0;
     HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0);
-    if (snap == INVALID_HANDLE_VALUE) return -1;
+    if (snap == INVALID_HANDLE_VALUE) return PSUTIL_NO_PROC;
     THREADENTRY32 te;
     te.dwSize = sizeof(te);
-    DWORD pid = GetCurrentProcessId();
+    DWORD want = (DWORD)pid;
     DWORD self = GetCurrentThreadId();
     int n = 0;
     BOOL ok = Thread32First(snap, &te);
     while (ok) {
-        if (te.th32OwnerProcessID == pid) {
+        if (te.th32OwnerProcessID == want) {
             if (n >= cap) {
                 if (truncated) *truncated = 1;
                 ok = Thread32Next(snap, &te);
@@ -181,7 +210,7 @@ int psutil_list_threads(psutil_ThreadInfo* out, int cap, int* truncated) {
             memset(item, 0, sizeof(*item));
             item->id = (unsigned long long)te.th32ThreadID;
             item->tid = (unsigned long long)te.th32ThreadID;
-            item->is_current = (te.th32ThreadID == self);
+            item->is_current = (want == GetCurrentProcessId() && te.th32ThreadID == self);
             item->state[0] = '?';
             HANDLE th = OpenThread(THREAD_QUERY_INFORMATION, FALSE, te.th32ThreadID);
             if (th) {
@@ -200,8 +229,24 @@ int psutil_list_threads(psutil_ThreadInfo* out, int cap, int* truncated) {
     return n;
 }
 
+int psutil_list_threads(psutil_ThreadInfo* out, int cap, int* truncated) {
+    return psutil_tl_list((int)GetCurrentProcessId(), out, cap, truncated);
+}
+int psutil_list_threads_pid(int pid, psutil_ThreadInfo* out, int cap,
+                            int* truncated) {
+    return psutil_tl_list(pid, out, cap, truncated);
+}
+
 #else
 int psutil_list_threads(psutil_ThreadInfo* out, int cap, int* truncated) {
+    (void)out;
+    (void)cap;
+    if (truncated) *truncated = 0;
+    return -1;
+}
+int psutil_list_threads_pid(int pid, psutil_ThreadInfo* out, int cap,
+                            int* truncated) {
+    (void)pid;
     (void)out;
     (void)cap;
     if (truncated) *truncated = 0;

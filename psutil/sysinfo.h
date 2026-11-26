@@ -58,6 +58,12 @@ typedef struct {
 } psutil_CpuStats;
 
 typedef struct {
+    double current;
+    double min;
+    double max;
+} psutil_CpuFreq;
+
+typedef struct {
     unsigned long long total;
     unsigned long long available;
     double percent;
@@ -169,6 +175,9 @@ int psutil_sys_cpu_times_percent(const psutil_SysCpuTimes* cur, int count,
                                  psutil_CpuTimesPercent* out);
 int psutil_sys_cpu_count(int logical);
 int psutil_sys_cpu_stats(psutil_CpuStats* out);
+
+int psutil_sys_cpu_freq(psutil_CpuFreq* out, int cap);
+int psutil_sys_getloadavg(double* out, int cap);
 
 int psutil_sys_virtual_memory(psutil_VirtualMemory* out);
 int psutil_sys_swap_memory(psutil_SwapMemory* out);

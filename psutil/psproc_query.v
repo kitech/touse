@@ -80,6 +80,7 @@ fn C.psutil_proc_uids(int, &u64) int
 fn C.psutil_proc_gids(int, &u64) int
 fn C.psutil_proc_terminal(int, &char, int) int
 fn C.psutil_proc_create_time(int, &f64) int
+fn C.psutil_proc_cpu_num(int, &int) int
 fn C.psutil_proc_cpu_times(int, &f64, &f64, &f64, &f64, &f64) int
 fn C.psutil_proc_cpu_percent(int, f64, &f64) int
 fn C.psutil_proc_ctx_switches(int, &u64, &u64) int
@@ -186,6 +187,13 @@ pub fn process_create_time(pid int) !f64 {
     mut out := 0.0
     rc := unsafe { C.psutil_proc_create_time(pid, &out) }
     if rc != 0 { return qerr(pid, rc, 'create_time') }
+    return out
+}
+
+pub fn process_cpu_num(pid int) !int {
+    mut out := 0
+    rc := unsafe { C.psutil_proc_cpu_num(pid, &out) }
+    if rc != 0 { return qerr(pid, rc, 'cpu_num') }
     return out
 }
 

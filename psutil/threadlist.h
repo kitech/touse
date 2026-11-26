@@ -21,6 +21,8 @@ typedef struct {
 // 写入 out（容量 cap），返回实际线程数；-1 表示失败。
 // truncated 非 NULL 时，超过 cap 会被标记为 1。
 int psutil_list_threads(psutil_ThreadInfo* out, int cap, int* truncated);
+int psutil_list_threads_pid(int pid, psutil_ThreadInfo* out, int cap,
+                            int* truncated);
 
 #ifdef __cplusplus
 }

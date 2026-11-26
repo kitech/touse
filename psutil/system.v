@@ -46,6 +46,36 @@ pub fn cpu_stats() !CpuStats {
     return sys_cpu_stats()
 }
 
+// cpu_freq 对齐 pypi psutil.cpu_freq(percpu=False)；恒定返回列表，
+// percpu=false 时按 pypi 规则聚合成长度 1。
+pub fn cpu_freq(percpu bool) ![]CpuFreq {
+    all := sys_cpu_freq() or { return err }
+    if percpu || all.len <= 1 { return all }
+    mut current := 0.0
+    mut min_sum := 0.0
+    mut max_sum := 0.0
+    mut has_none := false
+    for f in all {
+        current += f.current
+        if f.min == none || f.max == none {
+            has_none = true
+            continue
+        }
+        min_sum += f.min or { 0.0 }
+        max_sum += f.max or { 0.0 }
+    }
+    n := f64(all.len)
+    if has_none {
+        return [CpuFreq{current: current / n, min: none, max: none}]
+    }
+    return [CpuFreq{current: current / n, min: min_sum / n, max: max_sum / n}]
+}
+
+// getloadavg 对齐 pypi psutil.getloadavg()，返回 1/5/15 分钟负载。
+pub fn getloadavg() ![]f64 {
+    return sys_getloadavg()
+}
+
 pub fn virtual_memory() !VirtualMemoryInfo {
     return sys_virtual_memory()
 }

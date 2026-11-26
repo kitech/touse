@@ -336,6 +336,16 @@ int psutil_proc_create_time(int pid, double* out) {
     return PSUTIL_OK;
 }
 
+int psutil_proc_cpu_num(int pid, int* out) {
+    int rc = psq_guard(pid);
+    if (rc != PSUTIL_OK) return rc;
+    char* toks[40];
+    int n = psq_stat_tokens(pid, toks, 40);
+    if (n <= 36) return PSUTIL_NO_PROC; /* stat 第 39 字段 processor */
+    *out = (int)strtol(toks[36], NULL, 10);
+    return PSUTIL_OK;
+}
+
 int psutil_proc_cpu_times(int pid, double* user, double* system,
                           double* cuser, double* csystem, double* iowait) {
     int rc = psq_guard(pid);
@@ -928,6 +938,11 @@ int psutil_proc_create_time(int pid, double* out) {
     return PSUTIL_OK;
 }
 
+int psutil_proc_cpu_num(int pid, int* out) {
+    (void)pid; (void)out;
+    return PSUTIL_UNSUPPORTED; /* pypi macOS 无 Process.cpu_num */
+}
+
 int psutil_proc_ram_total(unsigned long long* out) {
     uint64_t mem = 0;
     size_t len = sizeof(mem);
@@ -1009,6 +1024,11 @@ int psutil_proc_create_time(int pid, double* out) {
     v.HighPart = c.dwHighDateTime;
     *out = (double)v.QuadPart / 10000000.0 - 11644473600.0;
     return PSUTIL_OK;
+}
+
+int psutil_proc_cpu_num(int pid, int* out) {
+    (void)pid; (void)out;
+    return PSUTIL_UNSUPPORTED; /* pypi Windows 无 Process.cpu_num */
 }
 
 int psutil_proc_cpu_times(int pid, double* user, double* system,
@@ -1176,6 +1196,7 @@ int psutil_proc_uids(int p, unsigned long long o[3]) { (void)p;(void)o; return p
 int psutil_proc_gids(int p, unsigned long long o[3]) { (void)p;(void)o; return psq_ni(); }
 int psutil_proc_terminal(int p, char* o, int c) { (void)p;(void)o;(void)c; return psq_ni(); }
 int psutil_proc_create_time(int p, double* o) { (void)p;(void)o; return psq_ni(); }
+int psutil_proc_cpu_num(int p, int* o) { (void)p;(void)o; return psq_ni(); }
 int psutil_proc_cpu_times(int p, double* a, double* b, double* c, double* d, double* e) { (void)p;(void)a;(void)b;(void)c;(void)d;(void)e; return psq_ni(); }
 int psutil_proc_ctx_switches(int p, unsigned long long* a, unsigned long long* b) { (void)p;(void)a;(void)b; return psq_ni(); }
 int psutil_proc_num_threads(int p) { (void)p; return PSUTIL_UNSUPPORTED; }

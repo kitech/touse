@@ -86,6 +86,7 @@ int psutil_proc_uids(int pid, unsigned long long out[3]);
 int psutil_proc_gids(int pid, unsigned long long out[3]);
 int psutil_proc_terminal(int pid, char* out, int cap);
 int psutil_proc_create_time(int pid, double* out);
+int psutil_proc_cpu_num(int pid, int* out);
 int psutil_proc_cpu_times(int pid, double* user, double* system,
                           double* cuser, double* csystem, double* iowait);
 int psutil_proc_cpu_percent(int pid, double total, double* out);

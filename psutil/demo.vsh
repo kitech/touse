@@ -103,3 +103,20 @@ services := psutil.win_service_iter() or {
     []psutil.WindowsService{}
 }
 vcp.info('P3 win_service', services.len.str())
+
+// P4: cpu_freq / getloadavg / cpu_num / threads
+freq := psutil.cpu_freq(false) or { vcp.error(err.str()); return }
+freqs := psutil.cpu_freq(true) or { vcp.error(err.str()); return }
+loads := psutil.getloadavg() or { vcp.error(err.str()); return }
+vcp.info('P4 system', freq.str(), freqs.len.str(), loads.str())
+
+cpunum := me.cpu_num() or {
+    vcp.info('P4 cpu_num', err.str())
+    -1
+}
+threads := me.threads() or {
+    vcp.info('P4 threads', err.str())
+    []psutil.ThreadInfo{}
+}
+vcp.info('P4 process', cpunum.str(), threads.len.str(),
+    threads.str().elide_right(120))

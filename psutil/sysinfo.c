@@ -12,6 +12,12 @@
 #include <strings.h>
 #include <time.h>
 
+#if defined(__linux__)
+#include <dirent.h>
+#elif defined(__APPLE__)
+#include <sys/sysctl.h>
+#endif
+
 #include "psproc_query.h"
 #include "sysinfo.h"
 
@@ -389,6 +395,96 @@ int psutil_sys_cpu_stats(psutil_CpuStats* out) {
     }
     fclose(f);
     return found == 3 ? PSUTIL_OK : PSUTIL_UNSUPPORTED;
+}
+
+typedef struct {
+    int num;
+    char path[256];
+} psys_freq_path;
+
+static int psys_freq_cmp(const void* a, const void* b) {
+    const psys_freq_path* x = (const psys_freq_path*)a;
+    const psys_freq_path* y = (const psys_freq_path*)b;
+    return (x->num > y->num) - (x->num < y->num);
+}
+
+static double psys_freq_read(const char* path) {
+    char buf[128];
+    FILE* f = fopen(path, "r");
+    if (!f) return -1.0;
+    if (!fgets(buf, sizeof(buf), f)) { fclose(f); return -1.0; }
+    fclose(f);
+    double v = atof(buf);
+    return v > 0.0 ? v : -1.0;
+}
+
+int psutil_sys_cpu_freq(psutil_CpuFreq* out, int cap) {
+    if (!out || cap <= 0) return PSUTIL_UNSUPPORTED;
+    psys_freq_path paths[PSUTIL_MAX_CPUS];
+    int n = 0;
+    const char* roots[2] = {
+        "/sys/devices/system/cpu/cpufreq",
+        "/sys/devices/system/cpu"
+    };
+    for (int r = 0; r < 2 && n == 0; r++) {
+        DIR* d = opendir(roots[r]);
+        if (!d) continue;
+        struct dirent* e;
+        while ((e = readdir(d)) != NULL && n < cap) {
+            int num = -1;
+            if (r == 0 && strncmp(e->d_name, "policy", 6) == 0)
+                num = atoi(e->d_name + 6);
+            else if (r == 1 && strncmp(e->d_name, "cpu", 3) == 0)
+                num = atoi(e->d_name + 3);
+            if (num < 0) continue;
+            snprintf(paths[n].path, sizeof(paths[n].path), "%s/%s", roots[r], e->d_name);
+            paths[n].num = num;
+            n++;
+        }
+        closedir(d);
+    }
+    qsort(paths, (size_t)n, sizeof(paths[0]), psys_freq_cmp);
+    for (int i = 0; i < n; i++) {
+        char p[512];
+        snprintf(p, sizeof(p), "%s/scaling_cur_freq", paths[i].path);
+        double cur = psys_freq_read(p);
+        if (cur < 0.0) {
+            snprintf(p, sizeof(p), "%s/cpuinfo_cur_freq", paths[i].path);
+            cur = psys_freq_read(p);
+        }
+        memset(&out[i], 0, sizeof(out[i]));
+        if (cur < 0.0) continue; /* offline cpu: 全 0 */
+        snprintf(p, sizeof(p), "%s/scaling_min_freq", paths[i].path);
+        double lo = psys_freq_read(p);
+        snprintf(p, sizeof(p), "%s/scaling_max_freq", paths[i].path);
+        double hi = psys_freq_read(p);
+        out[i].current = cur / 1000.0;
+        out[i].min = lo < 0.0 ? 0.0 : lo / 1000.0;
+        out[i].max = hi < 0.0 ? 0.0 : hi / 1000.0;
+    }
+    if (n > 0) return n;
+    /* 回退：/proc/cpuinfo 的 "cpu MHz"，min/max = 0（对齐 pypi 备用实现） */
+    FILE* f = fopen("/proc/cpuinfo", "r");
+    if (!f) return PSUTIL_UNSUPPORTED;
+    char line[512];
+    while (fgets(line, sizeof(line), f) && n < cap) {
+        char* colon = strchr(line, ':');
+        if (!colon || strncasecmp(line, "cpu MHz", 7) != 0) continue;
+        double v = atof(colon + 1);
+        if (v <= 0.0) continue;
+        out[n].current = v;
+        out[n].min = 0.0;
+        out[n].max = 0.0;
+        n++;
+    }
+    fclose(f);
+    return n > 0 ? n : PSUTIL_UNSUPPORTED;
+}
+
+int psutil_sys_getloadavg(double* out, int cap) {
+    if (!out || cap < 3) return PSUTIL_UNSUPPORTED;
+    if (getloadavg(out, 3) != 3) return PSUTIL_UNSUPPORTED;
+    return 3;
 }
 
 typedef struct {
@@ -1263,6 +1359,33 @@ int psutil_sys_users(psutil_User* out, int cap) {
 }
 
 #else
+
+int psutil_sys_cpu_freq(psutil_CpuFreq* out, int cap) {
+#if defined(__APPLE__)
+    uint64_t hz = 0;
+    size_t len = sizeof(hz);
+    if (!out || cap <= 0) return PSUTIL_UNSUPPORTED;
+    if (sysctlbyname("hw.cpufrequency", &hz, &len, NULL, 0) != 0 || hz == 0)
+        return PSUTIL_UNSUPPORTED;
+    out[0].current = (double)hz / 1000000.0;
+    out[0].min = 0.0;
+    out[0].max = 0.0;
+    return 1;
+#else
+    (void)out; (void)cap;
+    return PSUTIL_UNSUPPORTED;
+#endif
+}
+int psutil_sys_getloadavg(double* out, int cap) {
+#if defined(__APPLE__)
+    if (!out || cap < 3) return PSUTIL_UNSUPPORTED;
+    if (getloadavg(out, 3) != 3) return PSUTIL_UNSUPPORTED;
+    return 3;
+#else
+    (void)out; (void)cap;
+    return PSUTIL_UNSUPPORTED;
+#endif
+}
 
 int psutil_sys_cpu_times(psutil_SysCpuTimes* out, int cap, int percpu) {
     (void)out; (void)cap; (void)percpu;

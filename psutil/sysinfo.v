@@ -49,6 +49,13 @@ pub struct C.psutil_CpuStats {
 }
 
 @[typedef]
+pub struct C.psutil_CpuFreq {
+    current f64
+    min     f64
+    max     f64
+}
+
+@[typedef]
 pub struct C.psutil_VirtualMemory {
     total     u64
     available u64
@@ -166,6 +173,8 @@ fn C.psutil_sys_cpu_times_percent_seed(&C.psutil_SysCpuTimes, int) int
 fn C.psutil_sys_cpu_times_percent(&C.psutil_SysCpuTimes, int, &C.psutil_CpuTimesPercent) int
 fn C.psutil_sys_cpu_count(int) int
 fn C.psutil_sys_cpu_stats(&C.psutil_CpuStats) int
+fn C.psutil_sys_cpu_freq(&C.psutil_CpuFreq, int) int
+fn C.psutil_sys_getloadavg(&f64, int) int
 fn C.psutil_sys_virtual_memory(&C.psutil_VirtualMemory) int
 fn C.psutil_sys_swap_memory(&C.psutil_SwapMemory) int
 fn C.psutil_sys_disk_partitions(int, &C.psutil_Partition, int) int
@@ -225,6 +234,13 @@ pub:
     interrupts      u64
     soft_interrupts u64
     syscalls        u64
+}
+
+pub struct CpuFreq {
+pub:
+    current f64
+    min     ?f64
+    max     ?f64
 }
 
 pub struct VirtualMemoryInfo {
@@ -440,6 +456,28 @@ fn sys_cpu_stats() !CpuStats {
         soft_interrupts: raw.soft_interrupts
         syscalls: raw.syscalls
     }
+}
+
+fn sys_cpu_freq() ![]CpuFreq {
+    mut raw := []C.psutil_CpuFreq{len: max_cpus}
+    n := unsafe { C.psutil_sys_cpu_freq(&raw[0], max_cpus) }
+    if n < 0 { return sys_err(n, 'cpu_freq') }
+    mut res := []CpuFreq{cap: n}
+    for i in 0 .. n {
+        res << CpuFreq{
+            current: raw[i].current
+            min: if raw[i].min < 0 { none } else { raw[i].min }
+            max: if raw[i].max < 0 { none } else { raw[i].max }
+        }
+    }
+    return res
+}
+
+fn sys_getloadavg() ![]f64 {
+    mut out := []f64{len: 3}
+    n := unsafe { C.psutil_sys_getloadavg(&out[0], 3) }
+    if n < 0 { return sys_err(n, 'getloadavg') }
+    return out
 }
 
 fn sys_virtual_memory() !VirtualMemoryInfo {

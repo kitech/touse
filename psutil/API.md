@@ -147,3 +147,28 @@
   超出部分截断，不返回错误。
 - `sensors_temperatures(true)` 同时转换 `current`、`high`、`critical`；
   pypi 中 high/critical 缺失时互相补位的行为也保留。
+
+## P4: 补齐 pypi 公共入口
+
+按 pypi 7.2.x 命名补齐最后 4 个公共入口，达成模块函数 27/27、
+`Process` 方法 43/43、`WindowsService` 9/9（按名字合计 79/79）：
+
+- `cpu_freq(percpu bool) ![]CpuFreq`：`CpuFreq{current, min ?, max ?}`。
+  恒定返回列表，`percpu=false` 时按 pypi 聚合为长度 1；任一 CPU 的
+  min/max 缺失时聚合结果两者都为 `none`。Linux 读 sysfs cpufreq，
+  回退 `/proc/cpuinfo` 的 `cpu MHz`（min/max=0）；macOS 用
+  `hw.cpufrequency` 单值；Windows 返回 `err_unsupported`。
+- `getloadavg() ![]f64`：固定长度 3，对应 pypi 的 1/5/15 分钟元组；
+  Linux/macOS 走 POSIX `getloadavg()`，Windows 返回 `err_unsupported`。
+- `Process.cpu_num()`：Linux 读 `/proc/<pid>/stat` 第 39 字段，
+  用 `psq_guard()` 防 PID 复用；macOS/Windows 按 pypi availability
+  返回 `err_unsupported`。
+- `Process.threads()`：按 pid 列出 `{id, user_time, system_time}`，
+  复用 `ThreadInfo`（额外字段 name/state/is_current 为 V 扩展）。
+  Linux 读 `/proc/<pid>/task`，macOS 自身用 `mach_task_self()`、
+  其他 pid 用 `task_for_pid()`，Windows 按 `th32OwnerProcessID` 过滤。
+  错误映射 `err_no_such_process` / `err_access_denied` /
+  `err_unsupported`；`thread_list()` / `thread_list_ex()` 语义不变。
+
+平台边界同 P1–P3：macOS/Windows 分支本机未编译/运行验证，返回
+unsupported 的路径不伪造 0 / 空值，需 CI / 实机补齐。
