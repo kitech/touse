@@ -3,9 +3,19 @@ module psutil
 import vcp.venv
 
 
-#flag -lreproc
+//#flag -lreproc
+#flag @DIR/reproc_dyn.o
 #include "@DIR/reproc_p.h"
 
+fn C.reproc_libok() bool
+fn C.reproc_dyn_init()
+fn init() {
+	if !C.reproc_libok() {
+		dump('load error')
+	}else{
+		//C.reproc_dyn_init()
+	}
+}
 
 $if windows {
     pub type ProcessType = voidptr
