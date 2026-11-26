@@ -55,7 +55,7 @@ struct ConnBox {
 	conn ntipc.Conn
 }
 
-fn socket_path(name string) string {
+pub fn socket_path(name string) string {
 	$if windows {
 		return name
 	} $else {
