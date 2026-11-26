@@ -62,9 +62,48 @@
   其余方法保留同名入口并返回 `err_unsupported`，待 CI/实机验证后再补齐。
 - `psproc_query.c` 不调用 `vcp`，跨平台差异集中在 C shim 内。
 
+## P2: 系统级 API
+
+新增 `sysinfo.h` / `sysinfo.c` / `sysinfo.v` 与 `system.v`，对齐 pypi psutil 7.2.x
+的系统级公共函数：
+
+- CPU：`cpu_times(percpu bool)`、`cpu_percent(interval f64, percpu bool)`、
+  `cpu_times_percent(interval f64, percpu bool)`、`cpu_count(logical bool)`、
+  `cpu_stats()`
+- 内存：`virtual_memory()`、`swap_memory()`
+- 磁盘：`disk_partitions(all bool)`、`disk_usage(path string)`、
+  `disk_io_counters(perdisk bool)`
+- 网络：`net_io_counters(pernic bool)`、`net_connections(kind string)`、
+  `net_if_addrs()`、`net_if_stats()`
+- 其他：`boot_time()`、`users()`
+
+签名边界：
+
+- V 无重载且不支持 `!?[]T`；`cpu_times` / `cpu_percent` / `cpu_times_percent`
+  恒定返回列表，`percpu=false` 时长度为 1。
+- `disk_io_counters(perdisk=false)` 与 `net_io_counters(pernic=false)` 也恒定返回
+  列表：聚合值为长度 1，无数据时为空列表。
+- 可空字段使用 `?f64` / `?string` / `?int`；例如 `NicAddr.netmask`、
+  `SystemConnection.pid`、`SystemUser.terminal`。
+- `cpu_percent(0, ...)` 与 `cpu_times_percent(0, ...)` 首次返回 0，之后使用进程内
+  缓存计算；`interval > 0` 时先 seed 缓存再 sleep，语义与 pypi 一致。
+- `net_connections(kind)` 支持 `inet`、`inet4`、`inet6`、`tcp`、`tcp4`、`tcp6`、
+  `udp`、`udp4`、`udp6`、`unix`、`all`；非法 kind 返回 `err_invalid_arg`。
+
+实现与平台策略：
+
+- Linux 按 pypi 7.2.x 算法读取 `/proc`、`/sys`、`getifaddrs`、utmp；
+  `virtual_memory.available` 优先 `MemAvailable`，缺失或为 0 时回退 procps 估算；
+  `cached` 包含 `SReclaimable`；`used = total - available`。
+- `net_if_stats` 的 flags 用 `SIOCGIFFLAGS`（sysfs 的 flags 文件不含 volatile
+  running 位），duplex/speed/mtu 仍读 sysfs。
+- `users()` 对齐 pypi 的 `USER_PROCESS` 过滤，并把 utmp 的 `:0` 显示主机映射为
+  `localhost`。
+- macOS / Windows 保留同名入口，但未在本机验证，统一返回 `err_unsupported`，
+  不伪造 0 / 空值；需在 CI / 实机补齐后再声明支持。
+
 ## 仍不做
 
 - `oneshot()` / `rlimit()`：V 无 `with` 语义，留后续适配。
 - Windows 专属 `environ` / `description` / `identity` / `start_type`。
-- 系统级 `cpu_*` / `virtual_memory` / `disk_*` / `net_*`。
 - `sensors_*`、`win_service_*`、`heap_*`。
