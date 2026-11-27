@@ -12,16 +12,7 @@ import vcp.yco
 fn C.GC_get_gc_no() int
 fn C.GC_get_parallel() int
 
-struct CrnInnerStats {
-	mch_totcnt   int
-	mch_actcnt   int
-	fiber_totcnt int
-	fiber_actcnt int
-	fiber_totmem int
-	maxstksz     int
-}
-
-fn C.crn_get_stats(&CrnInnerStats)
+fn C.crn_get_stats(&yco.InnerStats)
 
 __global g_service_name = ''
 
@@ -107,8 +98,9 @@ pub fn coro_data() string {
 }
 
 pub fn coro_list_data() string {
-	mut st := CrnInnerStats{}
+	mut st := yco.InnerStats{}
 	C.crn_get_stats(&st)
+	assert st.version == yco.struct_version
 	return jobj(
 		'"machine_total":${st.mch_totcnt}',
 		'"machine_active":${st.mch_actcnt}',
