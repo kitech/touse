@@ -3,6 +3,7 @@ import readline
 import vrtinfo
 import time
 import vcp
+import vcp.json
 import vcp.yco
 
 // running/connected/reconnecting/done 跨 coro（可能落在不同 photon thread）读写，全部走 atomic
@@ -39,6 +40,108 @@ fn C.crn_hchan_recv(voidptr, &voidptr) bool
 // C 队列不被 GC 扫描，事件指针必须保活；各池由单一 coro 独占写入
 const input_evs = []&Ev{}
 const ack_ev = &Ev{kind: ev_ack, line: ''}
+
+// 列表结果表格化：只处理列表类命令，别的结果保持原 JSON 输出
+fn list_headers(key string) []string {
+	return match key {
+		'threads' { ['TID', 'NAME', 'STATE', 'IS_CURRENT', 'GOID', 'GC_REGISTERED'] }
+		'fibers' { ['ID', 'MCID', 'STATE', 'PKREASON', 'STKSZ', 'USED_STKSZ'] }
+		'cmds' { ['COMMAND'] }
+		else { []string{} }
+	}
+}
+
+fn json_cell(el &json.JSON, field string) string {
+	if el.isObject() {
+		n := el.key(field)
+		if n == nil || n.isNull() {
+			return '-'
+		}
+		if n.isString() {
+			return n.tostr()
+		}
+		if n.isBool() {
+			return if n.tobool() { 'true' } else { 'false' }
+		}
+		return n.json_str()
+	}
+	if el.isString() {
+		return el.tostr()
+	}
+	return el.json_str()
+}
+
+// 纯 ASCII 表格：按列最大宽度左对齐，列间两个空格
+fn table_text(headers []string, rows [][]string) string {
+	mut widths := []int{len: headers.len}
+	for i, h in headers {
+		widths[i] = h.len
+	}
+	for row in rows {
+		for i, cell in row {
+			if i < widths.len && cell.len > widths[i] {
+				widths[i] = cell.len
+			}
+		}
+	}
+	mut lines := []string{cap: rows.len + 1}
+	mut head := []string{cap: headers.len}
+	for i, h in headers {
+		head << h + ' '.repeat(widths[i] - h.len)
+	}
+	lines << head.join('  ')
+	for row in rows {
+		mut line := []string{cap: headers.len}
+		for i in 0 .. headers.len {
+			cell := if i < row.len { row[i] } else { '' }
+			line << cell + ' '.repeat(widths[i] - cell.len)
+		}
+		lines << line.join('  ')
+	}
+	return lines.join('\n')
+}
+
+fn format_lists(data string) string {
+	jo := json.parse(data) or { return '' }
+	defer { jo.freeit() }
+	if !jo.isObject() {
+		return ''
+	}
+	mut out := []string{}
+	for key in ['threads', 'fibers', 'cmds'] {
+		arr := jo.key(key)
+		if arr == nil || !arr.isArray() || arr.size() == 0 {
+			continue
+		}
+		headers := list_headers(key)
+		if headers.len == 0 {
+			continue
+		}
+		mut rows := [][]string{cap: arr.size()}
+		for i in 0 .. arr.size() {
+			el := arr.index(i)
+			if el == nil {
+				continue
+			}
+			mut row := []string{cap: headers.len}
+			for h in headers {
+				row << json_cell(el, h.to_lower())
+			}
+			rows << row
+		}
+		if headers.len == 1 {
+			mut vals := []string{cap: rows.len}
+			for row in rows {
+				vals << row[0]
+			}
+			out << '${key}: ' + vals.join(' ')
+		} else {
+			out << '${key}:'
+			out << table_text(headers, rows)
+		}
+	}
+	return out.join('\n')
+}
 
 fn usage() {
 	eprintln('usage: vrtic -name <service> [-timeout <ms>]')
@@ -144,7 +247,13 @@ fn handle_line(app &App, line string) bool {
 		return true
 	}
 	if reply.ok {
-		println('[id=${reply.id}] ok ${reply.data}')
+		tbl := format_lists(reply.data)
+		if tbl != '' {
+			println('[id=${reply.id}] ok')
+			println(tbl)
+		} else {
+			println('[id=${reply.id}] ok ${reply.data}')
+		}
 	} else {
 		println('[id=${reply.id}] err(${reply.err_code}) ${reply.err_msg}')
 	}

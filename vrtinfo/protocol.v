@@ -20,8 +20,11 @@ pub const (
 )
 
 pub const command_names = [
-	'ping', 'caps', 'info', 'gc.stats', 'coro.stats', 'coro.list', 'threads', 'mem',
+	'ping', 'caps', 'info', 'gc.stats', 'coro.stats', 'coro.list', 'threads', 'mem', 'fibers',
 ]
+
+// 调用方注册的命令处理函数：args 为请求里的 JSON 对象字符串，返回响应 data 的 JSON 字符串
+pub type CommandHandler = fn (args string) !string
 
 pub struct Request {
 pub:

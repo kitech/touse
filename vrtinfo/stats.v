@@ -37,9 +37,12 @@ pub fn ping_data() string {
 	)
 }
 
-pub fn caps_data() string {
+pub fn caps_data(extra []string) string {
 	mut cmds := []string{}
 	for c in command_names {
+		cmds << jstr(c)
+	}
+	for c in extra {
 		cmds << jstr(c)
 	}
 	return jobj(
@@ -107,7 +110,41 @@ pub fn coro_list_data() string {
 		'"fiber_total":${st.fiber_totcnt}',
 		'"fiber_active":${st.fiber_actcnt}',
 		'"fiber_total_mem":${st.fiber_totmem}',
+		'"fiber_dtorcnt":${st.fiber_dtorcnt}',
 		'"max_stack_size":${st.maxstksz}',
+	)
+}
+
+fn fiber_state_name(state int) string {
+	return match state {
+		0 { 'nostack' }
+		1 { 'runnable' }
+		2 { 'executing' }
+		3 { 'waiting' }
+		4 { 'finished' }
+		else { '${state}' }
+	}
+}
+
+pub fn fibers_data() !string {
+	$if emucobypth? {
+		return error('fibers command is not supported in this build')
+	}
+	list := yco.get_fibers()
+	mut items := []string{cap: list.len}
+	for f in list {
+		items << jobj(
+			'"id":${f.id}',
+			'"mcid":${f.mcid}',
+			'"state":${jstr(fiber_state_name(f.state))}',
+			'"pkreason":${f.pkreason}',
+			'"stksz":${f.stksz}',
+			'"used_stksz":${f.used_stksz}',
+		)
+	}
+	return jobj(
+		'"count":${list.len}',
+		'"fibers":[${items.join(',')}]',
 	)
 }
 

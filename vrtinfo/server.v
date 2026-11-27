@@ -10,8 +10,10 @@ pub struct Server {
 pub:
 	name string
 mut:
-	listener ntipc.Listener
-	running  bool
+	listener  ntipc.Listener
+	running   bool
+	commands  map[string]CommandHandler
+	cmd_order []string
 }
 
 pub fn start(tag string) !&Server {
@@ -37,9 +39,11 @@ pub fn start_named(name string) !&Server {
 	}
 	set_service_name(name)
 	mut s := &Server{
-		name:     name
-		listener: ntipc.listen(name)!
-		running:  true
+		name:      name
+		listener:  ntipc.listen(name)!
+		running:   true
+		commands:  map[string]CommandHandler{}
+		cmd_order: []string{}
 	}
 	vcp.info('vrtinfo: server started ${socket_path(name)}')
 	yco.gofy(serve_loop, voidptr(s))
@@ -51,8 +55,21 @@ pub fn (mut s Server) stop() {
 	s.listener.close()
 }
 
+// 注册调用方自定义命令；名字非法、与内置命令冲突或重复注册时忽略
+pub fn (mut s Server) register_command(name string, handler CommandHandler) {
+	if name.len == 0 || name.len > 64 {
+		return
+	}
+	if name in command_names || name in s.commands {
+		return
+	}
+	s.commands[name] = handler
+	s.cmd_order << name
+}
+
 struct ConnBox {
-	conn ntipc.Conn
+	conn   ntipc.Conn
+	server &Server
 }
 
 pub fn socket_path(name string) string {
@@ -64,34 +81,46 @@ pub fn socket_path(name string) string {
 }
 
 // 一帧 = 一次请求，一帧 = 一次响应；语义错误保持连接，协议错误关闭连接
-fn handle(raw string) string {
+fn (s &Server) handle(raw string) string {
 	req := parse_request(raw) or {
 		return err_response('', err_bad_request, err.msg())
 	}
-	if req.cmd !in command_names {
-		return err_response(req.id, err_unknown_cmd, 'unknown command: ${req.cmd}')
-	}
-	mut data := '{}'
-	match req.cmd {
-		'ping'       { data = ping_data() }
-		'caps'       { data = caps_data() }
-		'info'       { data = info_data() }
-		'gc.stats'   { data = gc_data() }
-		'coro.stats' { data = coro_data() }
-		'coro.list'  { data = coro_list_data() }
-		'threads' {
-			data = threads_data() or {
-				return err_response(req.id, err_unsupported, err.msg())
+	if req.cmd in command_names {
+		mut data := '{}'
+		match req.cmd {
+			'ping'       { data = ping_data() }
+			'caps'       { data = caps_data(s.cmd_order) }
+			'info'       { data = info_data() }
+			'gc.stats'   { data = gc_data() }
+			'coro.stats' { data = coro_data() }
+			'coro.list'  { data = coro_list_data() }
+			'threads' {
+				data = threads_data() or {
+					return err_response(req.id, err_unsupported, err.msg())
+				}
 			}
-		}
-		'mem' {
-			data = mem_data() or {
-				return err_response(req.id, err_unsupported, err.msg())
+			'mem' {
+				data = mem_data() or {
+					return err_response(req.id, err_unsupported, err.msg())
+				}
 			}
+			'fibers' {
+				data = fibers_data() or {
+					return err_response(req.id, err_unsupported, err.msg())
+				}
+			}
+			else {}
 		}
-		else {}
+		return ok_response(req.id, data)
 	}
-	return ok_response(req.id, data)
+	if req.cmd in s.commands {
+		handler := s.commands[req.cmd]
+		data := handler(req.args) or {
+			return err_response(req.id, err_internal, err.msg())
+		}
+		return ok_response(req.id, data)
+	}
+	return err_response(req.id, err_unknown_cmd, 'unknown command: ${req.cmd}')
 }
 
 fn serve_loop(p voidptr) voidptr {
@@ -100,7 +129,7 @@ fn serve_loop(p voidptr) voidptr {
 	for s.running {
 		if c := s.listener.accept() {
 			vcp.info('vrtinfo: new connection ${s.name} fd=${c.descriptor_of()}')
-			mut box := &ConnBox{conn: c}
+			mut box := &ConnBox{conn: c, server: s}
 			yco.gofy(conn_loop, voidptr(box))
 		}
 		s.listener.keep_name()
@@ -127,7 +156,7 @@ fn conn_loop(p voidptr) voidptr {
 			ntipc.send_frame(conn, err_response('', err_too_large, 'request too large').bytes()) or {}
 			continue
 		}
-		resp := handle(raw.bytestr())
+		resp := box.server.handle(raw.bytestr())
 		if resp.len > max_response {
 			ntipc.send_frame(conn, err_response('', err_too_large, 'response too large').bytes()) or {}
 			continue

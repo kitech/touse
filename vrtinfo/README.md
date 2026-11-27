@@ -53,10 +53,26 @@
 | `coro.list` | `machine_total, machine_active, fiber_total, fiber_active, fiber_total_mem, max_stack_size`（聚合统计，来自 `crn_get_stats()`，不是逐条 fiber 列表） |
 | `threads` | `gc_parallel, count, threads[]`；每项 `tid, name, state, is_current`，当前线程项额外含 `goid, gc_registered`（Linux `/proc/self/task`，macOS `task_threads`，Windows Toolhelp；其他平台返回 1006） |
 | `mem` | `rss_bytes, vm_size_bytes`（Linux `/proc/self/status`；其他平台返回 1006） |
+| `fibers` | `count, fibers[]`；每项 `id, mcid, state, pkreason, stksz, used_stksz`（`state`: `nostack`/`runnable`/`executing`/`waiting`/`finished`；`emucobypth` 构建返回 1006） |
 
 `GogcStat` 字段映射：`inuse`=`inuse`(heap_size)、`unmapped`=`objcnt`、`total_bytes`=`cgocall`、`bytes_since_gc`=`x`、`obtained_from_os`=`alloc`。`gc_parallel` 来自 `GC_get_parallel()`（本机 BDWGC 未提供 `GC_count_threads()`，故以并行度代替 GC 活跃线程数）。
 
 错误码：`1001` bad_request、`1002` unknown_cmd、`1003` bad_args、`1004` internal、`1005` too_large、`1006` unsupported。
+
+## 调用方注册命令
+
+`Server.register_command(name, handler)` 允许调用方注册自定义命令：
+
+```v
+s := vrtinfo.start_named('vrtinfo-demo') or { panic(err.msg()) }
+s.register_command('my.cmd', fn (args string) !string {
+	return '{"hello":"world"}'
+})
+```
+
+- handler 接收请求里的 `args` JSON 对象字符串，返回响应 `data` 的 JSON 字符串。
+- 名字非法、与内置命令重名或重复注册时忽略。
+- 已注册命令会出现在 `caps` 的 `cmds[]` 中。
 
 ## 接入与编译
 
@@ -89,5 +105,7 @@ vrtic -name vrtinfo-12345 [-timeout 2000]
 - `help` / `?`：发送 `caps`，打印服务端命令列表。
 - `<cmd>` 或 `<cmd> <json对象>`：发送请求并等待响应。
 - `reconnect`：本地重连；`quit` / `exit` / Ctrl-D：退出。
+
+列表结果（`threads`、`fibers`、`caps` 的 `cmds`）以纯 ASCII 表格显示；其它结果仍打印原始 JSON。
 
 注意：导入 `vcp.gc` 会影响进程级 BDWGC 参数；导入 `vcp.yco` 会链接 corona 运行库。
