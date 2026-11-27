@@ -152,20 +152,6 @@ const managers = [
 		need_net: false
 	},
 	PkgManager{
-		name: 'xmake'
-		cmd: 'xmake'
-		search_tpl: 'xmake require --search {q}'
-		info_tpl: 'xmake require --info --format=json {q}'
-		list_cmd: 'xmake require --scan'
-		installed_cmd: 'xmake require --scan'
-		fetch_tpl: 'xmake require --download {q}'
-		fetch_recursive_tpl: 'xmake require --download {q}'
-		files_tpl: ''
-		info_parser: ''
-		has_native_installed_mark: false
-		need_net: false
-	},
-	PkgManager{
 		name: 'brew'
 		cmd: 'brew'
 		search_tpl: 'brew search {q}'
@@ -284,35 +270,35 @@ fn get_ordered_managers() []PkgManager {
 		distro := detect_distro()
 		match distro {
 			'ubuntu', 'debian', 'linuxmint', 'pop', 'elementary', 'zorin', 'kali', 'deepin', 'raspbian' {
-				['apt', 'rpm', 'pacman', 'apk', 'pkg (Termux)', 'pm (Android)', 'brew', 'vcpkg', 'xmake', 'port']
+				['apt', 'rpm', 'pacman', 'apk', 'pkg (Termux)', 'pm (Android)', 'brew', 'vcpkg', 'port']
 			}
 			'fedora', 'rhel', 'centos', 'rocky', 'alma', 'ol', 'amzn' {
-				['rpm', 'apt', 'pacman', 'apk', 'pkg (Termux)', 'pm (Android)', 'brew', 'vcpkg', 'xmake', 'port']
+				['rpm', 'apt', 'pacman', 'apk', 'pkg (Termux)', 'pm (Android)', 'brew', 'vcpkg', 'port']
 			}
 			'arch', 'manjaro', 'endeavouros', 'garuda', 'artix' {
-				['pacman', 'apt', 'rpm', 'apk', 'pkg (Termux)', 'pm (Android)', 'brew', 'vcpkg', 'xmake', 'port']
+				['pacman', 'apt', 'rpm', 'apk', 'pkg (Termux)', 'pm (Android)', 'brew', 'vcpkg', 'port']
 			}
 			'opensuse', 'suse', 'sles', 'opensuse-leap', 'opensuse-tumbleweed' {
-				['rpm', 'apt', 'pacman', 'apk', 'pkg (Termux)', 'pm (Android)', 'brew', 'vcpkg', 'xmake', 'port']
+				['rpm', 'apt', 'pacman', 'apk', 'pkg (Termux)', 'pm (Android)', 'brew', 'vcpkg', 'port']
 			}
 			'alpine' {
-				['apk', 'apt', 'rpm', 'pacman', 'pkg (Termux)', 'pm (Android)', 'brew', 'vcpkg', 'xmake', 'port']
+				['apk', 'apt', 'rpm', 'pacman', 'pkg (Termux)', 'pm (Android)', 'brew', 'vcpkg', 'port']
 			}
 			'android' {
-				['pkg (Termux)', 'pm (Android)', 'apt', 'rpm', 'pacman', 'apk', 'brew', 'vcpkg', 'xmake', 'port']
+				['pkg (Termux)', 'pm (Android)', 'apt', 'rpm', 'pacman', 'apk', 'brew', 'vcpkg', 'port']
 			}
 			else {
-				['apt', 'rpm', 'pacman', 'apk', 'pkg (Termux)', 'pm (Android)', 'brew', 'vcpkg', 'xmake', 'port']
+				['apt', 'rpm', 'pacman', 'apk', 'pkg (Termux)', 'pm (Android)', 'brew', 'vcpkg', 'port']
 			}
 		}
 	} else if os_name == 'macos' {
-		['brew', 'port', 'vcpkg', 'xmake', 'apt', 'rpm', 'pacman', 'apk', 'pkg (Termux)', 'pm (Android)']
+		['brew', 'port', 'vcpkg', 'apt', 'rpm', 'pacman', 'apk', 'pkg (Termux)', 'pm (Android)']
 	} else if os_name == 'windows' {
-		['vcpkg', 'xmake', 'brew', 'port', 'apt', 'rpm', 'pacman', 'apk', 'pkg (Termux)', 'pm (Android)']
+		['vcpkg', 'brew', 'port', 'apt', 'rpm', 'pacman', 'apk', 'pkg (Termux)', 'pm (Android)']
 	} else if os_name == 'android' {
-		['pkg (Termux)', 'pm (Android)', 'apt', 'brew', 'vcpkg', 'xmake', 'port', 'rpm', 'pacman', 'apk']
+		['pkg (Termux)', 'pm (Android)', 'apt', 'brew', 'vcpkg', 'port', 'rpm', 'pacman', 'apk']
 	} else {
-		['port', 'pkg (Termux)', 'pm (Android)', 'brew', 'vcpkg', 'xmake', 'apt', 'rpm', 'pacman', 'apk']
+		['port', 'pkg (Termux)', 'pm (Android)', 'brew', 'vcpkg', 'apt', 'rpm', 'pacman', 'apk']
 	}
 
 	mut result := []PkgManager{}
@@ -432,7 +418,7 @@ fn get_installed_set(mgr PkgManager) map[string]bool {
 		if t.len == 0 { continue }
 
 		name := match mgr.name {
-			'pacman', 'apk', 'brew', 'rpm', 'xmake' { t.fields()[0] }
+			'pacman', 'apk', 'brew', 'rpm' { t.fields()[0] }
 			'apt' { t }
 			'vcpkg' {
 				parts := t.fields()
@@ -694,7 +680,6 @@ fn get_list_cmd(mgr PkgManager) string {
 		'rpm' { r"rpm -qa --qf '%{NAME}\t%{VERSION}-%{RELEASE}\t%{SIZE}\t%{INSTALLTIME}\n'" }
 		'apk' { 'apk query --installed --format json' }
 		'vcpkg' { 'vcpkg list' }
-		'xmake' { 'xmake require --scan' }
 		'port' { 'port installed  +  sqlite3 registry.db (SELECT name, date FROM ports)' }
 		'pm (Android)' { 'pm list packages  +  pm path <pkg>' }
 		'pkg (Termux)' { r"dpkg-query -W -f='${Package}\t${Version}\t${Installed-Size}\t${db-fsys:Last-Modified}\n'" }
@@ -1147,18 +1132,6 @@ fn list_generic(cmd_str string) []PkgEntry {
 	return entries
 }
 
-fn list_xmake() []PkgEntry {
-	raw := os.execute('xmake require --scan').output.trim_space()
-	if raw.len == 0 { return [] }
-	mut entries := []PkgEntry{}
-	for line in raw.split_into_lines() {
-		t := line.trim_space()
-		f := t.fields()
-		if f.len > 0 { entries << PkgEntry{ name: f[0] } }
-	}
-	return entries
-}
-
 fn execute_list(mgr PkgManager) []PkgEntry {
 	return match mgr.name {
 		'pacman' { list_pacman() }
@@ -1167,7 +1140,6 @@ fn execute_list(mgr PkgManager) []PkgEntry {
 		'rpm' { list_rpm() }
 		'apk' { list_apk() }
 		'vcpkg' { list_vcpkg() }
-		'xmake' { list_xmake() }
 		'port' { list_port() }
 		'pm (Android)' { list_pm() }
 		'pkg (Termux)' { list_apt() }
@@ -2403,7 +2375,7 @@ fn main() {
 		eprintln('子命令:')
 		eprintln('  search <关键词>          在所有包管理器中搜索包（已安装的会在行尾标记 [installed]）')
 		eprintln('  info <包名>              查询包详细信息')
-		eprintln('  netso <关键词>           联网搜索包（默认搜全部 10 个源，--max 控制结果数）')
+		eprintln('  netso <关键词>           联网搜索包（默认搜全部 9 个源，--max 控制结果数）')
 		eprintln('  list                     列出已安装的包')
 		eprintln('  upable                   列出已安装的可更新包（默认显示 10 个）')
 		eprintln('  syncn                    模拟同步软件仓库（只显示将要更新的内容，不实际修改系统）')
@@ -2425,8 +2397,8 @@ fn main() {
 		eprintln('')
 		eprintln('netso 参数:')
 		eprintln('  -m, --max <N>            每个源最多显示 N 个结果（默认: 20）')
-		eprintln('      --sites a,b,c        只搜指定源（逗号分隔，默认搜全部 10 个源）')
-		eprintln('                           可用源: nix, pypi, npm, aur, vpm, canon, zig, rspm, jvpm, jspm')
+		eprintln('      --sites a,b,c        只搜指定源（逗号分隔，默认搜全部 9 个源）')
+		eprintln('                           可用源: nix, pypi, aur, vpm, canon, zig, rspm, jvpm, jspm')
 		eprintln('      --timeout <秒>       每个请求的超时秒数（默认: 20）')
 		eprintln('')
 		eprintln('deln 参数:')
@@ -2453,7 +2425,7 @@ fn main() {
 		eprintln('  zpkg fetch -r curl')
 		eprintln('  zpkg files curl')
 		eprintln('  zpkg netso hello')
-		eprintln('  zpkg netso json --max 5 --sites nix,aur')
+		eprintln('  zpkg netso json --max 5 --sites nix,pypi')
 		exit(1)
 	}
 

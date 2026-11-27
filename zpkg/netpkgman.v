@@ -17,16 +17,17 @@ pub:
 }
 
 pub const net_managers = [
-	NetManager{name: 'nix'},
-	NetManager{name: 'pypi'},
-	NetManager{name: 'npm'},
-	NetManager{name: 'aur', disabled: true},
-	NetManager{name: 'vpm'},
-	NetManager{name: 'canon'},
-	NetManager{name: 'zig'},
-	NetManager{name: 'rspm'},
-	NetManager{name: 'jvpm'},
-	NetManager{name: 'jspm'},
+	NetManager{name: 'nix', disabled: false},
+	NetManager{name: 'pypi', disabled: false},
+	NetManager{name: 'aur', disabled: false},
+	NetManager{name: 'vpm', disabled: false},
+	NetManager{name: 'canon', disabled: false},
+	NetManager{name: 'zig', disabled: false},
+	NetManager{name: 'rspm', disabled: false},
+	NetManager{name: 'jvpm', disabled: false},
+	// jspm 曾作为触发点放在中间会拖住后续源；后续修好 handle 清理和硬超时后，
+	// 顺序只作历史记录，不再依赖“必须最后”。
+	NetManager{name: 'jspm', disabled: false},
 ]
 
 const cache_ttl_ms = i64(60_000)
@@ -249,12 +250,6 @@ fn search_with(c &Client, manager string, raw_q string, limit int) ![]NetPkg {
 	q := normalize_query(raw_q) !
 	n := clamp_limit(limit)
 	match manager {
-		'npm' {
-			return adapter_npm_registry(c, 'npm', q, n)
-		}
-		'jspm' {
-			return adapter_npm_registry(c, 'jspm', q, n)
-		}
 		'aur' {
 			return adapter_aur(c, q, n)
 		}
@@ -278,6 +273,9 @@ fn search_with(c &Client, manager string, raw_q string, limit int) ![]NetPkg {
 		}
 		'vpm' {
 			return adapter_vpm(c, q, n)
+		}
+		'jspm' {
+			return adapter_npm_registry(c, 'jspm', q, n)
 		}
 		else {
 			return error('未知包管理器: $manager')
@@ -381,6 +379,10 @@ fn (c &Client) fetch(url string, referer string, accept string) !string {
 	mut last_err := ''
 	for attempt := 0; attempt <= max_retries; attempt++ {
 		c.wait(host)
+		// 历史问题：jspm 放在中间时，它之后的源会在 curl_easy_perform 卡住。
+		// 原因之一是响应 decode 阶段触发 GC，把前面未关闭的 curl handle
+		// 集中放到 finalizer 里清理，时机正好落到下一个请求上。
+		// 后续改为每个请求结束后立刻 closews()，不把清理交给 GC。
 		mut ch := curlv.new()
 		ch.url(url)
 		ch.useragent(fp_ua)
@@ -404,9 +406,9 @@ fn (c &Client) fetch(url string, referer string, accept string) !string {
 			ch.proxy(px)
 		}
 		ch.timeout(c.timeout)
+		ch.lowspeed(512, 5)
 		res := ch.get() or {
-			last_err = err.str()
-			continue
+			return error('请求失败: $err')
 		}
 		if res.stcode == 200 {
 			c.bytes += res.data.len
@@ -644,6 +646,7 @@ fn adapter_jvpm(c &Client, q string, limit int) ![]NetPkg {
 
 fn adapter_pypi(c &Client, q string, limit int) ![]NetPkg {
 	return adapter_pypi_guru(c, q, limit) or {
+		eprintln('[pypi] pypkg.guru 搜索失败，回退 pypi.org: ${err.str()}')
 		return adapter_pypi_official(c, q, limit)
 	}
 }
