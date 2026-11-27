@@ -39,6 +39,7 @@ struct PkgManager {
 	files_tpl  string = ''
 	info_parser string = ''
 	has_native_installed_mark bool = false
+	need_net bool = false
 }
 
 struct ListConfig {
@@ -102,6 +103,7 @@ const managers = [
 		fetch_recursive_tpl: 'pacman -Sw --recursive {q}'
 		files_tpl: 'pacman -Ql {q}'
 		has_native_installed_mark: true
+		need_net: false
 	},
 	PkgManager{
 		name: 'apt'
@@ -114,6 +116,7 @@ const managers = [
 		fetch_recursive_tpl: 'apt-get install --download-only -y {q}'
 		files_tpl: 'dpkg -L {q}'
 		has_native_installed_mark: true
+		need_net: false
 	},
 	PkgManager{
 		name: 'vcpkg'
@@ -127,6 +130,7 @@ const managers = [
 		files_tpl: ''
 		info_parser: 'vcpkg'
 		has_native_installed_mark: false
+		need_net: false
 	},
 	PkgManager{
 		name: 'brew'
@@ -139,6 +143,7 @@ const managers = [
 		fetch_recursive_tpl: 'brew fetch --deps {q}'
 		files_tpl: 'brew list {q}'
 		has_native_installed_mark: false
+		need_net: false
 	},
 	PkgManager{
 		name: 'port'
@@ -151,6 +156,7 @@ const managers = [
 		fetch_recursive_tpl: 'port fetch rdepof:{q} {q}'
 		files_tpl: 'port contents {q}'
 		has_native_installed_mark: false
+		need_net: false
 	},
 	PkgManager{
 		name: 'rpm'
@@ -163,6 +169,7 @@ const managers = [
 		fetch_recursive_tpl: 'yumdownloader --resolve {q}'
 		files_tpl: 'rpm -ql {q}'
 		has_native_installed_mark: false
+		need_net: false
 	},
 	PkgManager{
 		name: 'apk'
@@ -175,6 +182,7 @@ const managers = [
 		fetch_recursive_tpl: ''
 		files_tpl: 'apk info -L {q}'
 		has_native_installed_mark: false
+		need_net: false
 	},
 	PkgManager{
 		name: 'pkg (Termux)'
@@ -187,6 +195,7 @@ const managers = [
 		fetch_recursive_tpl: 'apt-get install --download-only -y {q}'
 		files_tpl: 'pkg files {q}'
 		has_native_installed_mark: false
+		need_net: false
 	},
 	PkgManager{
 		name: 'pm (Android)'
@@ -199,6 +208,7 @@ const managers = [
 		fetch_recursive_tpl: ''
 		files_tpl: ''
 		has_native_installed_mark: false
+		need_net: false
 	},
 ]
 
