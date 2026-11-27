@@ -3,8 +3,9 @@ module opendal
 
 import vcp.tcchf
 
-#flag @DIR/opendal_dyn.o
-//#include <@DIR/opendal_dyn.c>
+// 这两个必须include一个，否则有可能导致非int返回值的函数错误的当int了
+//#flag @DIR/opendal_dyn.o
+#include <@DIR/opendal_dyn.c>
 
 fn C.opendal_dyn_libok() int
 fn C.opendal_dyn_init(path &char) int
