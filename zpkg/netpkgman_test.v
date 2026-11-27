@@ -1,4 +1,5 @@
 import os
+import touse.htmpar
 
 fn test_query_normalization() {
 	assert normalize_query('  web   scraping ') or { '' } == 'web scraping'
@@ -33,5 +34,25 @@ fn test_live_search() {
 		}
 		first := if items.len > 0 { items[0].name } else { '' }
 		eprintln('${m}: ${items.len} $first')
+	}
+}
+
+fn test_dom_helpers() {
+	html := '<div class="card"><a href="/p/x"><span class="name">Hello &amp; Co</span><span class="desc">world</span></a></div>'
+	doc := dom_doc(html, 'test') or {
+		panic('dom_doc failed: $err')
+	}
+	defer { doc.free() }
+
+	cards := dom_find_all(doc.document(), 'card')
+	assert cards.len == 1
+	if a := dom_first_link(cards[0]) {
+		assert a.attr('href') == '/p/x'
+	}
+	if n := dom_first(cards[0], 'name') {
+		assert dom_text(n) == 'Hello & Co'
+	}
+	if n := dom_first(cards[0], 'desc') {
+		assert dom_text(n) == 'world'
 	}
 }

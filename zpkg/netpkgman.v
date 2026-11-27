@@ -3,10 +3,10 @@ import os
 import time
 import rand
 import strings
-import encoding.html
 import net.urllib
 import vcp.curlv
 import vcp.json as cjsonx
+import touse.htmpar
 
 pub const fp_ua = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36'
 
@@ -428,63 +428,95 @@ fn (c &Client) fetch(url string, referer string, accept string) !string {
 	return error('请求失败: $last_err')
 }
 
-fn cut_between(s string, open string, close string, from int) string {
-	a := s.index_after(open, from) or {
-		return ''
+fn dom_doc(body string, site string) !htmpar.GumboDoc {
+	return htmpar.gumbo_new_document(body) or {
+		return error('$site: HTML 解析失败: $err')
 	}
-	st := a + open.len
-	b := s.index_after(close, st) or {
-		return ''
-	}
-	return s[st..b]
 }
 
-fn clean_html(s string) string {
-	mut b := strings.new_builder(s.len)
-	mut in_tag := false
-	for i := 0; i < s.len; i++ {
-		c := s[i]
-		if c == `<` {
-			in_tag = true
+fn dom_class_has(class string, marker string) bool {
+	for want in marker.split(' ') {
+		if want == '' {
 			continue
 		}
-		if c == `>` && in_tag {
-			in_tag = false
-			continue
+		mut found := false
+		for have in class.split(' ') {
+			if have == want {
+				found = true
+				break
+			}
 		}
-		if !in_tag {
-			b.write_byte(c)
+		if !found {
+			return false
 		}
 	}
-	return html.unescape(b.str().trim(' \t\r\n'), html.UnescapeConfig{all: true})
+	return true
 }
 
-// marked_text 从 marker 所在标签的 '>' 之后取文本，直到 close_tag。
-fn marked_text(block string, marker string, close_tag string) string {
-	p := block.index_after(marker, 0) or {
-		return ''
+fn dom_walk(root htmpar.GumboNodeRef, class_marker string, tag string, mut out []htmpar.GumboNodeRef) {
+	if root.is_nil() {
+		return
 	}
-	gt := block.index_after('>', p) or {
-		return ''
+	matched := (class_marker == '' || dom_class_has(root.attr('class'), class_marker)) && (tag == '' || root.tag_name() == tag)
+	if matched {
+		out << root
 	}
-	end := block.index_after(close_tag, gt) or {
-		return ''
+	for c in root.children() {
+		dom_walk(c, class_marker, tag, mut out)
 	}
-	return clean_html(block[gt + 1..end])
 }
 
-fn anchor(block string, marker string) (string, string) {
-	p := block.index_after(marker, 0) or {
-		return '', ''
+fn dom_find_all(root htmpar.GumboNodeRef, class_marker string) []htmpar.GumboNodeRef {
+	mut out := []htmpar.GumboNodeRef{}
+	dom_walk(root, class_marker, '', mut out)
+	return out
+}
+
+fn dom_find_all_tag(root htmpar.GumboNodeRef, tag string) []htmpar.GumboNodeRef {
+	mut out := []htmpar.GumboNodeRef{}
+	dom_walk(root, '', tag, mut out)
+	return out
+}
+
+fn dom_first(root htmpar.GumboNodeRef, class_marker string) ?htmpar.GumboNodeRef {
+	nodes := dom_find_all(root, class_marker)
+	if nodes.len == 0 {
+		return none
 	}
-	href := cut_between(block[p..], 'href="', '"', 0)
-	gt := block.index_after('">', p) or {
-		return href, ''
+	return nodes[0]
+}
+
+fn dom_first_link(root htmpar.GumboNodeRef) ?htmpar.GumboNodeRef {
+	nodes := dom_find_all_tag(root, 'a')
+	if nodes.len == 0 {
+		return none
 	}
-	end := block.index_after('</a>', gt) or {
-		return href, ''
+	return nodes[0]
+}
+
+fn dom_text(n htmpar.GumboNodeRef) string {
+	if n.is_nil() {
+		return ''
 	}
-	return href, clean_html(block[gt + 2..end])
+	mut parts := []string{}
+	t := n.text().trim(' \t\r\n')
+	if t != '' {
+		parts << t
+	}
+	for c in n.children() {
+		t = dom_text(c)
+		if t != '' {
+			parts << t
+		}
+	}
+	return parts.join(' ').trim(' \t\r\n')
+}
+
+fn dom_text_opt(n ?htmpar.GumboNodeRef) string {
+	if node := n {
+		return dom_text(node)
+	}
+	return ''
 }
 
 fn add_item(mut items []NetPkg, seen map[string]bool, p NetPkg, limit int) {
@@ -656,32 +688,36 @@ fn adapter_pypi_guru(c &Client, q string, limit int) ![]NetPkg {
 	body := c.fetch(url, 'https://pypkg.guru/', html_accept) or {
 		return error('pypkg.guru: $err')
 	}
+	doc := dom_doc(body, 'pypi.guru') or { return err }
+	defer { doc.free() }
 	mut items := []NetPkg{}
 	mut seen := map[string]bool{}
-	mut pos := 0
-	for {
-		a := body.index_after('class="result-card"', pos) or {
-			break
+	root := doc.document()
+	for card in dom_find_all(root, 'result-card') {
+		mut href := ''
+		if a := dom_first_link(card) {
+			href = a.attr('href')
 		}
-		b := body.index_after('</article>', a) or {
-			break
+		mut updated := ''
+		if n := dom_first(card, 'result-update contrast') {
+			updated = dom_text(n).replace('Updated:', '').trim(' \t\r\n')
 		}
-		block := body[a..b]
-		pos = b + '</article>'.len
-		href := cut_between(block, 'href="', '"', 0)
-		updated := marked_text(block, 'class="result-update contrast"', '</div>')
-		updated = updated.replace('Updated:', '').trim(' \t\r\n')
+		mut name := ''
+		if n := dom_first(card, 'result-name') {
+			name = dom_text(n)
+		}
+		mut desc := ''
+		if n := dom_first(card, 'result-description') {
+			desc = dom_text(n)
+		}
 		add_item(mut items, seen, NetPkg{
 			manager: 'pypi'
-			name: marked_text(block, 'class="result-name"', '</div>')
+			name: name
 			version: ''
-			desc: marked_text(block, 'class="result-description"', '</div>')
+			desc: desc
 			url: href
 			updated: updated
 		}, limit)
-		if pos >= body.len {
-			break
-		}
 	}
 	return items
 }
@@ -694,34 +730,24 @@ fn adapter_pypi_official(c &Client, q string, limit int) ![]NetPkg {
 	if is_challenge(body) {
 		return error('pypi 官方搜索页要求浏览器 JS 验证，当前环境无法通过')
 	}
+	doc := dom_doc(body, 'pypi.org') or { return err }
+	defer { doc.free() }
 	mut items := []NetPkg{}
 	mut seen := map[string]bool{}
-	mut pos := 0
-	for {
-		a := body.index_after('class="package-snippet"', pos) or {
-			break
-		}
-		b := body.index_after('</a>', a) or {
-			break
-		}
-		block := body[a..b]
-		pos = b + '</a>'.len
-		href, _ := anchor(block, 'class="package-snippet"')
-		mut u := href
+	root := doc.document()
+	for card in dom_find_all(root, 'package-snippet') {
+		mut u := card.attr('href')
 		if u.starts_with('/') {
 			u = 'https://pypi.org$u'
 		}
 		add_item(mut items, seen, NetPkg{
 			manager: 'pypi'
-			name: marked_text(block, 'class="package-snippet__name"', '</span>')
-			version: marked_text(block, 'class="package-snippet__version"', '</span>')
-			desc: marked_text(block, 'class="package-snippet__description"', '</span>')
+			name: dom_text_opt(dom_first(card, 'package-snippet__name'))
+			version: dom_text_opt(dom_first(card, 'package-snippet__version'))
+			desc: dom_text_opt(dom_first(card, 'package-snippet__description'))
 			url: u
 			updated: ''
 		}, limit)
-		if pos >= body.len {
-			break
-		}
 	}
 	return items
 }
@@ -731,30 +757,24 @@ fn adapter_nix(c &Client, q string, limit int) ![]NetPkg {
 	body := c.fetch(url, 'https://www.nixhub.io/', html_accept) or {
 		return error('nix: $err')
 	}
+	doc := dom_doc(body, 'nix') or { return err }
+	defer { doc.free() }
 	mut items := []NetPkg{}
 	mut seen := map[string]bool{}
-	mut pos := 0
-	for {
-		a := body.index_after('href="/packages/', pos) or {
-			break
+	root := doc.document()
+	for a in dom_find_all_tag(root, 'a') {
+		href := a.attr('href')
+		if !href.starts_with('/packages/') {
+			continue
 		}
-		b := body.index_after('</a>', a) or {
-			break
-		}
-		block := body[a..b]
-		pos = b + '</a>'.len
-		href := cut_between(block, 'href="/packages/', '"', 0)
 		add_item(mut items, seen, NetPkg{
 			manager: 'nix'
-			name: marked_text(block, 'class="text-xl font-bold text-ink-900"', '</h3>')
+			name: dom_text_opt(dom_first(a, 'text-xl font-bold text-ink-900'))
 			version: ''
-			desc: marked_text(block, 'class="inline text-base text-ink-700"', '</dd>')
-			url: 'https://www.nixhub.io/packages/$href'
-			updated: marked_text(block, 'class="whitespace-nowrap', '</span>')
+			desc: dom_text_opt(dom_first(a, 'inline text-base text-ink-700'))
+			url: 'https://www.nixhub.io$href'
+			updated: dom_text_opt(dom_first(a, 'whitespace-nowrap'))
 		}, limit)
-		if pos >= body.len {
-			break
-		}
 	}
 	return items
 }
@@ -764,26 +784,27 @@ fn adapter_zig(c &Client, q string, limit int) ![]NetPkg {
 	body := c.fetch(url, 'https://zigistry.dev/', html_accept) or {
 		return error('zig: $err')
 	}
+	doc := dom_doc(body, 'zig') or { return err }
+	defer { doc.free() }
 	mut items := []NetPkg{}
 	mut seen := map[string]bool{}
-	mut pos := 0
-	for pos < body.len {
-		a := body.index_after('class="card z-0', pos) or {
-			break
+	root := doc.document()
+	for card in dom_find_all(root, 'card z-0') {
+		mut href := ''
+		for a in dom_find_all_tag(card, 'a') {
+			h := a.attr('href')
+			if h.starts_with('/packages/') {
+				href = h
+				break
+			}
 		}
-		b := body.index_after('class="card z-0', a + 1) or {
-			body.len
-		}
-		block := body[a..b]
-		pos = b
-		href := cut_between(block, 'href="/packages/', '"', 0)
 		add_item(mut items, seen, NetPkg{
 			manager: 'zig'
-			name: marked_text(block, 'class="truncate text-2xl font-bold text-gray-900 dark:text-white"', '</span>')
-			version: marked_text(block, 'class="px-1.5 text-xs font-medium text-slate-700 dark:text-slate-300"', '</span>')
-			desc: marked_text(block, '<p class="font-normal text-gray-700 dark:text-gray-400"', '</p>')
-			url: 'https://zigistry.dev/packages/$href'
-			updated: marked_text(block, 'class="px-1.5 text-xs font-medium text-sky-700 dark:text-sky-300"', '</span>')
+			name: dom_text_opt(dom_first(card, 'truncate text-2xl font-bold text-gray-900 dark:text-white'))
+			version: dom_text_opt(dom_first(card, 'px-1.5 text-xs font-medium text-slate-700 dark:text-slate-300'))
+			desc: dom_text_opt(dom_first(card, 'font-normal text-gray-700 dark:text-gray-400'))
+			url: 'https://zigistry.dev$href'
+			updated: dom_text_opt(dom_first(card, 'px-1.5 text-xs font-medium text-sky-700 dark:text-sky-300'))
 		}, limit)
 	}
 	return items
@@ -794,30 +815,27 @@ fn adapter_vpm(c &Client, q string, limit int) ![]NetPkg {
 	body := c.fetch(url, 'https://vpm.vlang.io/', html_accept) or {
 		return error('vpm: $err')
 	}
+	doc := dom_doc(body, 'vpm') or { return err }
+	defer { doc.free() }
 	mut items := []NetPkg{}
 	mut seen := map[string]bool{}
-	mut pos := 0
-	for pos < body.len {
-		a := body.index_after('<section class="package"', pos) or {
-			break
+	root := doc.document()
+	for card in dom_find_all_tag(root, 'section') {
+		if !dom_class_has(card.attr('class'), 'package') {
+			continue
 		}
-		b := body.index_after('<section class="package"', a + 1) or {
-			body.len
-		}
-		block := body[a..b]
-		pos = b
-		href, name := anchor(block, 'class="package-card__title hover:underline cursor-pointer"')
-		mut u := href
+		title := dom_first(card, 'package-card__title hover:underline cursor-pointer') or { continue }
+		mut u := title.attr('href')
 		if u.starts_with('/') {
 			u = 'https://vpm.vlang.io$u'
 		}
 		add_item(mut items, seen, NetPkg{
 			manager: 'vpm'
-			name: name
+			name: dom_text(title)
 			version: ''
-			desc: marked_text(block, 'class="package-card__description', '</p>')
+			desc: dom_text_opt(dom_first(card, 'package-card__description'))
 			url: u
-			updated: marked_text(block, 'class="package-card__attribute package-card__last-update', '</div>')
+			updated: dom_text_opt(dom_first(card, 'package-card__attribute package-card__last-update'))
 		}, limit)
 	}
 	return items
