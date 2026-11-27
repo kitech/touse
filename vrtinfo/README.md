@@ -51,11 +51,20 @@
 | `gc.stats` | `gc_no, inuse, unmapped, total_bytes, bytes_since_gc, obtained_from_os, gc_parallel, cur_thread_registered` |
 | `coro.stats` | `goid, stack_base_u64, stack_size, gc_thread_registered` |
 | `coro.list` | `machine_total, machine_active, fiber_total, fiber_active, fiber_total_mem, max_stack_size`（聚合统计，来自 `crn_get_stats()`，不是逐条 fiber 列表） |
-| `threads` | `gc_parallel, count, threads[]`；每项 `tid, name, state, is_current`，当前线程项额外含 `goid, gc_registered`（Linux `/proc/self/task`，macOS `task_threads`，Windows Toolhelp；其他平台返回 1006） |
+| `threads` | `gc_parallel, count, threads[]`；每项 `tid, name, state, is_current`，当前线程项额外含 `goid, gc_registered`；并尽量提供 `cpu_ms, stksz, used_stksz, wchan, syscall, func, pc`（`0`/空表示不可用）（Linux `/proc/self/task`，macOS `task_threads`，Windows Toolhelp；其他平台返回 1006） |
 | `mem` | `rss_bytes, vm_size_bytes`（Linux `/proc/self/status`；其他平台返回 1006） |
 | `fibers` | `count, fibers[]`；每项 `id, mcid, state, pkreason, stksz, used_stksz`（`state`: `nostack`/`runnable`/`executing`/`waiting`/`finished`；`emucobypth` 构建返回 1006） |
 
 `GogcStat` 字段映射：`inuse`=`inuse`(heap_size)、`unmapped`=`objcnt`、`total_bytes`=`cgocall`、`bytes_since_gc`=`x`、`obtained_from_os`=`alloc`。`gc_parallel` 来自 `GC_get_parallel()`（本机 BDWGC 未提供 `GC_count_threads()`，故以并行度代替 GC 活跃线程数）。
+
+`threads` 的栈与函数字段按平台尽力提供：
+
+- `stksz`：Linux 由 `maps` 中包含 `startstack` 的 VMA 大小得出；macOS `pthread_get_stacksize_np`；Windows TEB `StackBase-StackLimit`。
+- `used_stksz`：Linux 内核将 `kstkesp` 清零，无法获取；macOS/Windows 由 SP 计算。
+- `wchan`：Linux `/proc/self/task/<tid>/wchan`（内核等待函数）；其它平台为空。
+- `syscall`：Linux `/proc/self/task/<tid>/syscall` 的系统调用名（futex/epoll_wait/nanosleep 等，按 `SYS_*` 常量映射，跨架构）；其它平台为空。
+- `cpu_ms`：线程累计 CPU 时间（user+system，毫秒）；三平台均可用。
+- `func`：Linux/macOS 用 `dladdr`（无导出符号时退回 `模块+偏移`）；Windows 无 PDB 时为 `模块+偏移`；运行中的 Linux 线程无 PC，显示 `-`。
 
 错误码：`1001` bad_request、`1002` unknown_cmd、`1003` bad_args、`1004` internal、`1005` too_large、`1006` unsupported。
 

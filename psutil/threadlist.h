@@ -16,6 +16,12 @@ typedef struct {
     int is_current;
     double user_time;
     double system_time;
+    unsigned long long stack_size; /* 0 = 未知 */
+    unsigned long long stack_used; /* 0 = 未知 */
+    unsigned long long pc;         /* 0 = 未知 */
+    char wchan[32];                /* Linux 内核等待函数；其它平台空 */
+    char syscall[32];              /* Linux 当前系统调用名；其它平台空 */
+    char func[96];                 /* PC 最近符号；无符号时模块+偏移 */
 } psutil_ThreadInfo;
 
 // 写入 out（容量 cap），返回实际线程数；-1 表示失败。

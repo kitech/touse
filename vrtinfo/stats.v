@@ -28,6 +28,20 @@ fn yn(b bool) string {
 	return if b { 'true' } else { 'false' }
 }
 
+fn json_opt_u64(name string, v u64) string {
+	if v == 0 {
+		return '"${name}":null'
+	}
+	return '"${name}":${v}'
+}
+
+fn json_opt_str(name string, v string) string {
+	if v == '' {
+		return '"${name}":null'
+	}
+	return '"${name}":${jstr(v)}'
+}
+
 pub fn ping_data() string {
 	return jobj(
 		'"pong":true',
@@ -164,6 +178,14 @@ pub fn threads_data() !string {
 			fields << '"goid":${yco.goid()}'
 			fields << '"gc_registered":${yn(vcp.gcthread_isreg())}'
 		}
+		// 累计 CPU 时间（user+system，毫秒）
+		fields << '"cpu_ms":${u64((t.user_time + t.system_time) * 1000.0 + 0.5)}'
+		fields << json_opt_u64('stksz', t.stack_size)
+		fields << json_opt_u64('used_stksz', t.stack_used)
+		fields << json_opt_u64('pc', t.pc)
+		fields << json_opt_str('wchan', t.wchan)
+		fields << json_opt_str('syscall', t.syscall)
+		fields << json_opt_str('func', t.func)
 		items << '{${fields.join(',')}}'
 	}
 	return jobj(

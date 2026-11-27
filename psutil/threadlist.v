@@ -14,6 +14,12 @@ pub struct C.psutil_ThreadInfo {
 	is_current  int
 	user_time   f64
 	system_time f64
+	stack_size  u64
+	stack_used  u64
+	pc          u64
+	wchan       [32]char
+	syscall     [32]char
+	func        [96]char
 }
 
 fn C.psutil_list_threads(&C.psutil_ThreadInfo, int, &int) int
@@ -30,6 +36,12 @@ pub:
 	is_current  bool
 	user_time   f64
 	system_time f64
+	stack_size  u64
+	stack_used  u64
+	pc          u64
+	wchan       string
+	syscall     string
+	func        string
 }
 
 pub struct ThreadList {
@@ -63,6 +75,12 @@ pub fn thread_list_ex() !ThreadList {
 			is_current:  raw[i].is_current != 0
 			user_time:   raw[i].user_time
 			system_time: raw[i].system_time
+			stack_size:  raw[i].stack_size
+			stack_used:  raw[i].stack_used
+			pc:          raw[i].pc
+			wchan:       unsafe { cstring_to_vstring(&raw[i].wchan[0]) }
+			syscall:     unsafe { cstring_to_vstring(&raw[i].syscall[0]) }
+			func:        unsafe { cstring_to_vstring(&raw[i].func[0]) }
 		}
 	}
 	return ThreadList{
@@ -87,6 +105,12 @@ pub fn process_threads(pid int) ![]ThreadInfo {
 			is_current: raw[i].is_current != 0
 			user_time: raw[i].user_time
 			system_time: raw[i].system_time
+			stack_size: raw[i].stack_size
+			stack_used: raw[i].stack_used
+			pc: raw[i].pc
+			wchan: unsafe { cstring_to_vstring(&raw[i].wchan[0]) }
+			syscall: unsafe { cstring_to_vstring(&raw[i].syscall[0]) }
+			func: unsafe { cstring_to_vstring(&raw[i].func[0]) }
 		}
 	}
 	return list

@@ -44,7 +44,7 @@ const ack_ev = &Ev{kind: ev_ack, line: ''}
 // 列表结果表格化：只处理列表类命令，别的结果保持原 JSON 输出
 fn list_headers(key string) []string {
 	return match key {
-		'threads' { ['TID', 'NAME', 'STATE', 'IS_CURRENT', 'GOID', 'GC_REGISTERED'] }
+		'threads' { ['TID', 'NAME', 'STATE', 'IS_CURRENT', 'GOID', 'GC_REGISTERED', 'CPU_MS', 'STKSZ', 'USED_STKSZ', 'WCHAN', 'SYSCALL', 'FUNC'] }
 		'fibers' { ['ID', 'MCID', 'STATE', 'PKREASON', 'STKSZ', 'USED_STKSZ'] }
 		'cmds' { ['COMMAND'] }
 		else { []string{} }
