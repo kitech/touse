@@ -27,7 +27,7 @@ fn test_live_search() {
 		q = 'hello'
 	}
 	for m in net_managers {
-		items := search(m, q, 3) or {
+		items := search(m, q, 3, 20) or {
 			eprintln('${m}: ERR $err')
 			continue
 		}

@@ -3,10 +3,10 @@ import os
 import time
 import rand
 import strings
-import json
 import encoding.html
 import net.urllib
 import vcp.curlv
+import vcp.json as cjsonx
 
 pub const fp_ua = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36'
 
@@ -42,6 +42,18 @@ pub:
 	err     string
 }
 
+pub struct SearchStats {
+pub:
+	bytes       int
+	duration_ms i64
+}
+
+pub struct SearchResult {
+pub:
+	items []NetPkg
+	stats SearchStats
+}
+
 struct CacheEntry {
 	at   i64
 	body string
@@ -49,8 +61,10 @@ struct CacheEntry {
 
 struct Client {
 mut:
-	last  map[string]i64
-	cache map[string]CacheEntry
+	last    map[string]i64
+	cache   map[string]CacheEntry
+	timeout int = 20
+	bytes   int
 }
 
 struct NpmLinks {
@@ -132,15 +146,30 @@ pub fn manager_names() []string {
 	return net_managers.clone()
 }
 
-pub fn search(manager string, q string, limit int) ![]NetPkg {
-	return search_with(new_client(), manager, q, limit)
+pub fn search(manager string, q string, limit int, timeout int) ![]NetPkg {
+	r := search_stat(manager, q, limit, timeout) or { return err }
+	return r.items
 }
 
-pub fn search_all(q string, limit int) []SearchOutcome {
-	c := new_client()
+pub fn search_stat(manager string, q string, limit int, timeout int) !SearchResult {
+	mut c := new_client(timeout)
+	t0 := time.now()
+	items := search_with(c, manager, q, limit) or { return err }
+	return SearchResult{
+		items: items
+		stats: SearchStats{
+			bytes: c.bytes
+			duration_ms: time.since(t0).milliseconds()
+		}
+	}
+}
+
+pub fn netpm_search_all(sites []string, q string, limit int, timeout int) []SearchOutcome {
+	c := new_client(timeout)
 	mut out := []SearchOutcome{}
+	chosen := if sites.len > 0 { sites } else { manager_names() }
 	nq := normalize_query(q) or {
-		for m in net_managers {
+		for m in chosen {
 			out << SearchOutcome{
 				manager: m
 				query: q
@@ -151,7 +180,7 @@ pub fn search_all(q string, limit int) []SearchOutcome {
 		}
 		return out
 	}
-	for m in net_managers {
+	for m in chosen {
 		items := search_with(c, m, nq, limit) or {
 			out << SearchOutcome{
 				manager: m
@@ -173,10 +202,11 @@ pub fn search_all(q string, limit int) []SearchOutcome {
 	return out
 }
 
-fn new_client() &Client {
+fn new_client(timeout int) &Client {
 	return &Client{
 		last: map[string]i64{}
 		cache: map[string]CacheEntry{}
+		timeout: timeout
 	}
 }
 
@@ -338,12 +368,13 @@ fn (c &Client) fetch(url string, referer string, accept string) !string {
 		if px != '' {
 			ch.proxy(px)
 		}
-		ch.timeout(20)
+		ch.timeout(c.timeout)
 		res := ch.get() or {
 			last_err = err.str()
 			continue
 		}
 		if res.stcode == 200 {
+			c.bytes += res.data.len
 			if is_challenge(res.data) {
 				return error('反爬挑战页（Client Challenge），无法解析结果')
 			}
@@ -436,7 +467,7 @@ fn adapter_npm_registry(c &Client, manager string, q string, limit int) ![]NetPk
 	body := c.fetch(url, 'https://www.npmjs.com/', json_accept) or {
 		return error('$manager: $err')
 	}
-	r := json.decode(NpmResp, body) or {
+	r := cjsonx.decode[NpmResp](body) or {
 		return error('$manager: 搜索结果解析失败: $err')
 	}
 	mut items := []NetPkg{}
@@ -467,7 +498,7 @@ fn adapter_aur(c &Client, q string, limit int) ![]NetPkg {
 	body := c.fetch(url, 'https://aur.archlinux.org/', json_accept) or {
 		return error('aur: $err')
 	}
-	r := json.decode(AurResp, body) or {
+	r := cjsonx.decode[AurResp](body) or {
 		return error('aur: 搜索结果解析失败: $err')
 	}
 	if r.typ == 'error' {
@@ -497,7 +528,7 @@ fn adapter_conan(c &Client, q string, limit int) ![]NetPkg {
 	body := c.fetch(url, 'https://conan.io/', json_accept) or {
 		return error('canon: $err')
 	}
-	r := json.decode(map[string]ConanEntry, body) or {
+	r := cjsonx.decode[map[string]ConanEntry](body) or {
 		return error('canon: 搜索结果解析失败: $err')
 	}
 	mut items := []NetPkg{}
@@ -524,7 +555,7 @@ fn adapter_rspm(c &Client, q string, limit int) ![]NetPkg {
 	body := c.fetch(url, 'https://crates.io/', json_accept) or {
 		return error('rspm: $err')
 	}
-	r := json.decode(CratesResp, body) or {
+	r := cjsonx.decode[CratesResp](body) or {
 		return error('rspm: 搜索结果解析失败: $err')
 	}
 	mut items := []NetPkg{}
@@ -554,7 +585,7 @@ fn adapter_jvpm(c &Client, q string, limit int) ![]NetPkg {
 	body := c.fetch(url, 'https://search.maven.org/', json_accept) or {
 		return error('jvpm: $err')
 	}
-	r := json.decode(MavenResp, body) or {
+	r := cjsonx.decode[MavenResp](body) or {
 		return error('jvpm: 搜索结果解析失败: $err')
 	}
 	mut items := []NetPkg{}

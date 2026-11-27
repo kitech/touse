@@ -25,6 +25,17 @@ fn c_yellow(s string) string { return if use_color { term.yellow(s) } else { s }
 fn c_magenta(s string) string { return if use_color { term.magenta(s) } else { s } }
 fn c_dim(s string) string { return if use_color { term.dim(s) } else { s } }
 
+fn format_duration_ms(ms i64) string {
+	if ms >= 1000 {
+		return '${ms / 1000}.${(ms % 1000) / 100}s'
+	}
+	return '${ms}ms'
+}
+
+fn format_stats_bytes(bytes int) string {
+	return if bytes <= 0 { '0 B' } else { human_size(i64(bytes)) }
+}
+
 // ==================== 数据结构 ====================
 
 struct PkgManager {
@@ -46,6 +57,13 @@ struct ListConfig {
 mut:
 	sort string = 'natural'
 	max  int    = 10
+}
+
+@[params]
+struct NetsoConfig {
+	max     int    = 20
+	sites   string = ''
+	timeout int    = 20
 }
 
 struct FetchConfig {
@@ -1216,6 +1234,23 @@ fn preprocess_max_arg(args []string) []string {
 	return result
 }
 
+// 将 --max N / --sites N / --timeout N 转成等号形式，供 flag.to_struct 使用
+fn normalize_netso_args(args []string) []string {
+	mut result := []string{}
+	mut i := 0
+	for i < args.len {
+		a := args[i]
+		if (a == '--max' || a == '--sites' || a == '--timeout') && i + 1 < args.len {
+			result << '${a}=${args[i + 1]}'
+			i += 2
+			continue
+		}
+		result << a
+		i++
+	}
+	return result
+}
+
 // ==================== list 子命令 ====================
 
 fn handle_list(args []string) {
@@ -2330,11 +2365,12 @@ fn handle_vcpkg_info(query string) string {
 
 fn main() {
 	if os.args.len < 2 {
-		eprintln('用法: zpkg <search|info|list|upable|syncn|addn|deln|upgraden|fetch|files> [参数]')
+		eprintln('用法: zpkg <search|info|netso|list|upable|syncn|addn|deln|upgraden|fetch|files> [参数]')
 		eprintln('')
 		eprintln('子命令:')
 		eprintln('  search <关键词>          在所有包管理器中搜索包（已安装的会在行尾标记 [installed]）')
 		eprintln('  info <包名>              查询包详细信息')
+		eprintln('  netso <关键词>           联网搜索包（默认搜全部 10 个源，--max 控制结果数）')
 		eprintln('  list                     列出已安装的包')
 		eprintln('  upable                   列出已安装的可更新包（默认显示 10 个）')
 		eprintln('  syncn                    模拟同步软件仓库（只显示将要更新的内容，不实际修改系统）')
@@ -2353,6 +2389,12 @@ fn main() {
 		eprintln('')
 		eprintln('upable 参数:')
 		eprintln('  -m, --max <N>            每个包管理器最多显示 N 个可更新包（默认: 10，-1 表示不限制）')
+		eprintln('')
+		eprintln('netso 参数:')
+		eprintln('  -m, --max <N>            每个源最多显示 N 个结果（默认: 20）')
+		eprintln('      --sites a,b,c        只搜指定源（逗号分隔，默认搜全部 10 个源）')
+		eprintln('                           可用源: nix, pypi, npm, aur, vpm, canon, zig, rspm, jvpm, jspm')
+		eprintln('      --timeout <秒>       每个请求的超时秒数（默认: 20）')
 		eprintln('')
 		eprintln('deln 参数:')
 		eprintln('  -r, --recursive          模拟递归删除（对 pacman/apt/apk 生效）')
@@ -2377,6 +2419,8 @@ fn main() {
 		eprintln('  zpkg fetch --recursive curl')
 		eprintln('  zpkg fetch -r curl')
 		eprintln('  zpkg files curl')
+		eprintln('  zpkg netso hello')
+		eprintln('  zpkg netso json --max 5 --sites nix,aur')
 		exit(1)
 	}
 
@@ -2386,6 +2430,7 @@ fn main() {
 	match subcmd {
 		'list' { handle_list(rest) }
 		'upable' { handle_upable(rest) }
+		'netso' { handle_netso(rest) }
 		'syncn' { handle_syncn(rest) }
 		'addn' { handle_addn(rest) }
 		'deln' { handle_deln(rest) }
@@ -2453,8 +2498,114 @@ fn main() {
 			println(summary)
 		}
 		else {
-			eprintln('未知子命令: ${subcmd}，可用: search, info, list, upable, syncn, addn, deln, upgraden, fetch, files')
+			eprintln('未知子命令: ${subcmd}，可用: search, info, netso, list, upable, syncn, addn, deln, upgraden, fetch, files')
 			exit(1)
 		}
 	}
+}
+
+// ==================== netso 子命令 ====================
+
+fn handle_netso(args []string) {
+	sanitized := preprocess_max_arg(normalize_args(normalize_netso_args(args)))
+	mut cfg, no_matches := flag.to_struct[NetsoConfig](sanitized, skip: 0, style: .long) or {
+		eprintln('参数错误: ${err}')
+		exit(1)
+	}
+
+	mut query := ''
+	for m in no_matches {
+		if !m.starts_with('-') {
+			query = m
+			break
+		}
+	}
+	if query.len <= 3 {
+		eprintln('错误: netso 需要一个长度 > 3 的关键词')
+		eprintln('用法: zpkg netso <关键词> [--max N] [--sites a,b,c] [--timeout N]')
+		exit(1)
+	}
+
+	mut sites := []string{}
+	if cfg.sites == '' {
+		sites = manager_names()
+	} else {
+		valid := manager_names()
+		mut seen := map[string]bool{}
+		for part in cfg.sites.split(',') {
+			site := part.trim(' \t')
+			if site == '' || seen[site] {
+				continue
+			}
+			seen[site] = true
+			if site !in valid {
+				eprintln('错误: 未知源 ${site}，可用: ${valid.join(', ')}')
+				exit(1)
+			}
+			sites << site
+		}
+	}
+
+	mut total := 0
+	mut ok_cnt := 0
+	mut fail_cnt := 0
+	mut total_bytes := 0
+	mut total_ms := i64(0)
+	for site in sites {
+		println('')
+		title := '========== [${site}] =========='
+		title_col := c_cyan_bold(title)
+		println(title_col)
+		t0 := time.now()
+		r := search_stat(site, query, cfg.max, cfg.timeout) or {
+			fail_cnt++
+			ms := time.since(t0).milliseconds()
+			total_ms += ms
+			errmsg := '  错误: ${err}'
+			errmsg_col := c_yellow(errmsg)
+			println(errmsg_col)
+			statmsg := '  下载: 0 B, 耗时: ${format_duration_ms(ms)}'
+			println(c_dim(statmsg))
+			os.flush()
+			continue
+		}
+		items := r.items
+		total_bytes += r.stats.bytes
+		total_ms += r.stats.duration_ms
+		ok_cnt++
+		total += items.len
+		if items.len == 0 {
+			println('  (无结果)')
+		}
+		mut idx := 0
+		for p in items {
+			idx++
+			num_plain := '${idx}.'
+			num := c_green(num_plain)
+			name := c_bright_white_bold(p.name)
+			line := '  ${num} ${name}'
+			if p.version != '' {
+				ver := c_yellow(p.version)
+				line += ' ${ver}'
+			}
+			if p.desc != '' {
+				desc := c_dim(p.desc)
+				line += ' ${desc}'
+			}
+			println(line)
+			if p.url != '' {
+				url := c_dim(p.url)
+				println('    ${url}')
+			}
+		}
+		statmsg := '  下载: ${format_stats_bytes(r.stats.bytes)}, 耗时: ${format_duration_ms(r.stats.duration_ms)}'
+		println(c_dim(statmsg))
+		os.flush()
+	}
+
+	println('')
+	summary := '--- 联网搜索 ${query}: 成功 ${ok_cnt} 个源，失败 ${fail_cnt} 个源，共 ${total} 个结果，总下载 ${format_stats_bytes(total_bytes)}，总耗时 ${format_duration_ms(total_ms)} ---'
+	summary_col := c_cyan_bold(summary)
+	println(summary_col)
+	os.flush()
 }
