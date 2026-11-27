@@ -3,9 +3,8 @@ module opendal
 
 import vcp.tcchf
 
-#flag -I @VEXEROOT/thirdparty/tcc/lib/../lib/../lib/tcc/include
-#flag -ldl
-#flag @DIR/opendal_dyn.c
+#flag @DIR/opendal_dyn.o
+//#include <@DIR/opendal_dyn.c>
 
 fn C.opendal_dyn_libok() int
 fn C.opendal_dyn_init(path &char) int
