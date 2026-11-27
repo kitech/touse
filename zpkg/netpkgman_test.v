@@ -26,7 +26,7 @@ fn test_live_search() {
 	if q == '' {
 		q = 'hello'
 	}
-	for m in net_managers {
+	for m in manager_names() {
 		items := search(m, q, 3, 20) or {
 			eprintln('${m}: ERR $err')
 			continue

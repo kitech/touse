@@ -51,6 +51,7 @@ struct PkgManager {
 	info_parser string = ''
 	has_native_installed_mark bool = false
 	need_net bool = false
+	disabled bool = false
 }
 
 struct ListConfig {
@@ -147,6 +148,20 @@ const managers = [
 		fetch_recursive_tpl: 'vcpkg install --only-downloads {q}'
 		files_tpl: ''
 		info_parser: 'vcpkg'
+		has_native_installed_mark: false
+		need_net: false
+	},
+	PkgManager{
+		name: 'xmake'
+		cmd: 'xmake'
+		search_tpl: 'xmake require --search {q}'
+		info_tpl: 'xmake require --info --format=json {q}'
+		list_cmd: 'xmake require --scan'
+		installed_cmd: 'xmake require --scan'
+		fetch_tpl: 'xmake require --download {q}'
+		fetch_recursive_tpl: 'xmake require --download {q}'
+		files_tpl: ''
+		info_parser: ''
 		has_native_installed_mark: false
 		need_net: false
 	},
@@ -257,7 +272,11 @@ fn detect_distro() string {
 // ==================== 按操作系统/发行版排序（高频在后） ====================
 
 fn get_ordered_managers() []PkgManager {
-	mut ordered := managers.clone()
+	mut enabled := []PkgManager{}
+	for m in managers {
+		if !m.disabled { enabled << m }
+	}
+	mut ordered := enabled.clone()
 	os_name := os.user_os()
 
 	// priority 数组按“高频 → 低频”书写
@@ -265,35 +284,35 @@ fn get_ordered_managers() []PkgManager {
 		distro := detect_distro()
 		match distro {
 			'ubuntu', 'debian', 'linuxmint', 'pop', 'elementary', 'zorin', 'kali', 'deepin', 'raspbian' {
-				['apt', 'rpm', 'pacman', 'apk', 'pkg (Termux)', 'pm (Android)', 'brew', 'vcpkg', 'port']
+				['apt', 'rpm', 'pacman', 'apk', 'pkg (Termux)', 'pm (Android)', 'brew', 'vcpkg', 'xmake', 'port']
 			}
 			'fedora', 'rhel', 'centos', 'rocky', 'alma', 'ol', 'amzn' {
-				['rpm', 'apt', 'pacman', 'apk', 'pkg (Termux)', 'pm (Android)', 'brew', 'vcpkg', 'port']
+				['rpm', 'apt', 'pacman', 'apk', 'pkg (Termux)', 'pm (Android)', 'brew', 'vcpkg', 'xmake', 'port']
 			}
 			'arch', 'manjaro', 'endeavouros', 'garuda', 'artix' {
-				['pacman', 'apt', 'rpm', 'apk', 'pkg (Termux)', 'pm (Android)', 'brew', 'vcpkg', 'port']
+				['pacman', 'apt', 'rpm', 'apk', 'pkg (Termux)', 'pm (Android)', 'brew', 'vcpkg', 'xmake', 'port']
 			}
 			'opensuse', 'suse', 'sles', 'opensuse-leap', 'opensuse-tumbleweed' {
-				['rpm', 'apt', 'pacman', 'apk', 'pkg (Termux)', 'pm (Android)', 'brew', 'vcpkg', 'port']
+				['rpm', 'apt', 'pacman', 'apk', 'pkg (Termux)', 'pm (Android)', 'brew', 'vcpkg', 'xmake', 'port']
 			}
 			'alpine' {
-				['apk', 'apt', 'rpm', 'pacman', 'pkg (Termux)', 'pm (Android)', 'brew', 'vcpkg', 'port']
+				['apk', 'apt', 'rpm', 'pacman', 'pkg (Termux)', 'pm (Android)', 'brew', 'vcpkg', 'xmake', 'port']
 			}
 			'android' {
-				['pkg (Termux)', 'pm (Android)', 'apt', 'rpm', 'pacman', 'apk', 'brew', 'vcpkg', 'port']
+				['pkg (Termux)', 'pm (Android)', 'apt', 'rpm', 'pacman', 'apk', 'brew', 'vcpkg', 'xmake', 'port']
 			}
 			else {
-				['apt', 'rpm', 'pacman', 'apk', 'pkg (Termux)', 'pm (Android)', 'brew', 'vcpkg', 'port']
+				['apt', 'rpm', 'pacman', 'apk', 'pkg (Termux)', 'pm (Android)', 'brew', 'vcpkg', 'xmake', 'port']
 			}
 		}
 	} else if os_name == 'macos' {
-		['brew', 'port', 'vcpkg', 'apt', 'rpm', 'pacman', 'apk', 'pkg (Termux)', 'pm (Android)']
+		['brew', 'port', 'vcpkg', 'xmake', 'apt', 'rpm', 'pacman', 'apk', 'pkg (Termux)', 'pm (Android)']
 	} else if os_name == 'windows' {
-		['vcpkg', 'brew', 'port', 'apt', 'rpm', 'pacman', 'apk', 'pkg (Termux)', 'pm (Android)']
+		['vcpkg', 'xmake', 'brew', 'port', 'apt', 'rpm', 'pacman', 'apk', 'pkg (Termux)', 'pm (Android)']
 	} else if os_name == 'android' {
-		['pkg (Termux)', 'pm (Android)', 'apt', 'brew', 'vcpkg', 'port', 'rpm', 'pacman', 'apk']
+		['pkg (Termux)', 'pm (Android)', 'apt', 'brew', 'vcpkg', 'xmake', 'port', 'rpm', 'pacman', 'apk']
 	} else {
-		['port', 'pkg (Termux)', 'pm (Android)', 'brew', 'vcpkg', 'apt', 'rpm', 'pacman', 'apk']
+		['port', 'pkg (Termux)', 'pm (Android)', 'brew', 'vcpkg', 'xmake', 'apt', 'rpm', 'pacman', 'apk']
 	}
 
 	mut result := []PkgManager{}
@@ -413,7 +432,7 @@ fn get_installed_set(mgr PkgManager) map[string]bool {
 		if t.len == 0 { continue }
 
 		name := match mgr.name {
-			'pacman', 'apk', 'brew', 'rpm' { t.fields()[0] }
+			'pacman', 'apk', 'brew', 'rpm', 'xmake' { t.fields()[0] }
 			'apt' { t }
 			'vcpkg' {
 				parts := t.fields()
@@ -675,6 +694,7 @@ fn get_list_cmd(mgr PkgManager) string {
 		'rpm' { r"rpm -qa --qf '%{NAME}\t%{VERSION}-%{RELEASE}\t%{SIZE}\t%{INSTALLTIME}\n'" }
 		'apk' { 'apk query --installed --format json' }
 		'vcpkg' { 'vcpkg list' }
+		'xmake' { 'xmake require --scan' }
 		'port' { 'port installed  +  sqlite3 registry.db (SELECT name, date FROM ports)' }
 		'pm (Android)' { 'pm list packages  +  pm path <pkg>' }
 		'pkg (Termux)' { r"dpkg-query -W -f='${Package}\t${Version}\t${Installed-Size}\t${db-fsys:Last-Modified}\n'" }
@@ -1127,6 +1147,18 @@ fn list_generic(cmd_str string) []PkgEntry {
 	return entries
 }
 
+fn list_xmake() []PkgEntry {
+	raw := os.execute('xmake require --scan').output.trim_space()
+	if raw.len == 0 { return [] }
+	mut entries := []PkgEntry{}
+	for line in raw.split_into_lines() {
+		t := line.trim_space()
+		f := t.fields()
+		if f.len > 0 { entries << PkgEntry{ name: f[0] } }
+	}
+	return entries
+}
+
 fn execute_list(mgr PkgManager) []PkgEntry {
 	return match mgr.name {
 		'pacman' { list_pacman() }
@@ -1135,6 +1167,7 @@ fn execute_list(mgr PkgManager) []PkgEntry {
 		'rpm' { list_rpm() }
 		'apk' { list_apk() }
 		'vcpkg' { list_vcpkg() }
+		'xmake' { list_xmake() }
 		'port' { list_port() }
 		'pm (Android)' { list_pm() }
 		'pkg (Termux)' { list_apt() }

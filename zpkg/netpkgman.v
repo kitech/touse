@@ -10,7 +10,24 @@ import vcp.json as cjsonx
 
 pub const fp_ua = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36'
 
-pub const net_managers = ['nix', 'pypi', 'npm', 'aur', 'vpm', 'canon', 'zig', 'rspm', 'jvpm', 'jspm']
+pub struct NetManager {
+pub:
+	name     string
+	disabled bool = false
+}
+
+pub const net_managers = [
+	NetManager{name: 'nix'},
+	NetManager{name: 'pypi'},
+	NetManager{name: 'npm'},
+	NetManager{name: 'aur', disabled: true},
+	NetManager{name: 'vpm'},
+	NetManager{name: 'canon'},
+	NetManager{name: 'zig'},
+	NetManager{name: 'rspm'},
+	NetManager{name: 'jvpm'},
+	NetManager{name: 'jspm'},
+]
 
 const cache_ttl_ms = i64(60_000)
 const min_gap_ms = i64(350)
@@ -143,7 +160,22 @@ struct MavenResp {
 }
 
 pub fn manager_names() []string {
+	mut out := []string{}
+	for m in net_managers {
+		if !m.disabled { out << m.name }
+	}
+	return out
+}
+
+pub fn net_manager_defs() []NetManager {
 	return net_managers.clone()
+}
+
+fn net_manager_disabled(manager string) bool {
+	for m in net_managers {
+		if m.name == manager { return m.disabled }
+	}
+	return false
 }
 
 pub fn search(manager string, q string, limit int, timeout int) ![]NetPkg {
@@ -211,6 +243,9 @@ fn new_client(timeout int) &Client {
 }
 
 fn search_with(c &Client, manager string, raw_q string, limit int) ![]NetPkg {
+	if net_manager_disabled(manager) {
+		return error('源 ${manager} 已禁用')
+	}
 	q := normalize_query(raw_q) !
 	n := clamp_limit(limit)
 	match manager {
