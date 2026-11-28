@@ -76,7 +76,7 @@ pub fn socket_path(name string) string {
 	$if windows {
 		return name
 	} $else {
-		return '/tmp/native-ipc-${os.geteuid()}/${name}'
+		return '/tmp/ntipc-${os.geteuid()}/${name}'
 	}
 }
 

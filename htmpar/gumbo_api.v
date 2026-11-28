@@ -121,6 +121,29 @@ pub fn gumbo_node_children(node &GumboInternalNode) []&GumboInternalNode {
 	return out
 }
 
+// 热路径专用：不构造 V 切片，避免每节点一次 GC 分配。
+pub fn gumbo_node_child_count(node &GumboInternalNode) int {
+	vec := match node.type {
+		0 { node.v.document.children }
+		1, 7 { node.v.element.children }
+		else { return 0 }
+	}
+	return int(vec.length)
+}
+
+pub fn gumbo_node_child_at(node &GumboInternalNode, i int) ?&GumboInternalNode {
+	vec := match node.type {
+		0 { node.v.document.children }
+		1, 7 { node.v.element.children }
+		else { return none }
+	}
+	if i < 0 || i >= int(vec.length) {
+		return none
+	}
+	mut ptr := &voidptr(vec.data)
+	return &GumboInternalNode(ptr[i])
+}
+
 pub fn gumbo_node_tag(node &GumboInternalNode) int {
 	if node.type == 1 || node.type == 7 {
 		return node.v.element.tag
@@ -144,6 +167,44 @@ pub fn gumbo_node_attr(node &GumboInternalNode, name string) string {
 		return ''
 	}
 	return gumbo_cstr((&GumboAttribute(a)).value)
+}
+
+// 零拷贝：返回的 string 借用 Gumbo 内存，仅在 GumboDoc.free() 前有效。
+pub fn gumbo_node_attr_view(node &GumboInternalNode, name string) string {
+	if node.type != 1 && node.type != 7 {
+		return ''
+	}
+	a := C.gumbo_get_attribute(voidptr(&node.v.element.attributes), name.str)
+	if isnil(a) {
+		return ''
+	}
+	attr := &GumboAttribute(a)
+	if isnil(attr.value) {
+		return ''
+	}
+	// value 是 Gumbo 解码后的 NUL 结尾串，长度以 strlen 为准；
+	// original_value.length 是原始源码片段长度，实体解码后会与 value 不等长。
+	n := int(C.strlen(attr.value))
+	if n == 0 {
+		return ''
+	}
+	return unsafe { tos(&u8(attr.value), n) }
+}
+
+fn C.strlen(&char) int
+
+pub fn gumbo_node_text_view(node &GumboInternalNode) string {
+	if node.type != 2 && node.type != 3 && node.type != 4 && node.type != 5 {
+		return ''
+	}
+	if isnil(node.v.text.text) {
+		return ''
+	}
+	n := int(C.strlen(node.v.text.text))
+	if n == 0 {
+		return ''
+	}
+	return unsafe { tos(&u8(node.v.text.text), n) }
 }
 
 // 类方法层：把上面的自由函数包成 receiver 方法，调用方式和 lexbor 一致。
@@ -193,11 +254,45 @@ pub fn (n GumboNodeRef) children() []GumboNodeRef {
 	if n.is_nil() {
 		return []GumboNodeRef{}
 	}
-	mut out := []GumboNodeRef{}
-	for c in gumbo_node_children(n.ptr) {
-		out << GumboNodeRef{ptr: c}
+	count := gumbo_node_child_count(n.ptr)
+	mut out := []GumboNodeRef{cap: count}
+	for i := 0; i < count; i++ {
+		if c := gumbo_node_child_at(n.ptr, i) {
+			out << GumboNodeRef{ptr: c}
+		}
 	}
 	return out
+}
+
+pub fn (n GumboNodeRef) child_count() int {
+	if n.is_nil() {
+		return 0
+	}
+	return gumbo_node_child_count(n.ptr)
+}
+
+pub fn (n GumboNodeRef) child_at(i int) GumboNodeRef {
+	if n.is_nil() {
+		return GumboNodeRef{ptr: nil}
+	}
+	if c := gumbo_node_child_at(n.ptr, i) {
+		return GumboNodeRef{ptr: c}
+	}
+	return GumboNodeRef{ptr: nil}
+}
+
+pub fn (n GumboNodeRef) attr_view(name string) string {
+	if n.is_nil() {
+		return ''
+	}
+	return gumbo_node_attr_view(n.ptr, name)
+}
+
+pub fn (n GumboNodeRef) text_view() string {
+	if n.is_nil() {
+		return ''
+	}
+	return gumbo_node_text_view(n.ptr)
 }
 
 pub fn (n GumboNodeRef) tag() int {

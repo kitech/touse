@@ -6,6 +6,7 @@ import strings
 import net.urllib
 import vcp.curlv
 import vcp.json as cjsonx
+import vcp
 import touse.htmpar
 
 pub const fp_ua = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36'
@@ -38,6 +39,7 @@ const jitter_ms = 250
 const max_retries = 2
 const default_limit = 20
 const max_limit = 250
+const max_dom_nodes = 200_000 // DOM 遍历预算，防畸形页面拖死
 const max_query_len = 200
 
 const html_accept = 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
@@ -431,8 +433,13 @@ fn (c &Client) fetch(url string, referer string, accept string) !string {
 		ch.timeout(c.timeout)
 		ch.lowspeed(512, 5)
 		res := ch.get() or {
+			// ch.closews()
 			return error('请求失败: $err')
 		}
+		// 请求结束立即关闭句柄，不把清理交给 GC finalizer：
+		// finalizer 链表用对象首字做 next 指针，与 Curl.ch 冲突，
+		// 堆积后 GC_finish_collection 会遍历到自环节点并死锁。
+		// ch.closews()
 		if res.stcode == 200 {
 			c.bytes += res.data.len
 			if is_challenge(res.data) {
@@ -457,13 +464,14 @@ fn dom_doc(body string, site string) !htmpar.GumboDoc {
 	}
 }
 
-fn dom_class_has(class string, marker string) bool {
-	for want in marker.split(' ') {
+fn dom_class_has_parts(class string, wants []string) bool {
+	parts := class.split(' ')
+	for want in wants {
 		if want == '' {
 			continue
 		}
 		mut found := false
-		for have in class.split(' ') {
+		for have in parts {
 			if have == want {
 				found = true
 				break
@@ -476,28 +484,47 @@ fn dom_class_has(class string, marker string) bool {
 	return true
 }
 
-fn dom_walk(root htmpar.GumboNodeRef, class_marker string, tag string, mut out []htmpar.GumboNodeRef) {
-	if root.is_nil() {
+fn dom_walk(root htmpar.GumboNodeRef, wants []string, tag_id int, mut out []htmpar.GumboNodeRef, budget &i64) {
+	if root.is_nil() || *budget <= 0 {
 		return
 	}
-	matched := (class_marker == '' || dom_class_has(root.attr('class'), class_marker)) && (tag == '' || root.tag_name() == tag)
+	*budget -= 1
+	class_ok := wants.len == 0 || dom_class_has_parts(root.attr_view('class'), wants)
+	tag_ok := tag_id < 0 || root.tag() == tag_id
+	matched := class_ok && tag_ok
 	if matched {
 		out << root
 	}
-	for c in root.children() {
-		dom_walk(c, class_marker, tag, mut out)
+	for i := 0; i < root.child_count(); i++ {
+		c := root.child_at(i)
+		if c.is_nil() {
+			continue
+		}
+		dom_walk(c, wants, tag_id, mut out, budget)
 	}
 }
 
 fn dom_find_all(root htmpar.GumboNodeRef, class_marker string) []htmpar.GumboNodeRef {
 	mut out := []htmpar.GumboNodeRef{}
-	dom_walk(root, class_marker, '', mut out)
+	mut wants := []string{}
+	if class_marker != '' {
+		wants = class_marker.split(' ')
+	}
+	mut budget := i64(max_dom_nodes)
+	dom_walk(root, wants, -1, mut out, &budget)
+	if budget <= 0 {
+		vcp.warn('dom 遍历达到 $max_dom_nodes 节点上限，已截断')
+	}
 	return out
 }
 
 fn dom_find_all_tag(root htmpar.GumboNodeRef, tag string) []htmpar.GumboNodeRef {
 	mut out := []htmpar.GumboNodeRef{}
-	dom_walk(root, '', tag, mut out)
+	mut budget := i64(max_dom_nodes)
+	dom_walk(root, [], htmpar.gumbo_tag_enum(tag), mut out, &budget)
+	if budget <= 0 {
+		vcp.warn('dom 遍历达到 $max_dom_nodes 节点上限，已截断')
+	}
 	return out
 }
 
@@ -522,11 +549,15 @@ fn dom_text(n htmpar.GumboNodeRef) string {
 		return ''
 	}
 	mut parts := []string{}
-	t := n.text().trim(' \t\r\n')
+	t := n.text_view().trim(' \t\r\n')
 	if t != '' {
 		parts << t
 	}
-	for c in n.children() {
+	for i := 0; i < n.child_count(); i++ {
+		c := n.child_at(i)
+		if c.is_nil() {
+			continue
+		}
 		t = dom_text(c)
 		if t != '' {
 			parts << t
@@ -867,7 +898,7 @@ fn adapter_vpm(c &Client, q string, limit int) ![]NetPkg {
 	mut seen := map[string]bool{}
 	root := doc.document()
 	for card in dom_find_all_tag(root, 'section') {
-		if !dom_class_has(card.attr('class'), 'package') {
+		if !dom_class_has_parts(card.attr_view('class'), ['package']) {
 			continue
 		}
 		title := dom_first(card, 'package-card__title hover:underline cursor-pointer') or { continue }
