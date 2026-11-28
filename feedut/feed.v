@@ -27,6 +27,10 @@ pub mut:
 pub fn parse_feed(body string) !ParsedFeed {
 	doc := xml.parse_document(strip_xml_header(body))
 	if doc == unsafe { nil } {
+		detail := xml.last_error()
+		if detail != '' {
+			return error('xml parse failed: ${detail}')
+		}
 		return error('xml parse failed')
 	}
 	defer { doc.free() }
@@ -73,13 +77,13 @@ fn strip_xml_header(s string) string {
 		t = t[3..]
 	}
 	if t.starts_with('<?xml') {
-		idx := t.index('?>') or { return replace_cdata(t) }
+		idx := t.index('?>') or { return t }
 		t = t[idx + 2..]
 	}
-	return replace_cdata(t.trim_space())
+	return t.trim_space()
 }
 
-// xmlc does not support CDATA; convert it to escaped text.
+// xmlc 已原生支持 CDATA（xmlc_cdata.c），停止预处理；保留本函数仅作参考/回退。
 fn replace_cdata(s string) string {
 	mut sb := strings.new_builder(s.len)
 	mut i := 0

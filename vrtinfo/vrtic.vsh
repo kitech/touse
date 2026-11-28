@@ -23,7 +23,8 @@ mut:
 	done         int
 }
 
-struct Ev {
+// pub：yco.Chan 的泛型实例化在 yco 模块内检查类型可见性。
+pub struct Ev {
 	kind int // 0=line 2=ack
 	line string
 }
@@ -33,13 +34,10 @@ const (
 	ev_ack  = 2
 )
 
-// send[voidptr] 的 Anyer 装箱在 coro 间传递会崩，直接走 yco.Chan 的底层 C API
-fn C.crn_hchan_send(voidptr, voidptr) bool
-fn C.crn_hchan_recv(voidptr, &voidptr) bool
-
-// C 队列不被 GC 扫描，事件指针必须保活；各池由单一 coro 独占写入
-const input_evs = []&Ev{}
-const ack_ev = &Ev{kind: ev_ack, line: ''}
+// 事件走 yco.Chan 的 Value 封装：元信息+载荷都是 crn_gc_malloc 的 GC 内存，
+// hchan 环形缓冲（szqueue.c:44）同样被 BDWGC 扫描，无需保活池
+// （旧池防的是 Anyer 装箱的栈临时悬挂，该路径已在封装内消除）。
+const ack_ev = Ev{kind: ev_ack, line: ''}
 
 // 列表结果表格化：只处理列表类命令，别的结果保持原 JSON 输出
 fn list_headers(key string) []string {
@@ -170,18 +168,19 @@ fn input_loop(p voidptr) voidptr {
 	for vcp.atomic_load(&app.running) {
 		status := if vcp.atomic_load(&app.connected) { 'on' } else { 'off' }
 		line := app.rl.read_line('${app.name}@${status}> ') or {
-			ev := &Ev{kind: ev_line, line: 'quit'}
-			input_evs << ev
-			C.crn_hchan_send(app.ch, voidptr(ev))
+			if !app.ch.send(Ev{kind: ev_line, line: 'quit'}) {
+				vcp.warn('event chan send failed')
+			}
 			vcp.atomic_store(&app.running, false)
 			break
 		}
-		ev := &Ev{kind: ev_line, line: line}
-		input_evs << ev
-		C.crn_hchan_send(app.ch, voidptr(ev))
+		if !app.ch.send(Ev{kind: ev_line, line: line}) {
+			vcp.warn('event chan send failed')
+		}
 		// 等主循环打印完响应再进入下一轮 read_line（prompt 在那时才输出）
-		mut ack_raw := voidptr(0)
-		C.crn_hchan_recv(app.ackch, &ack_raw)
+		app.ackch.recv[Ev]() or {
+			vcp.warn('ack chan recv failed:', err.msg())
+		}
 	}
 	return voidptr(0)
 }
@@ -219,7 +218,11 @@ fn monitor_loop(p voidptr) voidptr {
 
 // 返回 false 表示 quit；无论哪个分支退出都发 ack，驱动输入 coro 打印下一个 prompt
 fn handle_line(app &App, line string) bool {
-	defer { C.crn_hchan_send(app.ackch, voidptr(ack_ev)) }
+	defer {
+		if !app.ackch.send(ack_ev) {
+			vcp.warn('ack chan send failed')
+		}
+	}
 	if line == '' {
 		return true
 	}
@@ -284,9 +287,10 @@ fn main_loop(p voidptr) voidptr {
 	yco.register_mycoro()
 	defer { vcp.atomic_add(&app.done, 1) }
 	for vcp.atomic_load(&app.running) {
-		mut raw := voidptr(0)
-		C.crn_hchan_recv(app.ch, &raw)
-		ev := &Ev(raw)
+		ev := app.ch.recv[Ev]() or {
+			vcp.warn('event chan recv failed:', err.msg())
+			continue
+		}
 		if !handle_line(app, ev.line.trim_space()) {
 			return voidptr(0)
 		}
