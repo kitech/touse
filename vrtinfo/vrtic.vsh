@@ -244,7 +244,10 @@ fn handle_line(app &App, line string) bool {
 	if sp := line.index(' ') {
 		cmd = line[..sp]
 		args = line[sp + 1..].trim_space()
-		if !args.starts_with('{') || !args.ends_with('}') {
+		if cmd in ['gc.set_free_space_divisor', 'gc.set_full_freq', 'gc.set_is_disabled', 'gc.set_non_gc_bytes'] &&
+			args != '' && !args.starts_with('{') {
+			args = '{"value":${args}}'
+		} else if !args.starts_with('{') || !args.ends_with('}') {
 			eprintln('args must be a JSON object')
 			return true
 		}

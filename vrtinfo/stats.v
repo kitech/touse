@@ -5,12 +5,22 @@ import os
 import time
 import touse.psutil
 import vcp
+import vcp.json
 import vcp.yco
 
 #include <gc/gc.h>
 
 fn C.GC_get_gc_no() int
 fn C.GC_get_parallel() int
+fn C.GC_get_free_space_divisor() usize
+fn C.GC_set_free_space_divisor(usize)
+fn C.GC_get_full_freq() int
+fn C.GC_set_full_freq(int)
+fn C.GC_is_disabled() int
+fn C.GC_disable()
+fn C.GC_enable()
+fn C.GC_get_non_gc_bytes() usize
+fn C.GC_set_non_gc_bytes(usize)
 fn C.GC_gcollect()
 fn C.GC_gcollect_and_unmap()
 fn C.GC_should_invoke_finalizers() int
@@ -104,6 +114,10 @@ pub fn gc_data() string {
 	st := vcp.get_bdwgc_stats()
 	return jobj(
 		'"gc_no":${C.GC_get_gc_no()}',
+		'"free_space_divisor":${C.GC_get_free_space_divisor()}',
+		'"full_freq":${C.GC_get_full_freq()}',
+		'"is_disabled":${C.GC_is_disabled()}',
+		'"non_gc_bytes":${C.GC_get_non_gc_bytes()}',
 		'"inuse":${st.inuse}',
 		'"free_bytes":${st.free_bytes}',
 		'"unmapped":${st.objcnt}',
@@ -112,6 +126,85 @@ pub fn gc_data() string {
 		'"obtained_from_os":${st.alloc}',
 		'"gc_parallel":${C.GC_get_parallel()}',
 		'"cur_thread_registered":${yn(vcp.gcthread_isreg())}',
+	)
+}
+
+// 所有 gc.set_* 共用的参数解析：args 形如 {"value":N}。
+fn gc_arg_i64(args string) !i64 {
+	jo := json.parse(args)!
+	defer { jo.freeit() }
+	if !jo.isObject() {
+		return error('args must be an object')
+	}
+	n := jo.key('value')
+	if n == nil || !n.isNumber() {
+		return error('value must be a number')
+	}
+	f := n.tonum()
+	if f != f64(i64(f)) {
+		return error('value must be an integer')
+	}
+	return i64(f)
+}
+
+// 运行期调整 BDWGC free_space_divisor；value 必须是 [1,100] 的整数。
+pub fn gc_set_free_space_divisor_data(args string) !string {
+	v := gc_arg_i64(args)!
+	if v < 1 || v > 100 {
+		return error('value out of range [1,100]')
+	}
+	old := int(C.GC_get_free_space_divisor())
+	C.GC_set_free_space_divisor(usize(v))
+	return jobj(
+		'"old":${old}',
+		'"free_space_divisor":${int(C.GC_get_free_space_divisor())}',
+	)
+}
+
+// 只在 incremental/generational 模式真正影响行为；默认 20。
+pub fn gc_set_full_freq_data(args string) !string {
+	v := gc_arg_i64(args)!
+	if v < 1 || v > 1000 {
+		return error('value out of range [1,1000]')
+	}
+	old := C.GC_get_full_freq()
+	C.GC_set_full_freq(int(v))
+	return jobj(
+		'"old":${old}',
+		'"full_freq":${C.GC_get_full_freq()}',
+	)
+}
+
+// 1 = GC_disable（连 GC_gcollect 都无效）；0 = GC_enable。
+// 只建议调试时短暂使用，记得恢复 0。
+pub fn gc_set_is_disabled_data(args string) !string {
+	v := gc_arg_i64(args)!
+	if v != 0 && v != 1 {
+		return error('value must be 0 or 1')
+	}
+	old := C.GC_is_disabled()
+	if v == 1 {
+		C.GC_disable()
+	} else {
+		C.GC_enable()
+	}
+	return jobj(
+		'"old":${old}',
+		'"is_disabled":${C.GC_is_disabled()}',
+	)
+}
+
+// 影响 collection 的调度记账；范围 0..1TiB。
+pub fn gc_set_non_gc_bytes_data(args string) !string {
+	v := gc_arg_i64(args)!
+	if v < 0 || v > (i64(1) << 40) {
+		return error('value out of range [0,1099511627776]')
+	}
+	old := i64(C.GC_get_non_gc_bytes())
+	C.GC_set_non_gc_bytes(usize(v))
+	return jobj(
+		'"old":${old}',
+		'"non_gc_bytes":${i64(C.GC_get_non_gc_bytes())}',
 	)
 }
 

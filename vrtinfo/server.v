@@ -94,6 +94,26 @@ fn (s &Server) handle(raw string) string {
 			'gc.stats'   { data = gc_data() }
 			'gc.collect' { data = gc_collect_data() }
 			'gc.dump'    { data = gc_dump_data() }
+			'gc.set_free_space_divisor' {
+				data = gc_set_free_space_divisor_data(req.args) or {
+					return err_response(req.id, err_bad_args, err.msg())
+				}
+			}
+			'gc.set_full_freq' {
+				data = gc_set_full_freq_data(req.args) or {
+					return err_response(req.id, err_bad_args, err.msg())
+				}
+			}
+			'gc.set_is_disabled' {
+				data = gc_set_is_disabled_data(req.args) or {
+					return err_response(req.id, err_bad_args, err.msg())
+				}
+			}
+			'gc.set_non_gc_bytes' {
+				data = gc_set_non_gc_bytes_data(req.args) or {
+					return err_response(req.id, err_bad_args, err.msg())
+				}
+			}
 			'coro.stats' { data = coro_data() }
 			'coro.list'  { data = coro_list_data() }
 			'threads' {

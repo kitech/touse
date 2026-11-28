@@ -21,11 +21,19 @@ pub const (
 
 pub const command_names = [
 	'ping', 'caps', 'info', 'gc.stats', 'gc.collect', 'gc.dump',
+	'gc.set_free_space_divisor',
+	'gc.set_full_freq', 'gc.set_is_disabled', 'gc.set_non_gc_bytes',
 	'coro.stats', 'coro.list', 'threads', 'mem', 'fibers',
 ]
 
 // 会修改进程状态/触发动作的命令；vrtic 的 help/caps 显示时用 * 标记。
-pub const write_commands = ['gc.collect']
+pub const write_commands = [
+	'gc.collect',
+	'gc.set_free_space_divisor',
+	'gc.set_full_freq',
+	'gc.set_is_disabled',
+	'gc.set_non_gc_bytes',
+]
 
 // 调用方注册的命令处理函数：args 为请求里的 JSON 对象字符串，返回响应 data 的 JSON 字符串
 pub type CommandHandler = fn (args string) !string
