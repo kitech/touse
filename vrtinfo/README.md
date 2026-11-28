@@ -48,14 +48,16 @@
 | `ping` | `pong, name, pid, uptime_ms` |
 | `caps` | `v, cmds[], max_req, max_resp` |
 | `info` | `pid, name, exe, args[], start_unix_ms, uptime_ms, os, arch, cc, v_version, v_hash, tid, thread` |
-| `gc.stats` | `gc_no, inuse, unmapped, total_bytes, bytes_since_gc, obtained_from_os, gc_parallel, cur_thread_registered` |
+| `gc.stats` | `gc_no, inuse, free_bytes, unmapped, total_bytes, bytes_since_gc, obtained_from_os, gc_parallel, cur_thread_registered` |
 | `coro.stats` | `goid, stack_base_u64, stack_size, gc_thread_registered` |
 | `coro.list` | `machine_total, machine_active, fiber_total, fiber_active, fiber_total_mem, max_stack_size`（聚合统计，来自 `crn_get_stats()`，不是逐条 fiber 列表） |
 | `threads` | `gc_parallel, count, threads[]`；每项 `tid, name, state, is_current`，当前线程项额外含 `goid, gc_registered`；并尽量提供 `cpu_ms, stksz, used_stksz, wchan, syscall, func, pc`（`0`/空表示不可用）（Linux `/proc/self/task`，macOS `task_threads`，Windows Toolhelp；其他平台返回 1006） |
 | `mem` | `rss_bytes, vm_size_bytes`（Linux `/proc/self/status`；其他平台返回 1006） |
 | `fibers` | `count, fibers[]`；每项 `id, mcid, state, pkreason, stksz, used_stksz`（`state`: `nostack`/`runnable`/`executing`/`waiting`/`finished`；`emucobypth` 构建返回 1006） |
 
-`GogcStat` 字段映射：`inuse`=`inuse`(heap_size)、`unmapped`=`objcnt`、`total_bytes`=`cgocall`、`bytes_since_gc`=`x`、`obtained_from_os`=`alloc`。`gc_parallel` 来自 `GC_get_parallel()`（本机 BDWGC 未提供 `GC_count_threads()`，故以并行度代替 GC 活跃线程数）。
+`GogcStat` 字段映射：`inuse`=`inuse`(heap_size，含 free/碎片，未 unmapped)、`free_bytes`=`free_bytes`、`unmapped`=`objcnt`、`total_bytes`=`cgocall`、`bytes_since_gc`=`x`、`obtained_from_os`=`alloc`。`gc_parallel` 来自 `GC_get_parallel()`（本机 BDWGC 未提供 `GC_count_threads()`，故以并行度代替 GC 活跃线程数）。
+
+判读：`live_upper ≈ inuse - free_bytes`。长时间看 `live_upper` 是否增长，而不是只看 `inuse`（`inuse` 是 heap 高水位，包含 free/碎片）。
 
 `threads` 的栈与函数字段按平台尽力提供：
 

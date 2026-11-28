@@ -95,6 +95,7 @@ pub fn gc_data() string {
 	return jobj(
 		'"gc_no":${C.GC_get_gc_no()}',
 		'"inuse":${st.inuse}',
+		'"free_bytes":${st.free_bytes}',
 		'"unmapped":${st.objcnt}',
 		'"total_bytes":${st.cgocall}',
 		'"bytes_since_gc":${st.x}',
