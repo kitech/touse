@@ -188,6 +188,14 @@ size_t xml_string_length(struct xml_string* string);
  */
 void xml_string_copy(struct xml_string* string, uint8_t* buffer, size_t length);
 
+
+
+/**
+ * Returns the first (root cause) error line of the last failed parse in this
+ * thread, or an empty string if the last parse succeeded.
+ */
+char const* xmlc_last_error(void);
+
 #ifdef __cplusplus
 }
 #endif

@@ -1,7 +1,9 @@
 module xml
 
 #include "@DIR/xmlc.h"
+#include "@DIR/xmlc_cdata.h"
 #flag @DIR/xmlc.o
+#flag @DIR/xmlc_cdata.o
 
 pub type Doc = C.xml_document
 pub struct C.xml_document{}
@@ -19,6 +21,15 @@ pub fn (node &Node2) str() string {
 pub fn C.xml_parse_document(buf charptr, len usize) &Doc
 pub fn parse_document(buf string) &Doc {
     return C.xml_parse_document(buf.str, buf.len)
+}
+pub fn C.xmlc_last_error() charptr
+// 取本次解析的首个（根因）错误行；无错误返回空串。静态缓冲区，必须克隆。
+pub fn last_error() string {
+    rv := C.xmlc_last_error()
+    if isnil(rv) {
+        return ''
+    }
+    return unsafe { cstring_to_vstring(rv) }
 }
 pub fn C.xml_document_free(voidptr, bool)
 pub fn (doc &Doc) free() {

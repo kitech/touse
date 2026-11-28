@@ -21,6 +21,7 @@
  *  3. This notice may not be removed or altered from any source distribution.
  */
 #include "xmlc.h"
+#include "xmlc_cdata.h"
 
 #ifdef XML_PARSER_VERBOSE
 #include <alloca.h>
@@ -90,6 +91,7 @@ static char* xml_strtok_r(char *str, const char *delim, char **nextp) {
 struct xml_string {
 	uint8_t const* buffer;
 	size_t length;
+	uint8_t* cdata_owned; /* 非空：buffer 指向本模块 malloc 的合并缓冲，释放时需 free */
 };
 
 /**
@@ -244,6 +246,9 @@ static uint8_t* xml_string_clone(struct xml_string* s) {
  *     document's buffer
  */
 static void xml_string_free(struct xml_string* string) {
+	if (string->cdata_owned) {
+		free(string->cdata_owned);
+	}
 	free(string);
 }
 
@@ -310,6 +315,11 @@ static void xml_parser_info(struct xml_parser* parser, char const* message) {
 
 
 
+/* Per-thread capture of the first (root cause) error of the current parse.
+ * c99 build: use the GCC __thread extension (same as corona.c), not C11 _Thread_local. */
+static __thread char xmlc_last_error_buf[256];
+static __thread int xmlc_last_error_set;
+
 /**
  * [PRIVATE]
  *
@@ -338,10 +348,21 @@ static void xml_parser_error(struct xml_parser* parser, enum xml_parser_offset o
 		fprintf(stderr,	"xml_parser_error at %i:%i (is %c): %s\n",
 				row + 1, column, parser->buffer[character], message
 		);
+		if (!xmlc_last_error_set) {
+			xmlc_last_error_set = 1;
+			snprintf(xmlc_last_error_buf, sizeof(xmlc_last_error_buf),
+				"xml_parser_error at %i:%i (is %c): %s",
+				row + 1, column, parser->buffer[character], message);
+		}
 	} else {
 		fprintf(stderr,	"xml_parser_error at %i:%i: %s\n",
 				row + 1, column, message
 		);
+		if (!xmlc_last_error_set) {
+			xmlc_last_error_set = 1;
+			snprintf(xmlc_last_error_buf, sizeof(xmlc_last_error_buf),
+				"xml_parser_error at %i:%i: %s", row + 1, column, message);
+		}
 	}
 }
 
@@ -486,9 +507,11 @@ static struct xml_attribute** xml_find_attributes(struct xml_parser* parser, str
 		new_attribute->name = malloc(sizeof(struct xml_string));
 		new_attribute->name->buffer = (unsigned char*)start_name;
 		new_attribute->name->length = strlen(str_name);
+		new_attribute->name->cdata_owned = 0;
 		new_attribute->content = malloc(sizeof(struct xml_string));
 		new_attribute->content->buffer = (unsigned char*)start_content;
 		new_attribute->content->length = strlen(str_content);
+		new_attribute->content->cdata_owned = 0;
 
 		old_elements = get_zero_terminated_array_attributes(attributes);
 		new_elements = old_elements + 1;
@@ -549,6 +572,7 @@ static struct xml_string* xml_parse_tag_end(struct xml_parser* parser) {
 	struct xml_string* name = malloc(sizeof(struct xml_string));
 	name->buffer = &parser->buffer[start];
 	name->length = length;
+	name->cdata_owned = 0;
 	return name;
 }
 
@@ -629,7 +653,7 @@ static struct xml_string* xml_parse_tag_close(struct xml_parser* parser) {
  *       tag {} content
  * ---
  *
- * @warning CDATA etc. is _not_ and will never be supported
+ * @warning CDATA 由本地 xmlc_cdata.c 支持（上游不支持）；属性内 CDATA 仍不支持
  */
 static struct xml_string* xml_parse_content(struct xml_parser* parser) {
 	xml_parser_info(parser, "content");
@@ -654,6 +678,80 @@ static struct xml_string* xml_parse_content(struct xml_parser* parser) {
 		}
 	}
 
+	/* CDATA 段：文本之后紧跟 <![CDATA[ → 继续吸收 text/CDATA 段并合并。
+	 * 无 CDATA 的普通文本保持上游的零拷贝 slice 路径。 */
+	if ('<' == xml_parser_peek(parser, CURRENT_CHARACTER)
+		&& xmlc_cdata_at(parser->buffer, parser->length, parser->position)) {
+		xmlc_cdata_buf col;
+		if (xmlc_cdata_buf_init(&col, length + 64)) {
+			return 0;
+		}
+		if (length > 0 && xmlc_cdata_buf_append(&col, &parser->buffer[start], length)) {
+			xmlc_cdata_buf_dispose(&col);
+			return 0;
+		}
+		for (;;) {
+			size_t cb = 0;
+			size_t ce = 0;
+			size_t next = xmlc_cdata_section(parser->buffer, parser->length, parser->position, &cb, &ce);
+			if (!next) {
+				xml_parser_error(parser, CURRENT_CHARACTER, "xml_parse_content::unterminated CDATA section");
+				xmlc_cdata_buf_dispose(&col);
+				return 0;
+			}
+			if (xmlc_cdata_buf_append(&col, &parser->buffer[cb], ce - cb)) {
+				xmlc_cdata_buf_dispose(&col);
+				return 0;
+			}
+			parser->position = next >= parser->length ? parser->length - 1 : next;
+
+			/* 后续文本段（直到下一个 '<'） */
+			size_t tbegin = parser->position;
+			size_t tlen = 0;
+			while (tbegin + tlen < parser->length) {
+				uint8_t current = xml_parser_peek(parser, CURRENT_CHARACTER);
+
+				if ('<' == current) {
+					break;
+				} else {
+					xml_parser_consume(parser, 1);
+					tlen++;
+				}
+			}
+			if (tlen > 0 && xmlc_cdata_buf_append(&col, &parser->buffer[tbegin], tlen)) {
+				xmlc_cdata_buf_dispose(&col);
+				return 0;
+			}
+
+			if (!('<' == xml_parser_peek(parser, CURRENT_CHARACTER)
+				&& xmlc_cdata_at(parser->buffer, parser->length, parser->position))) {
+				break;
+			}
+		}
+
+		/* Next character must be an `<' or we have reached end of file
+		 */
+		if ('<' != xml_parser_peek(parser, CURRENT_CHARACTER)) {
+			xml_parser_error(parser, CURRENT_CHARACTER, "xml_parse_content::expected <");
+			xmlc_cdata_buf_dispose(&col);
+			return 0;
+		}
+
+		/* Ignore tailing whitespace
+		 */
+		while ((col.len > 0) && isspace(col.data[col.len - 1])) {
+			col.len--;
+		}
+
+		/* Return merged text (owned buffer, freed with the string)
+		 */
+		struct xml_string* merged = malloc(sizeof(struct xml_string));
+		merged->buffer = col.data;
+		merged->length = col.len;
+		merged->cdata_owned = col.data;
+		return merged;
+	}
+
 	/* Next character must be an `<' or we have reached end of file
 	 */
 	if ('<' != xml_parser_peek(parser, CURRENT_CHARACTER)) {
@@ -672,6 +770,7 @@ static struct xml_string* xml_parse_content(struct xml_parser* parser) {
 	struct xml_string* content = malloc(sizeof(struct xml_string));
 	content->buffer = &parser->buffer[start];
 	content->length = length;
+	content->cdata_owned = 0;
 	return content;
 }
 
@@ -742,6 +841,40 @@ static struct xml_node* xml_parse_node(struct xml_parser* parser) {
 	/* Otherwise children are to be expected
 	 */
 	} else while ('/' != xml_parser_peek(parser, NEXT_CHARACTER)) {
+
+		/* CDATA 出现在 children 位置：并入 content，不当作子节点解析。
+		 * 单段时零拷贝切片；已有 content 时复制合并（罕见路径）。 */
+		if (xmlc_cdata_at(parser->buffer, parser->length, parser->position)) {
+			size_t cb = 0;
+			size_t ce = 0;
+			size_t next = xmlc_cdata_section(parser->buffer, parser->length, parser->position, &cb, &ce);
+			if (!next) {
+				xml_parser_error(parser, CURRENT_CHARACTER, "xml_parse_node::unterminated CDATA section");
+				goto exit_failure;
+			}
+			if (!content) {
+				content = malloc(sizeof(struct xml_string));
+				content->buffer = &parser->buffer[cb];
+				content->length = ce - cb;
+				content->cdata_owned = 0;
+			} else {
+				xmlc_cdata_buf col;
+				if (xmlc_cdata_buf_init(&col, content->length + (ce - cb) + 16)) {
+					goto exit_failure;
+				}
+				if (xmlc_cdata_buf_append(&col, content->buffer, content->length)
+					|| xmlc_cdata_buf_append(&col, &parser->buffer[cb], ce - cb)) {
+					xmlc_cdata_buf_dispose(&col);
+					goto exit_failure;
+				}
+				free(content->cdata_owned); /* 旧 owned（若非空）被合并取代 */
+				content->buffer = col.data;
+				content->length = col.len;
+				content->cdata_owned = col.data;
+			}
+			parser->position = next >= parser->length ? parser->length - 1 : next;
+			continue;
+		}
 
 		/* Parse child node
 		 */
@@ -826,6 +959,11 @@ exit_failure:
  */
 struct xml_document* xml_parse_document(uint8_t* buffer, size_t length) {
 
+	/* Reset per-parse error capture: keep only this attempt's first (root cause) error
+	 */
+	xmlc_last_error_set = 0;
+	xmlc_last_error_buf[0] = '\0';
+
 	/* Initialize parser
 	 */
 	struct xml_parser parser = {
@@ -857,6 +995,15 @@ struct xml_document* xml_parse_document(uint8_t* buffer, size_t length) {
 	document->root = root;
 
 	return document;
+}
+
+
+
+/**
+ * [PUBLIC API]
+ */
+char const* xmlc_last_error(void) {
+	return xmlc_last_error_set ? xmlc_last_error_buf : "";
 }
 
 
