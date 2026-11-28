@@ -25,6 +25,8 @@ pub const net_managers = [
 	NetManager{name: 'zig', disabled: false},
 	NetManager{name: 'rspm', disabled: false},
 	NetManager{name: 'jvpm', disabled: false},
+	// gopm: pkg.go.dev 官方 JSON API（/v1/search），限流 45 QPS
+	NetManager{name: 'gopm', disabled: false},
 	// jspm 曾作为触发点放在中间会拖住后续源；后续修好 handle 清理和硬超时后，
 	// 顺序只作历史记录，不再依赖“必须最后”。
 	NetManager{name: 'jspm', disabled: false},
@@ -160,6 +162,24 @@ struct MavenResp {
 	response MavenResponse
 }
 
+struct GopmImportedBy {
+	packages i64 @[json: 'packages']
+	modules  i64 @[json: 'modules']
+}
+
+struct GopmItem {
+	packagePath string         @[json: 'packagePath']
+	modulePath  string         @[json: 'modulePath']
+	version     string         @[json: 'version']
+	synopsis    string         @[json: 'synopsis']
+	importedBy  GopmImportedBy @[json: 'importedByCounts']
+}
+
+struct GopmSearchResp {
+	items []GopmItem @[json: 'items']
+	total int        @[json: 'total']
+}
+
 pub fn manager_names() []string {
 	mut out := []string{}
 	for m in net_managers {
@@ -273,6 +293,9 @@ fn search_with(c &Client, manager string, raw_q string, limit int) ![]NetPkg {
 		}
 		'vpm' {
 			return adapter_vpm(c, q, n)
+		}
+		'gopm' {
+			return adapter_gopm(c, q, n)
 		}
 		'jspm' {
 			return adapter_npm_registry(c, 'jspm', q, n)
@@ -554,6 +577,29 @@ fn adapter_npm_registry(c &Client, manager string, q string, limit int) ![]NetPk
 			desc: p.description
 			url: u
 			updated: p.date
+		}, limit)
+	}
+	return items
+}
+
+fn adapter_gopm(c &Client, q string, limit int) ![]NetPkg {
+	url := 'https://pkg.go.dev/v1/search?q=${enc_query(q)}&limit=$limit'
+	body := c.fetch(url, 'https://pkg.go.dev/', json_accept) or {
+		return error('gopm: $err')
+	}
+	r := cjsonx.decode[GopmSearchResp](body) or {
+		return error('gopm: 搜索结果解析失败: $err')
+	}
+	mut items := []NetPkg{}
+	mut seen := map[string]bool{}
+	for it in r.items {
+		add_item(mut items, seen, NetPkg{
+			manager: 'gopm'
+			name:    it.packagePath
+			version: it.version
+			desc:    it.synopsis
+			url:     'https://pkg.go.dev/$it.packagePath'
+			updated: ''
 		}, limit)
 	}
 	return items
