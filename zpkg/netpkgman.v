@@ -39,6 +39,7 @@ const jitter_ms = 250
 const max_retries = 2
 const default_limit = 20
 const max_limit = 250
+const seen_prealloc_cap = 128 // 预分配 seen map 元数据（条目数 ×sizeof(u32) 字节），避免扩容时 GC_REALLOC 反复释放同一对象形成 free list 自环
 const max_dom_nodes = 200_000 // DOM 遍历预算，防畸形页面拖死
 const max_query_len = 200
 
@@ -410,6 +411,8 @@ fn (c &Client) fetch(url string, referer string, accept string) !string {
 		// 后续改为每个请求结束后立刻 closews()，不把清理交给 GC。
 		mut ch := curlv.new()
 		ch.url(url)
+		// 强制 HTTP/1.1，避免协商到 HTTP/2 后连接复用行为改变。
+		ch.http1()
 		ch.useragent(fp_ua)
 		ch.header('Accept', accept)
 		ch.header('Accept-Language', 'en-US,en;q=0.9')
@@ -423,6 +426,8 @@ fn (c &Client) fetch(url string, referer string, accept string) !string {
 		ch.header('Upgrade-Insecure-Requests', '1')
 		ch.header('Priority', 'u=0, i')
 		ch.header('Cache-Control', 'max-age=0')
+		// 显式声明短连接（curlv.doreq 底层已无条件追加该头，此处固定 zpkg 侧语义）。
+		ch.header('Connection', 'close')
 		if referer != '' {
 			ch.refer(referer)
 		}
@@ -595,6 +600,7 @@ fn adapter_npm_registry(c &Client, manager string, q string, limit int) ![]NetPk
 	}
 	mut items := []NetPkg{}
 	mut seen := map[string]bool{}
+	seen.reserve(seen_prealloc_cap * 4)
 	for o in r.objects {
 		p := o.package
 		u := p.links.npm
@@ -623,6 +629,7 @@ fn adapter_gopm(c &Client, q string, limit int) ![]NetPkg {
 	}
 	mut items := []NetPkg{}
 	mut seen := map[string]bool{}
+	seen.reserve(seen_prealloc_cap * 4)
 	for it in r.items {
 		add_item(mut items, seen, NetPkg{
 			manager: 'gopm'
@@ -652,6 +659,7 @@ fn adapter_aur(c &Client, q string, limit int) ![]NetPkg {
 	}
 	mut items := []NetPkg{}
 	mut seen := map[string]bool{}
+	seen.reserve(seen_prealloc_cap * 4)
 	for p in r.results {
 		updated := ''
 		if p.last_modified > 0 {
@@ -679,6 +687,7 @@ fn adapter_conan(c &Client, q string, limit int) ![]NetPkg {
 	}
 	mut items := []NetPkg{}
 	mut seen := map[string]bool{}
+	seen.reserve(seen_prealloc_cap * 4)
 	for i := 0; i < 500; i++ {
 		e := r['$i']
 		if e.name == '' {
@@ -706,6 +715,7 @@ fn adapter_rspm(c &Client, q string, limit int) ![]NetPkg {
 	}
 	mut items := []NetPkg{}
 	mut seen := map[string]bool{}
+	seen.reserve(seen_prealloc_cap * 4)
 	for p in r.crates {
 		u := p.repository
 		if u == '' {
@@ -736,6 +746,7 @@ fn adapter_jvpm(c &Client, q string, limit int) ![]NetPkg {
 	}
 	mut items := []NetPkg{}
 	mut seen := map[string]bool{}
+	seen.reserve(seen_prealloc_cap * 4)
 	for p in r.response.docs {
 		updated := ''
 		if p.timestamp > 0 {
@@ -769,6 +780,7 @@ fn adapter_pypi_guru(c &Client, q string, limit int) ![]NetPkg {
 	defer { doc.free() }
 	mut items := []NetPkg{}
 	mut seen := map[string]bool{}
+	seen.reserve(seen_prealloc_cap * 4)
 	root := doc.document()
 	for card in dom_find_all(root, 'result-card') {
 		mut href := ''
@@ -811,6 +823,7 @@ fn adapter_pypi_official(c &Client, q string, limit int) ![]NetPkg {
 	defer { doc.free() }
 	mut items := []NetPkg{}
 	mut seen := map[string]bool{}
+	seen.reserve(seen_prealloc_cap * 4)
 	root := doc.document()
 	for card in dom_find_all(root, 'package-snippet') {
 		mut u := card.attr('href')
@@ -838,6 +851,7 @@ fn adapter_nix(c &Client, q string, limit int) ![]NetPkg {
 	defer { doc.free() }
 	mut items := []NetPkg{}
 	mut seen := map[string]bool{}
+	seen.reserve(seen_prealloc_cap * 4)
 	root := doc.document()
 	for a in dom_find_all_tag(root, 'a') {
 		href := a.attr('href')
@@ -865,6 +879,7 @@ fn adapter_zig(c &Client, q string, limit int) ![]NetPkg {
 	defer { doc.free() }
 	mut items := []NetPkg{}
 	mut seen := map[string]bool{}
+	seen.reserve(seen_prealloc_cap * 4)
 	root := doc.document()
 	for card in dom_find_all(root, 'card z-0') {
 		mut href := ''
@@ -896,6 +911,7 @@ fn adapter_vpm(c &Client, q string, limit int) ![]NetPkg {
 	defer { doc.free() }
 	mut items := []NetPkg{}
 	mut seen := map[string]bool{}
+	seen.reserve(seen_prealloc_cap * 4)
 	root := doc.document()
 	for card in dom_find_all_tag(root, 'section') {
 		if !dom_class_has_parts(card.attr_view('class'), ['package']) {
