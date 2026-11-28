@@ -717,3 +717,25 @@ int psutil_extra_win_service_get(const char* name, psutil_WindowsService* out) {
     (void)out;
     return PSUTIL_UNSUPPORTED;
 }
+
+// extra.h 约定：非 Linux 平台保留同名入口并返回 PSUTIL_UNSUPPORTED，避免伪造数值。
+// 以上 4 个原定义位于前部 #if defined(__linux__) 块内，macOS/Windows 链接会缺符号。
+#if !defined(__linux__)
+int psutil_extra_oneshot(int pid, psutil_OneShot* out) {
+    (void)pid; (void)out;
+    return PSUTIL_UNSUPPORTED;
+}
+int psutil_extra_rlimit(int pid, int resource, psutil_Rlimit* out) {
+    (void)pid; (void)resource; (void)out;
+    return PSUTIL_UNSUPPORTED;
+}
+int psutil_extra_set_rlimit(int pid, int resource, long long soft,
+                            long long hard) {
+    (void)pid; (void)resource; (void)soft; (void)hard;
+    return PSUTIL_UNSUPPORTED;
+}
+int psutil_extra_environ(int pid, psutil_EnvVar* out, int cap) {
+    (void)pid; (void)out; (void)cap;
+    return PSUTIL_UNSUPPORTED;
+}
+#endif

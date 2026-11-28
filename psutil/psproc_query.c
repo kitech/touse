@@ -933,8 +933,14 @@ int psutil_proc_create_time(int pid, double* out) {
     memset(&info, 0, sizeof(info));
     if (proc_pidinfo(pid, PROC_PIDTBSDINFO, 0, &info, sizeof(info)) !=
         (int)sizeof(info)) return PSUTIL_NO_PROC;
-    *out = (double)info.pbi_starttv.tv_sec +
-           (double)info.pbi_starttv.tv_usec / 1000000.0;
+    // macOS 10.5 为 timeval 字段 pbi_start；10.6+ 拆为两个 uint64 字段
+#if defined(__MAC_OS_X_VERSION_MAX_ALLOWED) && __MAC_OS_X_VERSION_MAX_ALLOWED <= 1050
+    *out = (double)info.pbi_start.tv_sec +
+           (double)info.pbi_start.tv_usec / 1000000.0;
+#else
+    *out = (double)info.pbi_start_tvsec +
+           (double)info.pbi_start_tvusec / 1000000.0;
+#endif
     return PSUTIL_OK;
 }
 

@@ -92,13 +92,17 @@ int psutil_os_process_name(int pid, char* out, int cap) {
 
 #elif defined(__APPLE__)
 #include <libproc.h>
+#ifndef PROC_ALL_PIDS
+// Apple SDK 10.5+（含 11.x）均定义 PROC_ALL_PIDS 为 1；裁剪/非标准 SDK 兜底，保证跨版本可编译
+#define PROC_ALL_PIDS 1
+#endif
 
 int psutil_os_pids(int* out, int cap) {
-    int bytes = proc_listpids(PROC_ALLPIDS, 0, NULL, 0);
+    int bytes = proc_listpids(PROC_ALL_PIDS, 0, NULL, 0);
     if (bytes <= 0) return -1;
     int* buf = (int*)malloc((size_t)bytes);
     if (!buf) return -1;
-    int got = proc_listpids(PROC_ALLPIDS, 0, buf, bytes);
+    int got = proc_listpids(PROC_ALL_PIDS, 0, buf, bytes);
     if (got <= 0) {
         free(buf);
         return -1;
