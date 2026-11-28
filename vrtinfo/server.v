@@ -92,6 +92,8 @@ fn (s &Server) handle(raw string) string {
 			'caps'       { data = caps_data(s.cmd_order) }
 			'info'       { data = info_data() }
 			'gc.stats'   { data = gc_data() }
+			'gc.collect' { data = gc_collect_data() }
+			'gc.dump'    { data = gc_dump_data() }
 			'coro.stats' { data = coro_data() }
 			'coro.list'  { data = coro_list_data() }
 			'threads' {

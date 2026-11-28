@@ -20,8 +20,12 @@ pub const (
 )
 
 pub const command_names = [
-	'ping', 'caps', 'info', 'gc.stats', 'coro.stats', 'coro.list', 'threads', 'mem', 'fibers',
+	'ping', 'caps', 'info', 'gc.stats', 'gc.collect', 'gc.dump',
+	'coro.stats', 'coro.list', 'threads', 'mem', 'fibers',
 ]
+
+// 会修改进程状态/触发动作的命令；vrtic 的 help/caps 显示时用 * 标记。
+pub const write_commands = ['gc.collect']
 
 // 调用方注册的命令处理函数：args 为请求里的 JSON 对象字符串，返回响应 data 的 JSON 字符串
 pub type CommandHandler = fn (args string) !string

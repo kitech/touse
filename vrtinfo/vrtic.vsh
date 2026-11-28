@@ -107,7 +107,15 @@ fn format_lists(data string) string {
 	if !jo.isObject() {
 		return ''
 	}
+	mut write_cmds := map[string]bool{}
+	w := jo.key('write_cmds')
+	if w != nil && w.isArray() {
+		for i in 0 .. w.size() {
+			write_cmds[w.index(i).tostr()] = true
+		}
+	}
 	mut out := []string{}
+	mut marked_help := false
 	for key in ['threads', 'fibers', 'cmds'] {
 		arr := jo.key(key)
 		if arr == nil || !arr.isArray() || arr.size() == 0 {
@@ -132,13 +140,21 @@ fn format_lists(data string) string {
 		if headers.len == 1 {
 			mut vals := []string{cap: rows.len}
 			for row in rows {
-				vals << row[0]
+				mut v := row[0]
+				if key == 'cmds' && (v in write_cmds) {
+					v += '*'
+					marked_help = true
+				}
+				vals << v
 			}
 			out << '${key}: ' + vals.join(' ')
 		} else {
 			out << '${key}:'
 			out << table_text(headers, rows)
 		}
+	}
+	if marked_help {
+		out << '(* = 会修改状态/触发动作)'
 	}
 	return out.join('\n')
 }

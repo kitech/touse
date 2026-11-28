@@ -11,6 +11,11 @@ import vcp.yco
 
 fn C.GC_get_gc_no() int
 fn C.GC_get_parallel() int
+fn C.GC_gcollect()
+fn C.GC_gcollect_and_unmap()
+fn C.GC_should_invoke_finalizers() int
+fn C.GC_invoke_finalizers() int
+fn C.GC_dump()
 
 fn C.crn_get_stats(&yco.InnerStats)
 
@@ -59,9 +64,14 @@ pub fn caps_data(extra []string) string {
 	for c in extra {
 		cmds << jstr(c)
 	}
+	mut wcmds := []string{}
+	for c in write_commands {
+		wcmds << jstr(c)
+	}
 	return jobj(
 		'"v":${version}',
 		'"cmds":[${cmds.join(',')}]',
+		'"write_cmds":[${wcmds.join(',')}]',
 		'"max_req":${max_request}',
 		'"max_resp":${max_response}',
 	)
@@ -103,6 +113,37 @@ pub fn gc_data() string {
 		'"gc_parallel":${C.GC_get_parallel()}',
 		'"cur_thread_registered":${yn(vcp.gcthread_isreg())}',
 	)
+}
+
+// 手动触发 full GC + finalizer，用 gc.stats 前后对比判断
+// “不可达但未 finalize/未回收”的对象（例如 curl body）占了多少。
+pub fn gc_collect_data() string {
+	before := vcp.get_bdwgc_stats()
+	pending0 := C.GC_should_invoke_finalizers()
+	C.GC_gcollect()
+	mut nfin := C.GC_invoke_finalizers()
+	C.GC_gcollect()
+	nfin += C.GC_invoke_finalizers()
+	C.GC_gcollect_and_unmap()
+	pending1 := C.GC_should_invoke_finalizers()
+	after := vcp.get_bdwgc_stats()
+	return jobj(
+		'"pending_before":${pending0}',
+		'"finalized":${nfin}',
+		'"pending_after":${pending1}',
+		'"heap_before":${before.inuse}',
+		'"heap_after":${after.inuse}',
+		'"free_before":${before.free_bytes}',
+		'"free_after":${after.free_bytes}',
+		'"obtained_before":${before.alloc}',
+		'"obtained_after":${after.alloc}',
+	)
+}
+
+// 把 BDWGC 的堆/对象信息 dump 到进程 stderr（通常就是 demo 的终端）。
+pub fn gc_dump_data() string {
+	C.GC_dump()
+	return jobj('"done":true')
 }
 
 pub fn coro_data() string {

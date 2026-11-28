@@ -46,9 +46,11 @@
 | cmd | data |
 |-----|------|
 | `ping` | `pong, name, pid, uptime_ms` |
-| `caps` | `v, cmds[], max_req, max_resp` |
+| `caps` | `v, cmds[], write_cmds[], max_req, max_resp`；`write_cmds[]` 是会修改状态/触发动作的命令，`help` 里以 `*` 标记 |
 | `info` | `pid, name, exe, args[], start_unix_ms, uptime_ms, os, arch, cc, v_version, v_hash, tid, thread` |
 | `gc.stats` | `gc_no, inuse, free_bytes, unmapped, total_bytes, bytes_since_gc, obtained_from_os, gc_parallel, cur_thread_registered` |
+| `gc.collect` | `pending_before, finalized, pending_after, heap_before/after, free_before/after, obtained_before/after`（显式 full GC + finalizer，会暂停进程；用于判断不可达但未回收的对象） |
+| `gc.dump` | `done`（调用 BDWGC `GC_dump()`，输出到进程 stderr；输出可能很大，只读诊断） |
 | `coro.stats` | `goid, stack_base_u64, stack_size, gc_thread_registered` |
 | `coro.list` | `machine_total, machine_active, fiber_total, fiber_active, fiber_total_mem, max_stack_size`（聚合统计，来自 `crn_get_stats()`，不是逐条 fiber 列表） |
 | `threads` | `gc_parallel, count, threads[]`；每项 `tid, name, state, is_current`，当前线程项额外含 `goid, gc_registered`；并尽量提供 `cpu_ms, stksz, used_stksz, wchan, syscall, func, pc`（`0`/空表示不可用）（Linux `/proc/self/task`，macOS `task_threads`，Windows Toolhelp；其他平台返回 1006） |
@@ -83,7 +85,7 @@ s.register_command('my.cmd', fn (args string) !string {
 
 - handler 接收请求里的 `args` JSON 对象字符串，返回响应 `data` 的 JSON 字符串。
 - 名字非法、与内置命令重名或重复注册时忽略。
-- 已注册命令会出现在 `caps` 的 `cmds[]` 中。
+- 已注册命令会出现在 `caps` 的 `cmds[]` 中；静态写入命令还会出现在 `write_cmds[]`，`help` 显示时带 `*`。
 
 ## 接入与编译
 
